@@ -1,4 +1,4 @@
-# Feature status at Creative Tools checkpoint 0.5.0
+# Feature status at GPU Rendering checkpoint 0.6.0
 
 | Milestone or feature | Delivered | Verification or remaining requirement |
 | --- | --- | --- |
@@ -10,10 +10,12 @@
 | M3 legacy files | Lossless XML collection save, four targeted header edits, individual entry selection/reporting and normalized model export | Byte equality, unknown-data preservation, historical 2.x/7X/AV fixtures, original Pascal pixel tests and an AV artist image. Native historical editor reopen tests and broader render compatibility remain open |
 | M4 primary editor | Qt main window, searchable library, refining CPU preview, transform triangles, pre/post/final editing, variations/color/Xaos, undo, safe save and recovery | Native desktop edits/save and automated Qt event tests passed. Advanced multi-selection, per-transform persistent locks, synchronization, shortcut profiles and workspace presets remain open |
 | M5 creative tools | Native gradient and adjustment editors; 1–24 seeded random/mutation candidates; palette presets/GPL library; parent comparison, saved branches and collection operations | Core algorithm tests, native dialog input/apply/cancel/undo checks and source preservation. Historical generator sequence equivalence, additional palette formats/catalogs, alpha, non-default legacy curves, density estimation and more variations remain open |
-| M6 GPU acceleration | Open | Device discovery, Vulkan, optional CUDA and numerical equivalence |
+| M6 GPU acceleration | Device/capability discovery; actual Vulkan FP32 sampling for all 31 variations; integer histogram accumulation; shared CPU reconstruction; saved UI/backend controls and explicit fallback diagnostics | 1,560 direct transform probes and five image comparisons execute on llvmpipe software Vulkan. CPU continuity, budgets, cancellation, selection and fallback are tested. Physical GPU speed/driver acceptance and Windows execution remain pending; optional CUDA is not implemented. See [GPU_RENDERING.md](GPU_RENDERING.md), [GPU_KERNEL.md](GPU_KERNEL.md), [GPU_TESTING.md](GPU_TESTING.md) and [WINDOWS_GPU.md](WINDOWS_GPU.md) |
 | M7 large renders | Dense buffer budgeting, background file render and cooperative cancellation | Tiling/streaming, true 16K acceptance, checkpoint, queue, export pause/resume and high-bit-depth formats |
 | M8 extended compatibility | Open | Scripting, plugins and other historical formats |
 | M9 animation and extended features | Open | Keyframes, morphing, timeline and 7X/AV additions |
-| M10 release | Portable Windows GUI and console package | Desktop release, platform benchmarks, installer, manual and final compatibility report |
+| M10 release | Portable Windows GUI and console package, source/history bundle and dependency provenance | Current package: 15 executables, 48 runtime files, 46 PE modules and 13,232 resolved non-system imports with zero missing. Compiled and audited; Windows execution, platform benchmarks, installer and final compatibility report remain open |
 
-This inventory covers work through the creative tools checkpoint. The full menu, dialog, variation and file-format inventories by historical release still require an audit of original 2.x, 7X and AV sources and applications.
+This inventory covers work through the GPU rendering checkpoint. The CLI and core API retain CPU defaults; new saved desktop settings select Automatic with CPU fallback. The 20-entry native Release and ASan/UBSan suites, plus a Vulkan-disabled core build, distinguish executed checks from unavailable-device skips in [TEST_PLAN.md](TEST_PLAN.md). Software Vulkan execution establishes no physical-GPU speedup.
+
+Milestone 7 is next: memory-aware tiled output, render queues, checkpoints, high-bit-depth export and actual 16K acceptance. The full menu, dialog, variation and file-format inventories by historical release still require an audit of original 2.x, 7X and AV sources and applications.

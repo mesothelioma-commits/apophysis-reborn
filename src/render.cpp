@@ -1,8 +1,11 @@
 #include "render.hpp"
+#include "gpu.hpp"
+#include "vulkan_runtime.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <chrono>
 #include <exception>
 #include <limits>
 #include <mutex>
@@ -14,7 +17,7 @@ namespace apo {
 namespace {
 constexpr std::uint64_t quantum = (1u << 24) - 1;
 constexpr std::uint64_t max_samples = UINT64_MAX / quantum;
-constexpr std::uint64_t batch_size = 8192;
+constexpr std::uint64_t legacy_batch_size = 8192;
 constexpr int burn_in = 32;
 using Bin = std::array<std::uint64_t, 4>; // R, G, B, opacity
 struct Hit { std::size_t bin; std::array<std::uint32_t, 4> value; };
@@ -172,7 +175,8 @@ std::uint64_t default_samples(const Flame& f) {
     return static_cast<std::uint64_t>(std::max(1.0, n));
 }
 
-RenderResult render(const Flame& f, const RenderOptions& opt) {
+namespace {
+RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable) {
     check_cancelled(opt.stop_token);
     validate(f);
     if (opt.samples == 0 || opt.samples > max_samples)
@@ -192,11 +196,36 @@ RenderResult render(const Flame& f, const RenderOptions& opt) {
     const auto budget = checked_product(opt.memory_mib, 1024 * 1024);
     if (hist_bytes > budget || image_bytes > budget - hist_bytes)
         throw std::invalid_argument("Histogram and image exceed --memory-mib; reduce size or oversampling");
-    const auto batch_count = (opt.samples + batch_size - 1) / batch_size;
-    const auto per_worker = sizeof(Hit) * std::min(batch_size, opt.samples);
     const auto kernel_bytes = f.filter_radius ? std::uint64_t(kernel.taps) * sizeof(double) : 0;
     const auto remaining = budget - hist_bytes - image_bytes;
     if (kernel_bytes > remaining) throw std::invalid_argument("Filter exceeds --memory-mib");
+    const auto started = std::chrono::steady_clock::now();
+    std::string fallback;
+    if (!portable && opt.backend != RenderBackend::cpu) {
+        try {
+            if (width > UINT32_MAX || height > UINT32_MAX)
+                throw gpu::Unavailable("GPU histogram dimensions exceed the addressable range");
+            const gpu::Geometry geometry{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
+                                         kernel.padding, ppu, cs, sn};
+            auto sampled = gpu::sample(f, opt, geometry, hist_bytes + image_bytes + kernel_bytes);
+            const auto sampled_at = std::chrono::steady_clock::now();
+            auto image = develop(f, sampled.bins, ppu, opt.samples, kernel, static_cast<std::size_t>(width),
+                                 apophysis, opt.stop_token);
+            const auto finished = std::chrono::steady_clock::now();
+            RenderResult result{std::move(image), sampled.plotted, sampled.invalid, 0};
+            result.backend = RenderBackend::vulkan;
+            result.device_name = std::move(sampled.device_name);
+            result.sampling_ms = std::chrono::duration<double, std::milli>(sampled_at - started).count();
+            result.reconstruction_ms = std::chrono::duration<double, std::milli>(finished - sampled_at).count();
+            return result;
+        } catch (const gpu::Unavailable& error) {
+            if (!opt.allow_cpu_fallback) throw;
+            fallback = error.what();
+        }
+    }
+    const std::uint64_t batch_size = portable ? gpu::samples_per_chain : legacy_batch_size;
+    const auto batch_count = (opt.samples + batch_size - 1) / batch_size;
+    const auto per_worker = sizeof(Hit) * std::min(batch_size, opt.samples);
     const auto fits = (remaining - kernel_bytes) / per_worker;
     if (!fits) throw std::invalid_argument("Worker hit buffer exceeds --memory-mib");
     const unsigned hardware = std::max(1u, std::thread::hardware_concurrency());
@@ -223,7 +252,7 @@ RenderResult render(const Flame& f, const RenderOptions& opt) {
                 if (batch >= batch_count) break;
                 const auto n = std::min(batch_size, opt.samples - batch * batch_size);
                 // The stream belongs to the batch. Scheduling never selects a seed.
-                Rng rng(opt.seed + batch * UINT64_C(0x9e3779b97f4a7c15));
+                Rng rng = portable ? Rng(opt.seed, batch) : Rng(opt.seed + batch * UINT64_C(0x9e3779b97f4a7c15));
                 Orbit orbit = start(rng);
                 std::optional<std::size_t> previous;
                 std::uint64_t bad = 0;
@@ -286,6 +315,31 @@ RenderResult render(const Flame& f, const RenderOptions& opt) {
     }
     if (error) std::rethrow_exception(error);
     check_cancelled(opt.stop_token);
-    return {develop(f, bins, ppu, opt.samples, kernel, static_cast<std::size_t>(width), apophysis, opt.stop_token), plotted, invalid, workers};
+    const auto sampled_at = std::chrono::steady_clock::now();
+    RenderResult result{develop(f, bins, ppu, opt.samples, kernel, static_cast<std::size_t>(width), apophysis, opt.stop_token), plotted, invalid, workers};
+    result.fallback_reason = std::move(fallback);
+    result.device_name = portable ? "CPU compute-sequence reference" : "CPU";
+    result.sampling_ms = std::chrono::duration<double, std::milli>(sampled_at - started).count();
+    result.reconstruction_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sampled_at).count();
+    return result;
+}
+}
+
+RenderResult render(const Flame& flame, const RenderOptions& options) {
+    return render_impl(flame, options, false);
+}
+RenderResult render_compute_reference(const Flame& flame, const RenderOptions& options) {
+    return render_impl(flame, options, true);
+}
+std::string compute_support_reason(const Flame& flame) {
+    return gpu::support_reason(flame);
+}
+std::string_view backend_name(RenderBackend backend) {
+    switch (backend) {
+    case RenderBackend::cpu: return "cpu";
+    case RenderBackend::automatic: return "auto";
+    case RenderBackend::vulkan: return "vulkan";
+    }
+    return "unknown";
 }
 }

@@ -1,6 +1,7 @@
 #include "main_window.hpp"
 #include "creative_widgets.hpp"
 #include "flame_io.hpp"
+#include "gpu.hpp"
 #include "output_file.hpp"
 #include <QAction>
 #include <QApplication>
@@ -103,6 +104,141 @@ Affine compose(const Affine &left, const Affine &right) {
             left.a * right.c + left.c * right.d,          left.b * right.c + left.d * right.d,
             left.a * right.e + left.c * right.f + left.e, left.b * right.e + left.d * right.f + left.f};
 }
+
+struct RenderControls {
+    QComboBox *backend, *device;
+    QSpinBox *gpuMemory;
+    QCheckBox *fallback;
+
+    template <class Settings> void apply(Settings &settings) const {
+        settings.backend = static_cast<RenderBackend>(backend->currentData().toInt());
+        settings.device = device->currentData().toString().toStdString();
+        settings.gpu_memory_mib = std::uint64_t(gpuMemory->value());
+        settings.allow_cpu_fallback = fallback->isChecked();
+    }
+};
+
+RenderControls renderControls(QFormLayout *form, QDialog *dialog, const PreviewSettings &settings) {
+    RenderControls controls{new QComboBox, new QComboBox, new QSpinBox, new QCheckBox};
+    controls.backend->setObjectName("renderBackend");
+    controls.backend->addItem("CPU (reference)", int(RenderBackend::cpu));
+    controls.backend->addItem("Automatic (GPU when available)", int(RenderBackend::automatic));
+    controls.backend->addItem("Vulkan (FP32 sampling)", int(RenderBackend::vulkan));
+    controls.backend->setCurrentIndex(controls.backend->findData(int(settings.backend)));
+    controls.device->setObjectName("renderDevice");
+    controls.device->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    controls.device->setMinimumContentsLength(24);
+    controls.device->addItem("Automatic selection", QString{});
+    auto report = std::make_shared<ComputeInfo>();
+    try {
+        *report = compute_devices();
+    } catch (const std::exception &error) {
+        report->diagnostic = error.what();
+    }
+    for (const auto &device : report->devices) {
+        const auto label = text(device.name) + (device.software ? " (software)" : "") +
+                           (device.usable ? "" : " (unavailable)");
+        controls.device->addItem(label, text(device.id));
+    }
+    auto savedDevice = text(settings.device);
+    for (const auto &device : report->devices)
+        if (savedDevice == QString::number(device.index)) {
+            savedDevice = text(device.id);
+            break;
+        }
+    int selected = controls.device->findData(savedDevice);
+    if (selected < 0) {
+        controls.device->addItem("Saved device is currently unavailable", text(settings.device));
+        selected = controls.device->count() - 1;
+    }
+    controls.device->setCurrentIndex(selected);
+    controls.gpuMemory->setObjectName("gpuMemory");
+    controls.gpuMemory->setRange(1, 1048576);
+    controls.gpuMemory->setValue(int(std::min(settings.gpu_memory_mib, UINT64_C(1048576))));
+    controls.gpuMemory->setSuffix(" MiB");
+    controls.fallback->setObjectName("cpuFallback");
+    controls.fallback->setText("Use CPU if Vulkan cannot render this flame");
+    controls.fallback->setChecked(settings.allow_cpu_fallback);
+    form->addRow("Renderer", controls.backend);
+    form->addRow("Preferred device", controls.device);
+    form->addRow("GPU working budget", controls.gpuMemory);
+    form->addRow(QString{}, controls.fallback);
+    auto details = new QLabel;
+    details->setObjectName("computeDetails");
+    details->setWordWrap(true);
+    details->setTextFormat(Qt::PlainText);
+    details->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    details->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    details->setMinimumWidth(360);
+    form->addRow(details);
+    auto update = [controls, details, report, dialog] {
+        const auto backend = static_cast<RenderBackend>(controls.backend->currentData().toInt());
+        const bool usesGpu = backend != RenderBackend::cpu;
+        controls.device->setEnabled(usesGpu);
+        controls.gpuMemory->setEnabled(usesGpu);
+        controls.fallback->setEnabled(usesGpu);
+        QString description;
+        const auto key = controls.device->currentData().toString();
+        const auto selected = std::find_if(report->devices.begin(), report->devices.end(),
+                                           [&](const auto &device) { return text(device.id) == key; });
+        if (!usesGpu) {
+            description = "CPU rendering keeps the existing 64-bit double-precision reference path.";
+        } else if (selected != report->devices.end()) {
+            description = QString("%1 · Vulkan %2 · %3 MiB device memory\n"
+                                  "Maximum storage buffer: %4 MiB · FP64 capability: %5 · Int64: %6")
+                              .arg(text(selected->type), text(selected->api_version))
+                              .arg(qulonglong(selected->device_memory_mib))
+                              .arg(double(selected->max_storage_buffer_bytes) / 1048576, 0, 'f', 0)
+                              .arg(selected->float64 ? "yes" : "no", selected->int64 ? "yes" : "no");
+            if (!selected->reason.empty())
+                description += "\n" + text(selected->reason);
+            if (selected->software)
+                description +=
+                    "\nThis is software Vulkan on the CPU. An explicit device choice can use it; "
+                    "automatic device selection skips it.";
+        } else if (!key.isEmpty()) {
+            description =
+                "The saved device is unavailable. Choose another device or enable CPU fallback.";
+        } else {
+            const auto usable =
+                std::count_if(report->devices.begin(), report->devices.end(),
+                              [](const auto &device) { return device.usable && !device.software; });
+            description = QString("%1 usable hardware Vulkan device(s) found. ").arg(qlonglong(usable)) +
+                          "Automatic selection skips software devices.";
+            if (!report->diagnostic.empty())
+                description += "\n" + text(report->diagnostic);
+        }
+        if (usesGpu)
+            description += "\nVulkan uses 32-bit orbit calculations and CPU image reconstruction; "
+                           "the CPU reference uses 64-bit calculations. Random streams and rounding "
+                           "differ, so identical pixels across backends or devices are not guaranteed.";
+        details->setText(description);
+        controls.device->setToolTip(key);
+        // A dialog first opened on the short CPU description keeps its initial
+        // height when a word-wrapped QLabel later grows. Measure after layout
+        // has assigned the real width, then expand to include every line. Keep
+        // the largest measured height so toggling back does not shrink the UI.
+        QTimer::singleShot(0, dialog, [details, dialog] {
+            auto layout = dialog->layout();
+            if (!layout)
+                return;
+            layout->invalidate();
+            layout->activate();
+            const int needed = details->heightForWidth(details->width());
+            if (needed > details->minimumHeight())
+                details->setMinimumHeight(needed);
+            details->updateGeometry();
+            layout->invalidate();
+            const auto previousSize = dialog->size();
+            dialog->adjustSize();
+            dialog->resize(dialog->size().expandedTo(previousSize));
+        });
+    };
+    QObject::connect(controls.backend, &QComboBox::currentIndexChanged, dialog, update);
+    QObject::connect(controls.device, &QComboBox::currentIndexChanged, dialog, update);
+    update();
+    return controls;
+}
 } // namespace
 
 void applyDarkTheme() {
@@ -191,10 +327,10 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent)
     });
     help->addAction("About Apophysis Reborn", this, [this] {
         QMessageBox::about(
-            this, "Apophysis Reborn 0.5.0",
-            "Creative Tools development checkpoint\nC++20 / Qt 6 / multithreaded CPU renderer\n\n"
+            this, "Apophysis Reborn 0.6.0",
+            "GPU Rendering development checkpoint\nC++20 / Qt 6 / CPU and Vulkan compute\n\n"
             "31 registered variations, gradient and adjustment editors, seeded generation and "
-            "mutations.\n"
+            "mutations. Vulkan uses FP32 sampling with CPU image reconstruction.\n"
             "See the packaged compatibility report for historical rendering coverage.\n\n"
             "Qt and other third-party license texts accompany the portable distribution.");
     });
@@ -202,17 +338,39 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent)
     connect(&session_, &DocumentSession::changed, this, &MainWindow::refresh);
     connect(&session_, &DocumentSession::selectionChanged, this, &MainWindow::refreshSelection);
     connect(&session_, &DocumentSession::modifiedChanged, this, [this] { updateTitle(); });
+    connect(&preview_, &PreviewController::backendResolved, this,
+            [this](const QString &backend, const QString &device, const QString &fallback) {
+                previewBackend_ = backend;
+                previewDevice_ = device;
+                previewFallback_ = fallback;
+                const auto report = backend + " · " + device +
+                                    (fallback.isEmpty() ? QString{} : " · Fallback: " + fallback);
+                if (report != lastBackendReport_) {
+                    record("Preview renderer: " + report);
+                    lastBackendReport_ = report;
+                }
+            });
     connect(&preview_, &PreviewController::imageReady, this,
             [this](const QImage &image, quint64 samples, quint64 plotted, quint64 invalid,
                    unsigned workers, qint64 elapsed, bool complete) {
                 previewCanvas_->setImage(image);
-                stats_->setText(QString("%1 samples  ·  %2 workers  ·  %3 ms%4")
+                const auto execution = previewBackend_ == "Vulkan"
+                                           ? QStringLiteral("Vulkan FP32")
+                                           : QString("%1 CPU workers%2")
+                                                 .arg(workers)
+                                                 .arg(previewFallback_.isEmpty() ? "" : " (fallback)");
+                stats_->setText(QString("%1 samples  ·  %2  ·  %3 ms%4")
                                     .arg(QLocale().toString(samples))
-                                    .arg(workers)
+                                    .arg(execution)
                                     .arg(elapsed)
                                     .arg(complete ? "  ·  Refined" : ""));
-                stats_->setToolTip(
-                    QString("%1 plotted samples\n%2 invalid orbit steps").arg(plotted).arg(invalid));
+                stats_->setToolTip(QString("%1 plotted samples\n%2 invalid orbit steps\nDevice: %3%4")
+                                       .arg(plotted)
+                                       .arg(invalid)
+                                       .arg(previewDevice_)
+                                       .arg(previewFallback_.isEmpty()
+                                                ? QString{}
+                                                : "\nFallback: " + previewFallback_));
                 if (auto item = library_->item(session_.selectedFlame()))
                     item->setIcon(QPixmap::fromImage(
                         image.scaled(72, 54, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
@@ -235,9 +393,16 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent)
         record(error);
         QMessageBox::warning(this, "Render failed", error);
     });
+    connect(&exporter_, &PreviewController::backendResolved, this,
+            [this](const QString &backend, const QString &device, const QString &fallback) {
+                exportBackend_ = fallback.isEmpty() ? backend : "CPU fallback";
+                exportStatus_->setToolTip(device + (fallback.isEmpty() ? QString{} : "\n" + fallback));
+                record("File renderer: " + backend + " · " + device +
+                       (fallback.isEmpty() ? QString{} : " · Fallback: " + fallback));
+            });
     connect(&exporter_, &PreviewController::fileReady, this, [this](const QString &path) {
         record("Rendered image " + path);
-        exportStatus_->setText("Saved " + QFileInfo(path).fileName());
+        exportStatus_->setText("Saved " + QFileInfo(path).fileName() + " · " + exportBackend_);
     });
     connect(previewCanvas_, &PreviewCanvas::viewportChanged, this, [this] { requestPreview(); });
     auto timer = new QTimer(this);
@@ -259,6 +424,11 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent)
         configuration.memory_mib = settings_.value("preview/memory", 256).toULongLong();
         configuration.seed = settings_.value("preview/seed", 123456).toULongLong();
         configuration.sample_limit = settings_.value("preview/samples", 2000000).toULongLong();
+        configuration.backend = static_cast<RenderBackend>(
+            settings_.value("render/backend", int(RenderBackend::automatic)).toInt());
+        configuration.device = settings_.value("render/device").toString().toStdString();
+        configuration.gpu_memory_mib = settings_.value("render/gpuMemory", 512).toULongLong();
+        configuration.allow_cpu_fallback = settings_.value("render/cpuFallback", true).toBool();
         try {
             preview_.setSettings(configuration);
         } catch (const std::exception &) {
@@ -364,7 +534,7 @@ void MainWindow::makeActions() {
     });
     paste_->setShortcut(QKeySequence("Ctrl+Shift+V"));
     edit->addSeparator();
-    edit->addAction("Preferences…", this, &MainWindow::preferences);
+    edit->addAction("Preferences…", this, &MainWindow::preferences)->setObjectName("actionPreferences");
     auto transform = menuBar()->addMenu("&Transform");
     add_ = transform->addAction("Add transform", this, [this] {
         run([&] {
@@ -1055,7 +1225,7 @@ void MainWindow::refresh() {
         item->setText(entry.name.empty() ? QString("Untitled %1").arg(i + 1) : text(entry.name));
         const auto issue = session_.document().render_issue(i);
         item->setToolTip(text(entry.version) +
-                         (issue ? "\nPreserved · " + text(*issue) : "\nCPU preview available"));
+                         (issue ? "\nPreserved · " + text(*issue) : "\nPreview available"));
         item->setForeground(issue ? QColor("#d3af89") : palette().color(QPalette::Text));
     }
     library_->setCurrentRow(count ? session_.selectedFlame() : -1);
@@ -1083,7 +1253,7 @@ void MainWindow::refreshSelection() {
     if (available) {
         const auto &entry = session_.document().entries().at(session_.selectedFlame());
         name_->setText(text(entry.name));
-        producer_->setText(entry.version.empty() ? "Generic flame · CPU renderer" : text(entry.version));
+        producer_->setText(entry.version.empty() ? "Generic flame" : text(entry.version));
         const auto issue = session_.document().render_issue(session_.selectedFlame());
         diagnostic_->setVisible(issue.has_value());
         diagnostic_->setText(issue ? "Preservation only\n" + text(*issue) : QString{});
@@ -1233,7 +1403,7 @@ void MainWindow::editGradient() {
     const auto original = *model_;
     const bool paused = preview_.isPaused();
     preview_.setPaused(true);
-    GradientDialog dialog(original, this);
+    GradientDialog dialog(original, this, preview_.settings());
     const auto result = dialog.exec();
     preview_.setPaused(paused);
     if (result != QDialog::Accepted)
@@ -1259,7 +1429,7 @@ void MainWindow::editAdjustments() {
         return;
     const bool paused = preview_.isPaused();
     preview_.setPaused(true);
-    AdjustmentDialog dialog(*model_, this);
+    AdjustmentDialog dialog(*model_, this, preview_.settings());
     const auto result = dialog.exec();
     preview_.setPaused(paused);
     if (result != QDialog::Accepted)
@@ -1276,7 +1446,7 @@ void MainWindow::exploreFlames(bool mutation) {
     const bool paused = preview_.isPaused();
     preview_.setPaused(true);
     ExploreDialog dialog(mutation ? ExploreDialog::Mode::mutation : ExploreDialog::Mode::random,
-                         model_.value_or(demo_flame()), this);
+                         model_.value_or(demo_flame()), this, preview_.settings());
     const auto result = dialog.exec();
     preview_.setPaused(paused);
     if (result != QDialog::Accepted || dialog.acceptedFlames().empty())
@@ -1487,7 +1657,9 @@ void MainWindow::renderImage() {
     if (!model_ || exporter_.isBusy())
         return;
     QDialog dialog(this);
+    dialog.setObjectName("renderSettingsDialog");
     dialog.setWindowTitle("Render image");
+    dialog.setMinimumWidth(600);
     auto layout = new QVBoxLayout(&dialog);
     auto form = new QFormLayout;
     form->addRow(new QLabel(QString("%1 × %2 pixels").arg(model_->width).arg(model_->height)));
@@ -1508,7 +1680,8 @@ void MainWindow::renderImage() {
     memory->setSuffix(" MiB");
     form->addRow("Samples", samples);
     form->addRow("CPU workers", threads);
-    form->addRow("Buffer budget", memory);
+    form->addRow("System buffer budget", memory);
+    const auto compute = renderControls(form, &dialog, preview_.settings());
     layout->addLayout(form);
     auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttons);
@@ -1536,6 +1709,7 @@ void MainWindow::renderImage() {
         options.seed = preview_.settings().seed;
         options.threads = unsigned(threads->value());
         options.memory_mib = std::uint64_t(memory->value());
+        compute.apply(options);
         exporter_.requestFileRender(*model_, path, options);
         logDock_->show();
         logDock_->raise();
@@ -1545,7 +1719,9 @@ void MainWindow::renderImage() {
 
 void MainWindow::preferences() {
     QDialog dialog(this);
-    dialog.setWindowTitle("Preview preferences");
+    dialog.setObjectName("preferencesDialog");
+    dialog.setWindowTitle("Rendering and preview preferences");
+    dialog.setMinimumWidth(600);
     auto layout = new QVBoxLayout(&dialog);
     auto form = new QFormLayout;
     auto threads = new QSpinBox;
@@ -1559,9 +1735,10 @@ void MainWindow::preferences() {
     auto seed = new QLineEdit(QString::number(preview_.settings().seed));
     auto limit = new QLineEdit(QString::number(preview_.settings().sample_limit));
     form->addRow("CPU workers", threads);
-    form->addRow("Buffer budget", memory);
+    form->addRow("System preview budget", memory);
     form->addRow("Random seed", seed);
     form->addRow("Final preview samples", limit);
+    const auto compute = renderControls(form, &dialog, preview_.settings());
     layout->addLayout(form);
     auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttons);
@@ -1578,12 +1755,17 @@ void MainWindow::preferences() {
             throw std::runtime_error("Use an unsigned integer seed and a positive sample limit");
         s.threads = unsigned(threads->value());
         s.memory_mib = std::uint64_t(memory->value());
+        compute.apply(s);
         preview_.setSettings(s);
         if (useSettings_) {
             settings_.setValue("preview/threads", s.threads);
             settings_.setValue("preview/memory", qulonglong(s.memory_mib));
             settings_.setValue("preview/seed", qulonglong(s.seed));
             settings_.setValue("preview/samples", qulonglong(s.sample_limit));
+            settings_.setValue("render/backend", int(s.backend));
+            settings_.setValue("render/device", text(s.device));
+            settings_.setValue("render/gpuMemory", qulonglong(s.gpu_memory_mib));
+            settings_.setValue("render/cpuFallback", s.allow_cpu_fallback);
         }
         const QSignalBlocker block(quality_);
         int selected = -1;

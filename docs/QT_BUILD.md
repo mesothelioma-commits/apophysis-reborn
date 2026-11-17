@@ -1,6 +1,6 @@
 # Native Qt desktop build
 
-The 0.5.0 editor and its creative tools use Qt 6 Widgets and the same C++20 rendering and legacy-document library as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The existing core CLI remains available and shares the packaged C++ runtime. Keep the complete executable directory together.
+The 0.6.0 editor and its creative tools use Qt 6 Widgets and the same C++20 CPU/Vulkan rendering and legacy-document library as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ runtime. Keep the complete executable directory together.
 
 ## Build with an installed Qt development kit
 
@@ -12,6 +12,27 @@ bash scripts/build-editor.sh
 ```
 
 The script invokes the normal source build with `APO_BUILD_EDITOR=ON`, builds the editor and tests, and runs CTest. The Qt directory can also be supplied as `-DCMAKE_PREFIX_PATH=...`. Expat installed through vcpkg can use the existing `VCPKG_ROOT` handling in `scripts/build.sh`. A core-only build uses `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF`.
+
+## Vulkan build and runtime
+
+`APO_ENABLE_VULKAN` defaults to `ON`. The repository includes the pinned Vulkan headers under `third_party/vulkan`, readable GLSL in `shaders/orbit.comp`, and the validated embedded SPIR-V in `src/generated/orbit_spv.hpp`. An ordinary build therefore needs neither the Vulkan SDK nor a shader compiler. The application loads the platform Vulkan loader dynamically; on Windows it uses the system `vulkan-1.dll` supplied by the graphics-driver installation. The portable package does not replace that loader. Missing or unsuitable Vulkan support leaves the CPU renderer available.
+
+The complete runtime can be disabled while retaining the editor:
+
+```bash
+bash scripts/build-editor.sh -DAPO_ENABLE_VULKAN=OFF
+```
+
+For a core-only, Vulkan-disabled build, use `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF -DAPO_ENABLE_VULKAN=OFF`. The device-execution tests report skipped when Vulkan cannot run; this must not be interpreted as a passed GPU execution check. Portable packing/random-stream checks and CPU fallback checks remain useful in this configuration.
+
+After changing the shader, regenerate and validate the embedded module with the pinned glslang/SPIRV-Tools versions recorded in [GPU_TESTING.md](GPU_TESTING.md). These tools are development dependencies for shader edits, not application runtime dependencies.
+
+```bash
+python3 scripts/compile_shader.py
+python3 scripts/compile_shader.py --check
+```
+
+The script targets Vulkan 1.0, runs `spirv-val` and records source/module hashes in the generated header. `--compiler` and `--validator` can supply explicit executable paths. The [kernel guide](GPU_KERNEL.md) describes the current FP32 and atomic requirements; [GPU_RENDERING.md](GPU_RENDERING.md) describes selection, limits and fallback.
 
 ## Packaged Windows toolchain
 
@@ -69,9 +90,11 @@ export QT_QPA_PLATFORM_PLUGIN_PATH=/path/to/native-qt/usr/lib/x86_64-linux-gnu/q
 ctest --test-dir build --output-on-failure
 ```
 
-The Linux editor was compiled with Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. All 16 CTest entries passed in both Release and ASan/UBSan Debug builds. The running native desktop exercised creative editing and saved a mutation branch. The final creative smoke workflow rendered the editor and all four creative dialogs and produced all 12 required outputs.
+The Linux editor was compiled with Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. The final Release build passed all **20 CTest entries** in 3.42 seconds; the ASan/UBSan Debug build passed the same 20 in 18.37 seconds. Leak detection was disabled for the sanitizer run. A separate core-only build with Vulkan disabled had 15 CTest entries: 13 passed and the two device-execution checks were explicitly skipped.
 
-The Windows editor and twelve console executables cross-compiled against the matched Qt headers and import libraries. The staged set contains 46 files, including 44 executable/DLL/plugin PE modules. Import inspection resolved all 12,922 non-system imported symbols against the exact copied libraries, with zero missing. All staged executables match the final build. Execution of the Windows programs remains a separate platform check; cross-compilation and import inspection do not establish a Windows execution result.
+The compute tests executed through llvmpipe software Vulkan on this GPU-less host. Native desktop interaction switched CPU → Vulkan with the complete capability/precision description and buttons visible, applied the selection, previewed a gradient edit and saved `examples/gpu-palette-study.flame`. The strict GPU smoke mode reported actual Vulkan execution without fallback. These results verify the compute/API path; physical GPU performance and driver acceptance remain separate checks.
+
+The Windows editor and fourteen console executables cross-compiled against the matched Qt headers and import libraries: **15 executables** in total. The staged runtime contains **48 files**, including **46 PE modules**. Import inspection resolved all **13,232 non-system imported symbols** against the exact copied libraries, with zero missing. All staged executables match the final build. The Windows programs were compiled and audited, not executed. The system Vulkan loader is loaded dynamically, so the static import audit does not itself verify a Windows Vulkan driver.
 
 When ready to run that check on Windows 11, extract the complete milestone ZIP and run from Git Bash.
 
@@ -79,7 +102,7 @@ When ready to run that check on Windows 11, extract the complete milestone ZIP a
 bash scripts/verify-editor-windows.sh
 ```
 
-The script records the OS version, runs the core and Qt test programs, launches the editor's automated creative smoke workflow, verifies every required output and inspects the saved original, random batch and mutation flame through the CLI. It keeps a log and artifacts under the project's `logs` and `out` directories. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+The script records the OS version and Vulkan discovery, runs the CPU/core and Qt tests, checks a reported CPU fallback, and launches the editor's creative smoke workflow explicitly with the CPU backend. It verifies every required output and inspects the saved original, random batch and mutation flame through the CLI. It keeps a log and artifacts under the project's `logs` and `out` directories. A GPU is not required. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
 
 The creative workflow can also be invoked directly:
 
@@ -95,3 +118,21 @@ It waits for the main preview, renders the Gradient, Adjustment, Mutation and Ra
 | Preview image | `preview.png` |
 | Flame examples | `saved-example.flame`, `gradient-example.flame`, `adjustment-example.flame`, `mutation-example.flame`, `random-batch.flame` |
 | Palette exchange | `palette.gpl` |
+
+## Strict Vulkan checks
+
+When ready to execute the Windows GPU gate, run:
+
+```bash
+bash scripts/verify-gpu-windows.sh
+```
+
+This optional script selects a usable physical GPU by default and requires actual Vulkan execution from the formula tests, rendering comparisons, CLI export and native GPU smoke mode. `--device ID` or a zero-based index selects a specific device; an explicitly selected software implementation remains labeled as software. A skipped compute test, missing device or fallback fails the strict gate. The [Windows GPU guide](WINDOWS_GPU.md) lists its outputs, memory option and device-selection details.
+
+The native GPU smoke mode can also run directly:
+
+```bash
+./bin/windows-x64/apophysis-reborn.exe --gpu-smoke-test out/gpu-smoke --device 0
+```
+
+Choose `0` from your actual discovery inventory, or supply its ID. The mode requires Vulkan without fallback and writes `editor.png`, `preview.png`, `saved-example.flame`, `render-device.json` and `render-settings.png`. It checks actual backend identity and has a 120-second timeout. The package includes the final Linux screenshots in `preview/gpu-editor-0.6.0.png` and `preview/gpu-settings-0.6.0.png`; their device is software Vulkan. CUDA and tiled 16K acceptance are not included in this checkpoint.

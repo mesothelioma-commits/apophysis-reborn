@@ -1,20 +1,21 @@
-#include "editor/main_window.hpp"
 #include "editor/creative_widgets.hpp"
+#include "editor/main_window.hpp"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFile>
+#include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
-#include <QSpinBox>
 #include <cmath>
 
 using namespace apo;
@@ -83,6 +84,139 @@ class EditorTests : public QObject {
         QCoreApplication::setOrganizationName("ApophysisRebornTests");
         QCoreApplication::setApplicationName("EditorWorkflow");
         applyDarkTheme();
+    }
+    void rendererPreferencesPersistAndCancel() {
+        QTemporaryDir identity;
+        QVERIFY(identity.isValid());
+        struct IdentityGuard {
+            QString organization = QCoreApplication::organizationName();
+            QString application = QCoreApplication::applicationName();
+            ~IdentityGuard() {
+                QSettings temporary;
+                temporary.clear();
+                temporary.sync();
+                QCoreApplication::setOrganizationName(organization);
+                QCoreApplication::setApplicationName(application);
+            }
+        } restore;
+        QCoreApplication::setOrganizationName("ApophysisRebornTests");
+        QCoreApplication::setApplicationName("RendererPreferences-" +
+                                             QFileInfo(identity.path()).fileName());
+        {
+            MainWindow window(true);
+            QCOMPARE(window.previewController().settings().backend, RenderBackend::automatic);
+            auto initial = window.previewController().settings();
+            initial.device = "retired-device-for-settings-test";
+            window.previewController().setSettings(initial);
+            window.show();
+            QVERIFY(throughAction<QDialog>(window, "actionPreferences", [&](QDialog &dialog) {
+                QCOMPARE(dialog.objectName(), QString("preferencesDialog"));
+                auto backend = widget<QComboBox>(dialog, "renderBackend");
+                backend->setCurrentIndex(backend->findData(int(RenderBackend::vulkan)));
+                widget<QSpinBox>(dialog, "gpuMemory")->setValue(96);
+                widget<QCheckBox>(dialog, "cpuFallback")->setChecked(false);
+                QVERIFY(widget<QLabel>(dialog, "computeDetails")->text().contains("unavailable"));
+                dialog.reject();
+            }));
+            QCOMPARE(window.previewController().settings().backend, RenderBackend::automatic);
+            QCOMPARE(window.previewController().settings().gpu_memory_mib, UINT64_C(512));
+            QVERIFY(window.previewController().settings().allow_cpu_fallback);
+
+            QVERIFY(throughAction<QDialog>(window, "actionPreferences", [&](QDialog &dialog) {
+                auto backend = widget<QComboBox>(dialog, "renderBackend");
+                backend->setCurrentIndex(backend->findData(int(RenderBackend::vulkan)));
+                widget<QSpinBox>(dialog, "gpuMemory")->setValue(96);
+                widget<QCheckBox>(dialog, "cpuFallback")->setChecked(false);
+                dialog.accept();
+            }));
+            const auto &settings = window.previewController().settings();
+            QCOMPARE(settings.backend, RenderBackend::vulkan);
+            QCOMPARE(settings.device, std::string("retired-device-for-settings-test"));
+            QCOMPARE(settings.gpu_memory_mib, UINT64_C(96));
+            QVERIFY(!settings.allow_cpu_fallback);
+        }
+        {
+            MainWindow restored(true);
+            const auto &settings = restored.previewController().settings();
+            QCOMPARE(settings.backend, RenderBackend::vulkan);
+            QCOMPARE(settings.device, std::string("retired-device-for-settings-test"));
+            QCOMPARE(settings.gpu_memory_mib, UINT64_C(96));
+            QVERIFY(!settings.allow_cpu_fallback);
+        }
+    }
+    void creativeAndExportInheritRendererSelection() {
+        MainWindow window(false);
+        fastPreview(window);
+        auto settings = window.previewController().settings();
+        settings.backend = RenderBackend::vulkan;
+        settings.device = "__missing_creative_test_device__";
+        settings.gpu_memory_mib = 48;
+        settings.allow_cpu_fallback = true;
+        window.previewController().setSettings(settings);
+        window.openExample();
+        window.show();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.previewController().isBusy(), 10000);
+        QVERIFY(widget<QLabel>(window, "previewStatistics")->text().contains("fallback"));
+        const auto check = [&](QDialog &dialog) {
+            const auto controllers = dialog.findChildren<PreviewController *>();
+            QVERIFY(!controllers.isEmpty());
+            for (const auto controller : controllers) {
+                QCOMPARE(controller->settings().backend, RenderBackend::vulkan);
+                QCOMPARE(controller->settings().device, settings.device);
+                QCOMPARE(controller->settings().gpu_memory_mib, UINT64_C(48));
+                QVERIFY(controller->settings().allow_cpu_fallback);
+            }
+            dialog.reject();
+        };
+        QVERIFY(throughAction<GradientDialog>(window, "actionGradient", check));
+        QVERIFY(throughAction<AdjustmentDialog>(window, "actionAdjustments", check));
+        QVERIFY(throughAction<ExploreDialog>(window, "actionMutations", check));
+        QVERIFY(throughAction<ExploreDialog>(window, "actionRandomFlames", check));
+        QVERIFY(throughAction<QDialog>(window, "actionRender", [&](QDialog &dialog) {
+            QCOMPARE(dialog.objectName(), QString("renderSettingsDialog"));
+            QCOMPARE(widget<QComboBox>(dialog, "renderBackend")->currentData().toInt(),
+                     int(RenderBackend::vulkan));
+            QCOMPARE(widget<QComboBox>(dialog, "renderDevice")->currentData().toString(),
+                     QString::fromStdString(settings.device));
+            QCOMPARE(widget<QSpinBox>(dialog, "gpuMemory")->value(), 48);
+            QVERIFY(widget<QCheckBox>(dialog, "cpuFallback")->isChecked());
+            dialog.reject();
+        }));
+    }
+    void rendererDetailsGrowAfterBackendChange() {
+        MainWindow window(false);
+        fastPreview(window);
+        window.previewController().setPaused(true);
+        window.openExample();
+        window.show();
+        const auto checkLayout = [&](QDialog &dialog) {
+            auto backend = widget<QComboBox>(dialog, "renderBackend");
+            auto device = widget<QComboBox>(dialog, "renderDevice");
+            auto details = widget<QLabel>(dialog, "computeDetails");
+            QCOMPARE(backend->currentData().toInt(), int(RenderBackend::cpu));
+            QCoreApplication::processEvents();
+            const int originalHeight = dialog.height();
+            backend->setCurrentIndex(backend->findData(int(RenderBackend::vulkan)));
+            if (device->count() > 1)
+                device->setCurrentIndex(1);
+            QVERIFY(details->text().contains(
+                "identical pixels across backends or devices are not guaranteed"));
+            QTRY_VERIFY_WITH_TIMEOUT(details->height() >= details->heightForWidth(details->width()),
+                                     3000);
+            QVERIFY(dialog.height() >= originalHeight);
+            auto buttons = dialog.findChild<QDialogButtonBox *>();
+            QVERIFY(buttons);
+            QVERIFY(details->mapTo(&dialog, QPoint(0, details->height())).y() <=
+                    buttons->mapTo(&dialog, QPoint(0, 0)).y());
+            QVERIFY(buttons->mapTo(&dialog, QPoint(0, buttons->height())).y() <= dialog.height());
+            const int expandedHeight = dialog.height();
+            backend->setCurrentIndex(backend->findData(int(RenderBackend::cpu)));
+            QCoreApplication::processEvents();
+            QCOMPARE(dialog.height(), expandedHeight);
+            dialog.reject();
+        };
+        QVERIFY(throughAction<QDialog>(window, "actionPreferences", checkLayout));
+        QVERIFY(throughAction<QDialog>(window, "actionRender", checkLayout));
     }
     void editUndoSaveAndReopen() {
         MainWindow window(false);
@@ -216,20 +350,22 @@ class EditorTests : public QObject {
         QCOMPARE(window.session().document().bytes(), original);
         QVERIFY(!window.session().isModified());
 
-        QVERIFY(throughAction<AdjustmentDialog>(window, "actionAdjustments", [&](AdjustmentDialog &dialog) {
-            enterDialogField(widget<QLineEdit>(dialog, "adjust_gamma"), "3.125");
-            QCOMPARE(window.session().document().bytes(), original);
-            auto buttons = dialog.findChild<QDialogButtonBox *>();
-            QVERIFY(buttons);
-            QTest::mouseClick(buttons->button(QDialogButtonBox::Cancel), Qt::LeftButton);
-        }));
+        QVERIFY(
+            throughAction<AdjustmentDialog>(window, "actionAdjustments", [&](AdjustmentDialog &dialog) {
+                enterDialogField(widget<QLineEdit>(dialog, "adjust_gamma"), "3.125");
+                QCOMPARE(window.session().document().bytes(), original);
+                auto buttons = dialog.findChild<QDialogButtonBox *>();
+                QVERIFY(buttons);
+                QTest::mouseClick(buttons->button(QDialogButtonBox::Cancel), Qt::LeftButton);
+            }));
         QCOMPARE(window.session().document().bytes(), original);
         QCOMPARE(window.session().undoStack().index(), 0);
-        QVERIFY(throughAction<AdjustmentDialog>(window, "actionAdjustments", [&](AdjustmentDialog &dialog) {
-            enterDialogField(widget<QLineEdit>(dialog, "adjust_gamma"), "3.125");
-            enterDialogField(widget<QLineEdit>(dialog, "adjust_brightness"), "1.75");
-            QTest::mouseClick(widget<QPushButton>(dialog, "acceptAdjustments"), Qt::LeftButton);
-        }));
+        QVERIFY(
+            throughAction<AdjustmentDialog>(window, "actionAdjustments", [&](AdjustmentDialog &dialog) {
+                enterDialogField(widget<QLineEdit>(dialog, "adjust_gamma"), "3.125");
+                enterDialogField(widget<QLineEdit>(dialog, "adjust_brightness"), "1.75");
+                QTest::mouseClick(widget<QPushButton>(dialog, "acceptAdjustments"), Qt::LeftButton);
+            }));
         const auto adjusted = window.session().document().render_model(0);
         QCOMPARE(adjusted.gamma, 3.125);
         QCOMPARE(adjusted.brightness, 1.75);
@@ -254,7 +390,8 @@ class EditorTests : public QObject {
             QTRY_VERIFY_WITH_TIMEOUT(addBatch->isEnabled(), 10000);
             if (dialog.candidates().size() != 2) {
                 QTest::mouseClick(widget<QPushButton>(dialog, "generateCandidates"), Qt::LeftButton);
-                QTRY_VERIFY_WITH_TIMEOUT(addBatch->isEnabled() && dialog.candidates().size() == 2, 10000);
+                QTRY_VERIFY_WITH_TIMEOUT(addBatch->isEnabled() && dialog.candidates().size() == 2,
+                                         10000);
             }
             for (const auto &flame : dialog.candidates())
                 generatedNames.push_back(flame.name);
@@ -299,7 +436,8 @@ class EditorTests : public QObject {
         fastPreview(window);
         window.openExample();
         auto annotated = window.session().document().bytes();
-        const std::string history = "<!-- creative provenance --><edit><flame name='Historical parent'/></edit>";
+        const std::string history =
+            "<!-- creative provenance --><edit><flame name='Historical parent'/></edit>";
         annotated.insert(annotated.rfind("</flame>"), history);
         window.session().loadBytes(annotated);
         window.show();

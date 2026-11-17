@@ -13,7 +13,7 @@
 
 namespace apo::editor {
 namespace {
-std::filesystem::path nativePath(const QString& value) {
+std::filesystem::path nativePath(const QString &value) {
 #ifdef _WIN32
     return std::filesystem::path(value.toStdWString());
 #else
@@ -35,11 +35,11 @@ Flame fittedPreview(Flame flame, QSize viewport) {
     return flame;
 }
 
-QImage copiedImage(const Image& image) {
-    return QImage(image.rgb.data(), image.width, image.height, image.width * 3,
-                  QImage::Format_RGB888).copy();
+QImage copiedImage(const Image &image) {
+    return QImage(image.rgb.data(), image.width, image.height, image.width * 3, QImage::Format_RGB888)
+        .copy();
 }
-}
+} // namespace
 
 struct PreviewController::Worker {
     struct Job {
@@ -49,7 +49,7 @@ struct PreviewController::Worker {
         QString output;
     };
 
-    PreviewController* const owner;
+    PreviewController *const owner;
     std::mutex mutex;
     std::condition_variable wake;
     std::optional<Job> pending;
@@ -57,7 +57,7 @@ struct PreviewController::Worker {
     bool closing = false;
     std::jthread thread;
 
-    explicit Worker(PreviewController* controller) : owner(controller), thread([this] { run(); }) {}
+    explicit Worker(PreviewController *controller) : owner(controller), thread([this] { run(); }) {}
     ~Worker() {
         {
             std::lock_guard lock(mutex);
@@ -87,9 +87,13 @@ struct PreviewController::Worker {
     // Qt owns the event callback. Destruction removes queued callbacks after the
     // worker has joined, and generation filtering rejects an already queued old image.
     void post(quint64 generation, std::function<void()> callback) {
-        QMetaObject::invokeMethod(owner, [controller = owner, generation, callback = std::move(callback)] {
-            if (controller->generation_ == generation) callback();
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            owner,
+            [controller = owner, generation, callback = std::move(callback)] {
+                if (controller->generation_ == generation)
+                    callback();
+            },
+            Qt::QueuedConnection);
     }
 
     void run() {
@@ -98,7 +102,8 @@ struct PreviewController::Worker {
             {
                 std::unique_lock lock(mutex);
                 wake.wait(lock, [this] { return closing || pending.has_value(); });
-                if (closing) return;
+                if (closing)
+                    return;
                 job = std::move(pending);
                 pending.reset();
                 active = std::stop_source();
@@ -106,9 +111,9 @@ struct PreviewController::Worker {
             }
             try {
                 renderJob(*job);
-            } catch (const RenderCancelled&) {
+            } catch (const RenderCancelled &) {
                 // The GUI already published the replacement, pause or stop state.
-            } catch (const std::exception& error) {
+            } catch (const std::exception &error) {
                 const auto message = QString::fromUtf8(error.what());
                 post(job->generation, [controller = owner, message] {
                     controller->setBusy(false);
@@ -119,12 +124,13 @@ struct PreviewController::Worker {
         }
     }
 
-    void renderJob(Job& job) {
+    void renderJob(Job &job) {
         const bool file = !job.output.isEmpty();
-        std::vector<std::uint64_t> passes = file
-            ? std::vector<std::uint64_t>{job.options.samples}
-            : std::vector<std::uint64_t>{std::min(UINT64_C(80000), job.options.samples),
-                                        std::min(UINT64_C(400000), job.options.samples), job.options.samples};
+        std::vector<std::uint64_t> passes =
+            file ? std::vector<std::uint64_t>{job.options.samples}
+                 : std::vector<std::uint64_t>{std::min(UINT64_C(80000), job.options.samples),
+                                              std::min(UINT64_C(400000), job.options.samples),
+                                              job.options.samples};
         passes.erase(std::unique(passes.begin(), passes.end()), passes.end());
         QElapsedTimer elapsed;
         elapsed.start();
@@ -133,17 +139,23 @@ struct PreviewController::Worker {
             options.samples = passes[pass];
             int lastPercent = -1;
             // The core invokes progress serially, even with several sampling workers.
-            options.progress = [this, &job, pass, count = passes.size(), &lastPercent]
-                (std::uint64_t completed, std::uint64_t total) {
+            options.progress = [this, &job, pass, count = passes.size(),
+                                &lastPercent](std::uint64_t completed, std::uint64_t total) {
                 const int percent = int((100 * pass + completed * 100 / total) / count);
-                if (percent == lastPercent) return;
+                if (percent == lastPercent)
+                    return;
                 lastPercent = percent;
-                post(job.generation, [controller = owner, percent] {
-                    emit controller->progressChanged(percent);
-                });
+                post(job.generation,
+                     [controller = owner, percent] { emit controller->progressChanged(percent); });
             };
             auto result = render(job.flame, options);
-            if (options.stop_token.stop_requested()) throw RenderCancelled();
+            if (options.stop_token.stop_requested())
+                throw RenderCancelled();
+            const QString backend = result.backend == RenderBackend::vulkan ? QStringLiteral("Vulkan")
+                                                                            : QStringLiteral("CPU");
+            const QString device = QString::fromStdString(result.device_name);
+            const QString fallback = QString::fromStdString(result.fallback_reason);
+            const QString execution = !fallback.isEmpty() ? QStringLiteral("CPU fallback") : backend;
             const bool finalPass = pass + 1 == passes.size();
             const qint64 duration = elapsed.elapsed();
             if (file) {
@@ -151,27 +163,35 @@ struct PreviewController::Worker {
                 if (suffix != "bmp" && suffix != "ppm")
                     throw std::invalid_argument("Choose a BMP or PPM file for the render");
                 write_image(nativePath(job.output), result.image, suffix == "bmp", options.stop_token);
-                post(job.generation, [controller = owner, path = job.output] {
-                    controller->setBusy(false);
-                    emit controller->progressChanged(100);
-                    emit controller->statusChanged(QStringLiteral("Render saved"));
-                    emit controller->fileReady(path);
-                });
+                post(job.generation,
+                     [controller = owner, path = job.output, backend, device, fallback, execution] {
+                         controller->setBusy(false);
+                         emit controller->progressChanged(100);
+                         emit controller->backendResolved(backend, device, fallback);
+                         emit controller->statusChanged(QStringLiteral("Render saved · ") + execution);
+                         emit controller->fileReady(path);
+                     });
             } else {
                 auto image = copiedImage(result.image);
-                post(job.generation, [controller = owner, image = std::move(image), samples = options.samples,
-                                     plotted = result.plotted, invalid = result.invalid,
-                                     workers = result.workers, duration, finalPass] {
-                    if (finalPass) controller->setBusy(false);
-                    emit controller->statusChanged(finalPass ? QStringLiteral("Preview ready") : QStringLiteral("Refining preview"));
-                    emit controller->imageReady(image, samples, plotted, invalid, workers, duration, finalPass);
+                post(job.generation, [controller = owner, image = std::move(image),
+                                      samples = options.samples, plotted = result.plotted,
+                                      invalid = result.invalid, workers = result.workers, duration,
+                                      finalPass, backend, device, fallback, execution] {
+                    if (finalPass)
+                        controller->setBusy(false);
+                    emit controller->backendResolved(backend, device, fallback);
+                    emit controller->statusChanged((finalPass ? QStringLiteral("Preview ready · ")
+                                                              : QStringLiteral("Refining preview · ")) +
+                                                   execution);
+                    emit controller->imageReady(image, samples, plotted, invalid, workers, duration,
+                                                finalPass);
                 });
             }
         }
     }
 };
 
-PreviewController::PreviewController(QObject* parent) : QObject(parent) {
+PreviewController::PreviewController(QObject *parent) : QObject(parent) {
     debounce_.setSingleShot(true);
     connect(&debounce_, &QTimer::timeout, this, &PreviewController::queuePreview);
     worker_ = std::make_unique<Worker>(this);
@@ -184,7 +204,8 @@ PreviewController::~PreviewController() {
 }
 
 void PreviewController::setBusy(bool busy) {
-    if (busy_ == busy) return;
+    if (busy_ == busy)
+        return;
     busy_ = busy;
     emit busyChanged(busy);
 }
@@ -196,14 +217,20 @@ void PreviewController::invalidate() {
     emit progressChanged(0);
 }
 
-void PreviewController::setSettings(const PreviewSettings& settings) {
-    if (!settings.sample_limit || !settings.memory_mib || settings.debounce_ms < 0)
-        throw std::invalid_argument("Preview samples and memory must be positive; delay must be nonnegative");
+void PreviewController::setSettings(const PreviewSettings &settings) {
+    if (!settings.sample_limit || !settings.memory_mib || !settings.gpu_memory_mib ||
+        settings.debounce_ms < 0)
+        throw std::invalid_argument(
+            "Preview samples and memory budgets must be positive; delay must be nonnegative");
+    if (settings.backend != RenderBackend::cpu && settings.backend != RenderBackend::automatic &&
+        settings.backend != RenderBackend::vulkan)
+        throw std::invalid_argument("Choose CPU, Automatic or Vulkan rendering");
     settings_ = settings;
-    if (latest_) request(*latest_, viewport_);
+    if (latest_)
+        request(*latest_, viewport_);
 }
 
-void PreviewController::request(const Flame& flame, QSize viewport) {
+void PreviewController::request(const Flame &flame, QSize viewport) {
     latest_ = flame;
     viewport_ = viewport;
     invalidate();
@@ -217,12 +244,17 @@ void PreviewController::request(const Flame& flame, QSize viewport) {
 }
 
 void PreviewController::queuePreview() {
-    if (!latest_ || paused_) return;
+    if (!latest_ || paused_)
+        return;
     RenderOptions options;
     options.samples = settings_.sample_limit;
     options.seed = settings_.seed;
     options.memory_mib = settings_.memory_mib;
     options.threads = settings_.threads;
+    options.backend = settings_.backend;
+    options.device = settings_.device;
+    options.gpu_memory_mib = settings_.gpu_memory_mib;
+    options.allow_cpu_fallback = settings_.allow_cpu_fallback;
     if (!options.threads) {
         const auto hardware = std::thread::hardware_concurrency();
         options.threads = hardware > 1 ? hardware - 1 : 1;
@@ -230,7 +262,7 @@ void PreviewController::queuePreview() {
     try {
         validate(*latest_);
         worker_->submit({fittedPreview(*latest_, viewport_), options, generation_, {}});
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         setBusy(false);
         const auto message = QString::fromUtf8(error.what());
         emit statusChanged(message);
@@ -238,7 +270,8 @@ void PreviewController::queuePreview() {
     }
 }
 
-void PreviewController::requestFileRender(const Flame& flame, const QString& path, RenderOptions options) {
+void PreviewController::requestFileRender(const Flame &flame, const QString &path,
+                                          RenderOptions options) {
     invalidate();
     latest_.reset();
     paused_ = false;
@@ -254,7 +287,8 @@ void PreviewController::requestFileRender(const Flame& flame, const QString& pat
 }
 
 void PreviewController::setPaused(bool paused) {
-    if (paused_ == paused) return;
+    if (paused_ == paused)
+        return;
     paused_ = paused;
     if (!paused_ && latest_) {
         request(*latest_, viewport_);
@@ -267,7 +301,8 @@ void PreviewController::setPaused(bool paused) {
 
 void PreviewController::restart() {
     paused_ = false;
-    if (latest_) request(*latest_, viewport_);
+    if (latest_)
+        request(*latest_, viewport_);
 }
 
 void PreviewController::stop() {
@@ -276,4 +311,4 @@ void PreviewController::stop() {
     setBusy(false);
     emit statusChanged(QStringLiteral("Stopped"));
 }
-}
+} // namespace apo::editor

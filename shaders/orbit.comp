@@ -1,0 +1,339 @@
+#version 450
+
+// Vulkan 1.0: no 64-bit shader types or optional atomic extensions are required.
+// Host contract and packed offsets are documented in src/gpu_kernel.hpp/.cpp.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer Model { uint model[]; };
+layout(set = 0, binding = 1, std430) buffer Histogram { uint histogram[]; };
+layout(set = 0, binding = 2, std430) buffer Counters { uint counters[]; };
+layout(set = 0, binding = 3, std430) buffer Probes { uint probes[]; };
+layout(push_constant) uniform Dispatch {
+    uint mode;
+    uint chain_base_low;
+    uint chain_base_high;
+    uint chain_count;
+    uint last_chain_samples;
+    uint seed_low;
+    uint seed_high;
+    uint reserved;
+} command;
+
+const float PI = 3.14159265358979323846;
+const float EPSILON = 1e-10;
+const float QUANTUM = 16777215.0;
+const uint NONE = 0xffffffffu;
+uint rngState;
+vec4 blurRing[65];
+uint blurCursor[65];
+bool blurInitialized[65];
+
+float value(uint offset) { return uintBitsToFloat(model[offset]); }
+uint transformBase(uint index) { return model[2] + index * 24u; }
+uint mix32(uint x) {
+    x ^= x >> 16u;
+    x *= 0x7feb352du;
+    x ^= x >> 15u;
+    x *= 0x846ca68bu;
+    return x ^ (x >> 16u);
+}
+uint seedState(uint seedLow, uint seedHigh, uint streamLow, uint streamHigh) {
+    return mix32(seedLow ^ mix32(seedHigh + 0x9e3779b9u) ^
+                 mix32(streamLow + 0x85ebca6bu) ^ mix32(streamHigh + 0xc2b2ae35u));
+}
+float unit() {
+    rngState = rngState * 747796405u + 2891336453u;
+    uint word = ((rngState >> ((rngState >> 28u) + 4u)) ^ rngState) * 277803737u;
+    word = (word >> 22u) ^ word;
+    return float(word >> 8u) * (1.0 / 16777216.0);
+}
+void resetBlur() {
+    for (uint i = 0u; i < 65u; ++i) blurInitialized[i] = false;
+}
+vec3 startOrbit() {
+    float x = 2.0 * unit() - 1.0;
+    float y = 2.0 * unit() - 1.0;
+    float color = unit();
+    return vec3(x, y, color);
+}
+bool finiteOrbit(vec3 orbit) { return !any(isnan(orbit)) && !any(isinf(orbit)); }
+vec2 invalidPoint() { return vec2(uintBitsToFloat(0x7fc00000u)); }
+float historicalAngle(float x, float y) {
+    // atan(0,0) is undefined in GLSL; retain atan2's signed-zero convention.
+    if (x == 0.0 && y == 0.0) {
+        bool negativeX = (floatBitsToUint(x) & 0x80000000u) != 0u;
+        return (floatBitsToUint(y) & 0x80000000u) != 0u ? (negativeX ? -PI : PI) : x;
+    }
+    return atan(x, y);
+}
+float remainderTowardZero(float numerator, float denominator) {
+    return numerator - denominator * trunc(numerator / denominator);
+}
+vec2 preBlur(uint index, uint flags) {
+    float radius = -2.0;
+    float direction;
+    if ((flags & 1u) != 0u) {
+        if (!blurInitialized[index]) {
+            for (uint j = 0u; j < 4u; ++j) blurRing[index][j] = unit();
+            blurCursor[index] = 0u;
+            blurInitialized[index] = true;
+        }
+        for (uint j = 0u; j < 4u; ++j) radius += blurRing[index][j];
+        direction = unit();
+        blurRing[index][blurCursor[index]] = (flags & 2u) != 0u ? unit() : direction;
+        blurCursor[index] = (blurCursor[index] + 1u) % 4u;
+    } else {
+        for (uint j = 0u; j < 4u; ++j) radius += unit();
+        direction = unit();
+    }
+    float angle = 2.0 * PI * direction;
+    return radius * vec2(cos(angle), sin(angle));
+}
+vec2 variation(uint kind, vec2 p, uint base, uint flags) {
+    float x = p.x, y = p.y;
+    float r2 = x * x + y * y;
+    bool historical = (flags & 1u) != 0u;
+    float guard = historical ? 0.0 : EPSILON;
+    switch (kind) {
+    case 0u: return p;
+    case 1u: return sin(p);
+    case 2u: {
+        float divisor = r2 + guard;
+        return divisor == 0.0 && historical ? vec2(0.0) : p / divisor;
+    }
+    case 3u: {
+        float s = sin(r2), c = cos(r2);
+        return vec2(x * s - y * c, x * c + y * s);
+    }
+    case 4u: {
+        float divisor = sqrt(r2) + guard;
+        return divisor == 0.0 && historical ? vec2(0.0) :
+            vec2((x - y) * (x + y), 2.0 * x * y) / divisor;
+    }
+    case 5u: return vec2(historicalAngle(x, y) / PI, sqrt(r2) - 1.0);
+    case 6u: {
+        float r = sqrt(r2), a = historicalAngle(x, y);
+        return r * vec2(sin(a + r), cos(a - r));
+    }
+    case 7u: {
+        float r = sqrt(r2), a = historicalAngle(x, y) * r;
+        return r * vec2(sin(a), -cos(a));
+    }
+    case 8u: {
+        float a = historicalAngle(x, y) / PI, phase = PI * sqrt(r2);
+        return a * vec2(sin(phase), cos(phase));
+    }
+    case 9u: {
+        float r = sqrt(r2), guarded = r + EPSILON;
+        if (r == 0.0) return invalidPoint();
+        return vec2(y / r + sin(guarded), x / r - cos(guarded)) / guarded;
+    }
+    case 10u: {
+        if (historical) return r2 == 0.0 ? vec2(0.0, y) : vec2(x / r2, y);
+        float r = sqrt(r2), guarded = r + EPSILON;
+        if (r == 0.0) return invalidPoint();
+        return vec2((x / r) / guarded, (y / r) * guarded);
+    }
+    case 11u: {
+        float r = sqrt(r2);
+        return r == 0.0 ? invalidPoint() : vec2((x / r) * cos(r), (y / r) * sin(r));
+    }
+    case 12u: {
+        float a = historicalAngle(x, y), r = sqrt(r2);
+        float s = sin(a + r), c = cos(a - r);
+        float first = r * s * s * s, second = r * c * c * c;
+        return vec2(first + second, first - second);
+    }
+    case 13u: {
+        float a = historicalAngle(x, y) * 0.5 + (unit() < 0.5 ? PI : 0.0);
+        return sqrt(sqrt(r2)) * vec2(cos(a), sin(a));
+    }
+    case 14u: return vec2(x < 0.0 ? 2.0 * x : x, y < 0.0 ? y / 2.0 : y);
+    case 15u: {
+        float e = value(base + 4u), f = value(base + 5u);
+        float dx = 1.0 / (e * e + guard), dy = 1.0 / (f * f + guard);
+        return vec2(x + value(base + 2u) * sin(y * dx), y + value(base + 3u) * sin(x * dy));
+    }
+    case 16u: return (2.0 / (sqrt(r2) + 1.0)) * p.yx;
+    case 17u: return vec2(x + value(base + 4u) * sin(tan(3.0 * y)),
+                          y + value(base + 5u) * sin(tan(3.0 * x)));
+    case 18u: {
+        float extent = exp(x - 1.0), phase = PI * y;
+        return extent * vec2(cos(phase), sin(phase));
+    }
+    case 19u: {
+        float r = sqrt(r2);
+        if (r == 0.0) return historical ? vec2(0.0) : invalidPoint();
+        float extent = pow(r, x / r);
+        return extent * vec2(y / r, x / r);
+    }
+    case 20u: {
+        float phase = PI * x;
+        return vec2(cos(phase) * cosh(y), -sin(phase) * sinh(y));
+    }
+    case 21u: {
+        float e = value(base + 4u), spacing = e * e + guard, r = sqrt(r2);
+        if (r == 0.0) return historical ? vec2(0.0) : invalidPoint();
+        float extent = historical
+            ? 2.0 * r - spacing * (trunc((r / spacing + 1.0) / 2.0) * 2.0 + r)
+            : remainderTowardZero(r + spacing, 2.0 * spacing) - spacing + r * (1.0 - spacing);
+        return extent * vec2(y / r, x / r);
+    }
+    case 22u: {
+        float e = value(base + 4u), period = PI * (e * e + guard), halfPeriod = 0.5 * period;
+        float a = historicalAngle(x, y);
+        if (historical) {
+            float turns = (a + value(base + 5u)) / period;
+            a += turns - trunc(turns) > 0.5 ? -halfPeriod : halfPeriod;
+        } else {
+            a += remainderTowardZero(a + value(base + 5u), period) > halfPeriod ? -halfPeriod : halfPeriod;
+        }
+        return sqrt(r2) * vec2(cos(a), sin(a));
+    }
+    case 27u: return (2.0 / (sqrt(r2) + 1.0)) * p;
+    case 28u: return p / (1.0 + r2 / 4.0);
+    case 29u: return vec2(sin(x), y);
+    case 31u:
+    case 34u: {
+        float direction = unit() * 2.0 * PI;
+        float extent = unit();
+        vec2 delta = extent * vec2(cos(direction), sin(direction));
+        return kind == 31u ? delta * p : delta;
+    }
+    case 32u: {
+        float power = float(int(model[base + 16u]));
+        float branch = floor(unit() * abs(power));
+        float theta = (historicalAngle(y, x) + 2.0 * PI * branch) / power;
+        float r = pow(r2, value(base + 17u) / (2.0 * power));
+        return r * vec2(cos(theta), sin(theta));
+    }
+    case 64u: {
+        float e = 0.5 * exp(x), inverse = 0.25 / e;
+        float d = e + inverse - cos(y);
+        float divisor = d == 0.0 && historical ? 1e-6 : d;
+        return vec2(e - inverse, sin(y)) / divisor;
+    }
+    }
+    return invalidPoint();
+}
+vec3 applyTransform(uint index, vec3 previous) {
+    uint base = transformBase(index), flags = model[base + 18u];
+    precise vec2 inputPoint = vec2(value(base) * previous.x + value(base + 2u) * previous.y + value(base + 4u),
+                                  value(base + 1u) * previous.x + value(base + 3u) * previous.y + value(base + 5u));
+    float blur = value(base + 21u);
+    if (blur != 0.0) inputPoint += blur * preBlur(index, flags);
+    precise vec2 sum = vec2(0.0);
+    uint first = model[base + 19u];
+    for (uint i = 0u; i < model[base + 20u]; ++i) {
+        uint term = first + 2u * i;
+        sum += value(term + 1u) * variation(model[term], inputPoint, base, flags);
+    }
+    precise vec2 result = vec2(value(base + 6u) * sum.x + value(base + 8u) * sum.y + value(base + 10u),
+                              value(base + 7u) * sum.x + value(base + 9u) * sum.y + value(base + 11u));
+    precise float color = (1.0 - value(base + 13u)) * previous.z + value(base + 13u) * value(base + 12u);
+    return vec3(result, color);
+}
+uint choose(float draw, uint previous) {
+    uint first = model[3] + (previous == NONE ? 0u : previous + 1u) * model[0];
+    for (uint i = 0u; i < model[0]; ++i)
+        if (draw < value(first + i)) return i;
+    return model[0] - 1u; // Last normalized boundary is exactly one.
+}
+vec3 paletteColor(float color, bool historical) {
+    uint index;
+    float t = 0.0;
+    if (historical && model[6] == 0u) {
+        index = uint(roundEven(clamp(color, 0.0, 1.0) * 255.0));
+    } else {
+        float position = clamp(color * 256.0, 0.0, 255.0);
+        index = uint(position);
+        if (model[6] != 0u && index < 255u) t = position - float(index);
+    }
+    uint first = model[4] + 3u * index;
+    vec3 a = vec3(value(first), value(first + 1u), value(first + 2u));
+    if (t == 0.0) return a;
+    vec3 b = vec3(value(first + 3u), value(first + 4u), value(first + 5u));
+    return mix(a, b, t);
+}
+uint fixedValue(float v) { return uint(min(QUANTUM, floor(clamp(v, 0.0, 1.0) * QUANTUM + 0.5))); }
+void addHistogram(uint word, uint v) {
+    uint old = atomicAdd(histogram[word], v);
+    if (old + v < old) atomicAdd(histogram[word + 1u], 1u);
+}
+void addCounter(uint word, uint v) {
+    uint old = atomicAdd(counters[word], v);
+    if (old + v < old) atomicAdd(counters[word + 1u], 1u);
+}
+void sampleChain(uint invocation) {
+    uint streamLow = command.chain_base_low + invocation;
+    uint streamHigh = command.chain_base_high + (streamLow < command.chain_base_low ? 1u : 0u);
+    rngState = seedState(command.seed_low, command.seed_high, streamLow, streamHigh);
+    resetBlur();
+    vec3 orbit = startOrbit();
+    uint previous = NONE, warmup = 32u, plotted = 0u, invalid = 0u;
+    uint samples = invocation + 1u == command.chain_count ? command.last_chain_samples : 256u;
+    bool historical = model[5] != 0u;
+    for (uint i = 0u; i < samples + 32u; ++i) {
+        uint index = choose(unit(), previous);
+        orbit = applyTransform(index, orbit);
+        if (!finiteOrbit(orbit)) {
+            ++invalid;
+            orbit = startOrbit();
+            previous = NONE;
+            warmup = 32u;
+            continue;
+        }
+        previous = index;
+        if (warmup != 0u) { --warmup; continue; }
+        float visibility = value(transformBase(index) + 15u);
+        if (visibility == 0.0) continue;
+        if (historical && visibility < 1.0 && unit() >= visibility) continue;
+        vec3 samplePoint = orbit;
+        if (model[1] != NONE) {
+            float opacity = value(transformBase(model[1]) + 14u);
+            if (historical || opacity == 1.0 || (opacity > 0.0 && unit() < opacity))
+                samplePoint = applyTransform(model[1], orbit);
+            if (!finiteOrbit(samplePoint)) { ++invalid; continue; }
+        }
+        float dx = samplePoint.x - value(13u), dy = samplePoint.y - value(14u);
+        precise float x = ((value(16u) * dx - value(17u) * dy) * value(15u) + float(model[10]) * 0.5) *
+                           float(model[12]) + float(model[9]);
+        precise float y = ((value(17u) * dx + value(16u) * dy) * value(15u) + float(model[11]) * 0.5) *
+                           float(model[12]) + float(model[9]);
+        if (!(x >= 0.0 && x < float(model[7]) && y >= 0.0 && y < float(model[8]))) continue;
+        if (historical) {
+            x = min(float(model[7] - 1u), roundEven(x * (1.0 - 0.5 / float(model[7]))));
+            y = min(float(model[8] - 1u), roundEven(y * (1.0 - 0.5 / float(model[8]))));
+        }
+        vec3 color = paletteColor(samplePoint.z, historical);
+        uint first = (uint(y) * model[7] + uint(x)) * 8u;
+        if (historical) {
+            for (uint c = 0u; c < 3u; ++c) addHistogram(first + 2u * c, uint(roundEven(color[c] * 255.0)) * 200u / 256u);
+            addHistogram(first + 6u, 200u);
+        } else {
+            for (uint c = 0u; c < 3u; ++c) addHistogram(first + 2u * c, fixedValue(visibility * color[c]));
+            addHistogram(first + 6u, fixedValue(visibility));
+        }
+        ++plotted;
+    }
+    addCounter(0u, plotted);
+    addCounter(2u, invalid);
+}
+void probeTransform(uint invocation) {
+    uint base = invocation * 16u;
+    uint index = probes[base];
+    vec3 orbit = vec3(uintBitsToFloat(probes[base + 1u]), uintBitsToFloat(probes[base + 2u]),
+                      uintBitsToFloat(probes[base + 3u]));
+    rngState = seedState(probes[base + 4u], probes[base + 5u], probes[base + 6u], probes[base + 7u]);
+    resetBlur();
+    for (uint i = 0u; i < probes[base + 12u]; ++i) orbit = applyTransform(index, orbit);
+    probes[base + 8u] = floatBitsToUint(orbit.x);
+    probes[base + 9u] = floatBitsToUint(orbit.y);
+    probes[base + 10u] = floatBitsToUint(orbit.z);
+    probes[base + 11u] = floatBitsToUint(unit());
+}
+void main() {
+    uint invocation = gl_GlobalInvocationID.x;
+    if (invocation >= command.chain_count) return;
+    if (command.mode == 1u) probeTransform(invocation);
+    else sampleChain(invocation);
+}

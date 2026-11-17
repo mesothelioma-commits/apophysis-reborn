@@ -13,7 +13,7 @@ bin=./bin/windows-x64
 for file in apophysis-reborn.exe editor-tests.exe creative-editor-tests.exe preview-tests.exe document-session-tests.exe canvas-tests.exe Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll Qt6Test.dll platforms/qwindows.dll; do
     [[ -f "$bin/$file" ]] || { echo "Missing $bin/$file. Extract the complete milestone ZIP."; exit 1; }
 done
-echo "Apophysis Reborn 0.5.0 desktop verification / $(date -Iseconds)"
+echo "Apophysis Reborn 0.6.0 desktop verification / $(date -Iseconds)"
 cmd.exe //c ver
 bash scripts/verify-windows.sh --no-open
 "$bin/document-session-tests.exe"
@@ -21,7 +21,7 @@ bash scripts/verify-windows.sh --no-open
 "$bin/canvas-tests.exe"
 "$bin/editor-tests.exe"
 "$bin/creative-editor-tests.exe"
-"$bin/apophysis-reborn.exe" --creative-smoke-test "$run_dir"
+"$bin/apophysis-reborn.exe" --creative-smoke-test "$run_dir" --backend cpu
 for file in editor.png preview.png saved-example.flame \
     gradient-editor.png adjustment-editor.png mutation-explorer.png random-explorer.png \
     gradient-example.flame adjustment-example.flame mutation-example.flame random-batch.flame palette.gpl; do
@@ -32,6 +32,7 @@ done
 "$bin/flame-cpu.exe" inspect "$run_dir/mutation-example.flame" --json
 sha256sum "$bin/apophysis-reborn.exe" "$bin/Qt6Core.dll" "$bin/Qt6Gui.dll" "$bin/Qt6Widgets.dll"
 echo "Desktop checks completed. Smoke-test output: $run_dir"
+echo "Vulkan execution is a separate optional gate: bash scripts/verify-gpu-windows.sh"
 if [[ "${1:-}" != "--no-open" ]]; then
     MSYS2_ARG_CONV_EXCL='*' explorer.exe "$(cygpath -w "$run_dir")" >/dev/null 2>&1 &
 fi

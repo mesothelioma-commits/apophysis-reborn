@@ -2,12 +2,15 @@
 #include "flame_io.hpp"
 #include "main_window.hpp"
 #include "output_file.hpp"
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QCommandLineParser>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
@@ -26,7 +29,7 @@ void creativeSmoke(apo::editor::MainWindow &window, const QString &path) {
     };
     auto state = std::make_shared<State>();
     const auto flame = window.session().document().render_model(0);
-    auto gradient = new GradientDialog(flame, &window);
+    auto gradient = new GradientDialog(flame, &window, window.previewController().settings());
     gradient->resize(1080, 730);
     gradient->findChild<QComboBox *>("palettePresets")->setCurrentIndex(1);
     gradient->findChild<QPushButton *>("usePalettePreset")->click();
@@ -89,14 +92,14 @@ void creativeSmoke(apo::editor::MainWindow &window, const QString &path) {
             dialog->deleteLater();
             ++state->stage;
             if (state->stage == 1) {
-                auto next = new AdjustmentDialog(flame, &window);
+                auto next = new AdjustmentDialog(flame, &window, window.previewController().settings());
                 next->resize(980, 680);
                 next->findChild<QTabWidget *>("adjustmentTabs")->setCurrentIndex(1);
                 state->dialog = next;
             } else if (state->stage < 4) {
                 state->dialog = new ExploreDialog(state->stage == 2 ? ExploreDialog::Mode::mutation
                                                                     : ExploreDialog::Mode::random,
-                                                  flame, &window);
+                                                  flame, &window, window.previewController().settings());
                 state->dialog->resize(1280, 790);
             } else {
                 timer->stop();
@@ -118,7 +121,7 @@ int main(int argc, char **argv) {
     QApplication application(argc, argv);
     application.setOrganizationName("ApophysisReborn");
     application.setApplicationName("Apophysis Reborn");
-    application.setApplicationVersion("0.5.0");
+    application.setApplicationVersion("0.6.0");
     QCommandLineParser parser;
     parser.setApplicationDescription("Native flame library and transform editor");
     parser.addHelpOption();
@@ -132,41 +135,124 @@ int main(int argc, char **argv) {
         "Render the main editor and all creative dialogs, save examples and screenshots, then exit.",
         "directory");
     parser.addOption(creativeSmokeOption);
+    QCommandLineOption gpuSmokeOption(
+        "gpu-smoke-test",
+        "Require a Vulkan preview, save its renderer report and settings screenshot, then exit.",
+        "directory");
+    parser.addOption(gpuSmokeOption);
+    QCommandLineOption backendOption("backend", "Renderer: cpu, auto or vulkan.", "mode");
+    QCommandLineOption deviceOption("device", "Vulkan discovery ID or zero-based device index.",
+                                    "device");
+    QCommandLineOption gpuMemoryOption("gpu-memory-mib", "Vulkan working-buffer budget in MiB.", "MiB");
+    QCommandLineOption strictOption("no-fallback",
+                                    "Fail when Vulkan cannot render instead of using CPU fallback.");
+    parser.addOptions({backendOption, deviceOption, gpuMemoryOption, strictOption});
     parser.process(application);
     apo::editor::applyDarkTheme();
     try {
         const bool creative = parser.isSet(creativeSmokeOption);
-        const bool testing = parser.isSet(smoke) || creative;
+        const bool gpu = parser.isSet(gpuSmokeOption);
+        const bool testing = parser.isSet(smoke) || creative || gpu;
+        if (int(parser.isSet(smoke)) + int(creative) + int(gpu) > 1)
+            throw std::invalid_argument("Choose only one smoke-test mode");
         apo::editor::MainWindow window(!testing);
+        auto configuration = window.previewController().settings();
+        if (gpu) {
+            configuration.backend = apo::RenderBackend::vulkan;
+            configuration.allow_cpu_fallback = false;
+        }
+        if (parser.isSet(backendOption)) {
+            const auto name = parser.value(backendOption);
+            if (name == "cpu")
+                configuration.backend = apo::RenderBackend::cpu;
+            else if (name == "auto")
+                configuration.backend = apo::RenderBackend::automatic;
+            else if (name == "vulkan")
+                configuration.backend = apo::RenderBackend::vulkan;
+            else
+                throw std::invalid_argument("--backend must be cpu, auto or vulkan");
+        }
+        if (parser.isSet(deviceOption))
+            configuration.device = parser.value(deviceOption).toStdString();
+        if (parser.isSet(gpuMemoryOption)) {
+            bool ok = false;
+            configuration.gpu_memory_mib = parser.value(gpuMemoryOption).toULongLong(&ok);
+            if (!ok || !configuration.gpu_memory_mib)
+                throw std::invalid_argument("--gpu-memory-mib must be a positive integer");
+        }
+        if (parser.isSet(strictOption))
+            configuration.allow_cpu_fallback = false;
+        if (gpu && configuration.backend != apo::RenderBackend::vulkan)
+            throw std::invalid_argument("--gpu-smoke-test requires the Vulkan backend");
+        window.previewController().setSettings(configuration);
         if (testing) {
             window.resize(1420, 900);
-            const auto path = parser.value(creative ? creativeSmokeOption : smoke);
+            const auto path = parser.value(gpu        ? gpuSmokeOption
+                                           : creative ? creativeSmokeOption
+                                                      : smoke);
             if (!QDir().mkpath(path))
                 throw std::runtime_error("Cannot create smoke-test output directory");
             auto started = std::make_shared<bool>(false);
-            QObject::connect(&window.previewController(), &apo::editor::PreviewController::imageReady,
-                             &window,
-                             [&window, path, creative, started](const QImage &image, quint64, quint64,
-                                                                quint64, unsigned, qint64, bool final) {
-                                 if (!final || *started)
-                                     return;
-                                 *started = true;
-                                 QTimer::singleShot(100, &window, [&window, path, image, creative] {
-                                     bool ok = image.save(path + "/preview.png") &&
-                                               window.grab().save(path + "/editor.png");
-                                     try {
-                                         window.session().save(path + "/saved-example.flame");
-                                     } catch (const std::exception &) {
-                                         ok = false;
-                                     }
-                                     if (ok && creative) {
-                                         window.previewController().setPaused(true);
-                                         creativeSmoke(window, path);
-                                     } else
-                                         QCoreApplication::exit(ok ? 0 : 1);
-                                 });
+            auto renderer = std::make_shared<QJsonObject>();
+            QObject::connect(
+                &window.previewController(), &apo::editor::PreviewController::backendResolved, &window,
+                [renderer](const QString &backend, const QString &device, const QString &fallback) {
+                    renderer->insert("backend", backend);
+                    renderer->insert("device_name", device);
+                    renderer->insert("fallback_reason", fallback);
+                });
+            QObject::connect(&window.previewController(), &apo::editor::PreviewController::failed,
+                             &window, [](const QString &error) {
+                                 std::cerr << error.toStdString() << '\n';
+                                 QCoreApplication::exit(1);
                              });
-            QTimer::singleShot(creative ? 120000 : 30000, &application,
+            QObject::connect(
+                &window.previewController(), &apo::editor::PreviewController::imageReady, &window,
+                [&window, path, creative, gpu, started, renderer](
+                    const QImage &image, quint64, quint64, quint64, unsigned, qint64, bool final) {
+                    if (!final || *started)
+                        return;
+                    *started = true;
+                    QTimer::singleShot(100, &window, [&window, path, image, creative, gpu, renderer] {
+                        bool ok = image.save(path + "/preview.png") &&
+                                  window.grab().save(path + "/editor.png");
+                        try {
+                            window.session().save(path + "/saved-example.flame");
+                            if (gpu) {
+                                ok = ok && renderer->value("backend").toString() == "Vulkan" &&
+                                     renderer->value("fallback_reason").toString().isEmpty();
+                                const auto bytes = QJsonDocument(*renderer).toJson();
+                                apo::write_atomic(
+                                    apo::editor::filesystemPath(path + "/render-device.json"),
+                                    [&](std::ostream &out) { out << bytes.toStdString(); });
+                            }
+                        } catch (const std::exception &) {
+                            ok = false;
+                        }
+                        if (ok && creative) {
+                            window.previewController().setPaused(true);
+                            creativeSmoke(window, path);
+                        } else if (ok && gpu) {
+                            window.previewController().setPaused(true);
+                            QTimer::singleShot(150, &window, [&window, path] {
+                                auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                                const bool saved = dialog &&
+                                                   dialog->objectName() == "preferencesDialog" &&
+                                                   dialog->grab().save(path + "/render-settings.png");
+                                if (dialog)
+                                    dialog->reject();
+                                QCoreApplication::exit(saved ? 0 : 1);
+                            });
+                            auto action = window.findChild<QAction *>("actionPreferences");
+                            if (action)
+                                action->trigger();
+                            else
+                                QCoreApplication::exit(1);
+                        } else
+                            QCoreApplication::exit(ok ? 0 : 1);
+                    });
+                });
+            QTimer::singleShot(creative || gpu ? 120000 : 30000, &application,
                                [] { QCoreApplication::exit(2); });
             window.openExample();
             window.show();
@@ -182,7 +268,7 @@ int main(int argc, char **argv) {
         }
         return application.exec();
     } catch (const std::exception &error) {
-        if (parser.isSet(smoke) || parser.isSet(creativeSmokeOption)) {
+        if (parser.isSet(smoke) || parser.isSet(creativeSmokeOption) || parser.isSet(gpuSmokeOption)) {
             std::cerr << error.what() << '\n';
             return 1;
         }

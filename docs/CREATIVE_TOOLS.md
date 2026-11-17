@@ -1,8 +1,14 @@
-# Creative tools guide — 0.5.0
+# Creative tools guide — 0.6.0
 
-This checkpoint adds native gradient, adjustment, random-generation and mutation workflows to the desktop editor. Each tool previews its own working copy. Applying a result changes the flame library through the document session, so the committed operation can be undone from the main window. Cancel leaves the loaded flame unchanged.
+The desktop editor provides native gradient, adjustment, random-generation and mutation workflows. Each tool previews its own working copy. Applying a result changes the flame library through the document session, so the committed operation can be undone from the main window. Cancel leaves the loaded flame unchanged.
 
 The primary library, transform, saving and recovery controls are described in [EDITOR.md](EDITOR.md). Platform verification and outstanding acceptance checks are recorded in [TEST_PLAN.md](TEST_PLAN.md).
+
+## Preview renderer
+
+The four tools inherit the renderer, preferred device, GPU working budget and fallback policy selected in **Edit → Preferences**. They retain smaller preview sample limits: up to 400,000 for a selected flame and 80,000 for candidate thumbnails. A smaller configured preview limit is respected. The selected preview reports its execution path, and thumbnail tooltips identify their backend and any CPU fallback reason.
+
+Vulkan uses FP32 orbit calculations and the existing CPU reconstruction. The CPU reference uses double precision and its original random stream, so switching backends can change preview pixels. Random generation and mutation still produce the same model for matching generation options and seed; the renderer controls how that model is sampled for display. Read [GPU_RENDERING.md](GPU_RENDERING.md) for capability checks, software-device labeling, memory limits and strict Vulkan behavior.
 
 ## Gradient editor
 
@@ -159,4 +165,4 @@ Palette libraries and exported GPL files are independent saved files. Canceling 
 
 The RGB channel curves in the Gradient editor are baked into the embedded palette. They do not implement the legacy `curves` reconstruction parameter. Non-default legacy reconstruction curves, active density estimation, additional filter families, direct-color extensions and alpha/transparency output remain outside this checkpoint. The background and existing BMP/PPM image output are opaque RGB.
 
-This milestone continues to use the multithreaded CPU renderer. GPU acceleration, tiled high-resolution output, native 16K acceptance and platform acceptance on Windows are tracked separately. See [FEATURE_MATRIX.md](FEATURE_MATRIX.md) and [COMPATIBILITY.md](COMPATIBILITY.md) for the broader inventory.
+The tools can preview through the multithreaded CPU renderer or the Vulkan compute backend, with an explicit fallback policy. Physical GPU/platform acceptance, tiled high-resolution output and native 16K acceptance are recorded separately. See [GPU_RENDERING.md](GPU_RENDERING.md), [FEATURE_MATRIX.md](FEATURE_MATRIX.md) and [COMPATIBILITY.md](COMPATIBILITY.md) for the broader inventory.

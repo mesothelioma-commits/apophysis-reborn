@@ -52,3 +52,20 @@ The generator uses documented Reborn sampling distributions. Exact historical ra
 ### Continue with Milestone 6
 
 Start from `v0.5.0-creative` and the source commit in BUILD.txt. Preserve the CPU engine and all producer-aware oracle checks while adding device discovery and a real GPU rendering backend. Vulkan is the cross-vendor target; CUDA is optional. Report actual available devices and capability gaps, keep CPU fallback available, and compare numerical behavior and rendered output on real hardware before marking acceleration verified. Tiled 16K output, checkpointing and queues remain Milestone 7 work. The creative and advanced-editor compatibility backlog stays explicit in FEATURE_MATRIX.md and CREATIVE_TOOLS.md.
+
+
+## 0.6.0 — GPU Rendering
+
+Added dynamically loaded Vulkan compute sampling, device/capability discovery and explicit CPU/Automatic/Vulkan selection. The shader covers all 31 supported variations, transform and Xaos selection, affine/final/color behavior, palette/opacity sampling and projection. FP32 orbit calculations feed exact integer histogram totals through low/high 32-bit atomic words. The existing CPU code retains density reconstruction, Gaussian filtering, gamma, vibrancy, background and image output.
+
+Compute invocations own 256-sample chains and a portable PCG-style 32-bit stream. A separate CPU comparison path uses those same streams with double formulas; the normal MT19937-64 CPU renderer and its earlier golden images remain unchanged. Admission checks diagnose unsupported FP32 models and probabilities. Resource limits, failure reasons, bounded submissions, cancellation and explicit fallback are part of the public render result and CLI contract. Cancellation does not restart a CPU render.
+
+The desktop persists renderer, device and GPU-budget/fallback preferences and exposes actual execution in previews, file output and creative dialogs. New saved settings default to Automatic with fallback; the CLI defaults to CPU. Automatic device selection skips software Vulkan unless a device is explicitly selected. Dedicated Windows checks require the chosen device throughout probes, integration tests, CLI output and the native GPU smoke workflow.
+
+Executed evidence includes the 20-entry native Release and ASan/UBSan suites, 1,560 shader transform probes and five matched-stream image fixtures. The image fixtures produced identical RGB8 output on the tested llvmpipe device. A Vulkan-disabled core build passed 13 entries and correctly skipped the two device-dependent suites. Windows builds produce 15 executables; the final 48-file runtime audit resolves 13,232 non-system imports across 46 PE modules with zero missing. Windows programs were compiled and audited, not executed. [GPU_TESTING.md](GPU_TESTING.md) and [TEST_PLAN.md](TEST_PLAN.md) retain the exact evidence and boundaries.
+
+The execution environment provides software Vulkan only. Physical-GPU performance, NVIDIA/AMD/Intel driver acceptance and Windows runtime acceptance remain open. CUDA is not implemented. Normal source builds use the embedded shader and 13 pinned official Vulkan C headers with license/provenance; no Vulkan SDK or shader compiler is needed unless regenerating the shader.
+
+### Continue with Milestone 7
+
+Start from the 0.6.0 source commit in BUILD.txt. Extend the shared reconstruction/output pipeline with memory-aware tiling or streaming while preserving CPU and Vulkan sampling contracts and source-independent renderer preferences. Define deterministic tile boundaries and filter gutters, then verify seams, decoded dimensions, memory use, responsiveness and cancellation before accepting 16K output. Add render queues, durable checkpoints and resume, and high-bit-depth formats with explicit color/alpha semantics. Preserve atomic destination replacement and report actual backend/fallback for every queued job. Physical-GPU and Windows acceptance remain separate gates; the outstanding historical/creative/editor inventory stays in [FEATURE_MATRIX.md](FEATURE_MATRIX.md).

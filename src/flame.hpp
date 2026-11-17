@@ -75,6 +75,9 @@ struct Flame {
 class Rng {
 public:
     explicit Rng(std::uint64_t seed) : engine_(seed) {}
+    // Separate portable stream for CPU/compute comparisons. One-argument
+    // construction retains the original MT19937-64 sequence and golden images.
+    Rng(std::uint64_t seed, std::uint64_t stream);
     Point pre_blur_offset(const VariationParameters& transform);
     double unit(); // Exactly 53 random bits, in [0,1).
 private:
@@ -84,6 +87,7 @@ private:
         unsigned cursor = 0;
     };
     std::mt19937_64 engine_;
+    std::optional<std::uint32_t> portable_state_;
     std::vector<BlurHistory> blur_histories_; // Per transform, private to this orbit stream.
 };
 
@@ -100,6 +104,8 @@ public:
     // Flame must have passed validate(). Each row is weighted by destination weight and source chaos.
     explicit TransformChooser(const Flame& flame);
     std::size_t pick(double unit, std::optional<std::size_t> previous = {}) const;
+    const std::vector<double>& initial() const { return initial_; }
+    const std::vector<std::vector<double>>& rows() const { return rows_; }
 private:
     std::vector<double> initial_;
     std::vector<std::vector<double>> rows_;

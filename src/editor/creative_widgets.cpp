@@ -123,12 +123,26 @@ void fitDialog(QDialog *dialog, QSize desired) {
         dialog->screen() ? dialog->screen()->availableGeometry().size() - QSize(40, 70) : desired;
     dialog->resize(desired.boundedTo(available));
 }
-void configurePreview(PreviewController &preview, std::uint64_t samples = 400000) {
-    auto settings = preview.settings();
-    settings.sample_limit = samples;
-    settings.threads = 2;
+void configurePreview(PreviewController &preview, PreviewSettings settings,
+                      std::uint64_t samples = 400000) {
+    settings.sample_limit = std::min(settings.sample_limit, samples);
+    if (!settings.threads)
+        settings.threads = 2;
     settings.debounce_ms = 80;
     preview.setSettings(settings);
+}
+QLabel *rendererCaption(PreviewController &preview, QWidget *parent) {
+    auto label = new QLabel("Preparing preview…", parent);
+    label->setObjectName("previewRenderer");
+    label->setWordWrap(true);
+    QObject::connect(&preview, &PreviewController::backendResolved, label,
+                     [label](const QString &backend, const QString &device, const QString &fallback) {
+                         label->setText(!fallback.isEmpty()   ? "CPU fallback · " + fallback
+                                        : backend == "Vulkan" ? "Vulkan FP32 · " + device
+                                                              : "CPU reference preview");
+                         label->setToolTip(device + (fallback.isEmpty() ? QString{} : "\n" + fallback));
+                     });
+    return label;
 }
 QString paletteFolder() {
     return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/palettes";
@@ -194,12 +208,12 @@ void PaletteStrip::mouseMoveEvent(QMouseEvent *event) {
         choose(event->position().x());
 }
 
-GradientDialog::GradientDialog(const Flame &flame, QWidget *parent)
+GradientDialog::GradientDialog(const Flame &flame, QWidget *parent, const PreviewSettings &settings)
     : QDialog(parent), flame_(flame), preview_(this), history_{flame.palette} {
     setObjectName("gradientDialog");
     setWindowTitle("Gradient editor");
     fitDialog(this, {1080, 730});
-    configurePreview(preview_);
+    configurePreview(preview_, settings);
     auto layout = new QVBoxLayout(this);
     auto top = new QHBoxLayout;
     presets_ = new QComboBox;
@@ -344,6 +358,10 @@ GradientDialog::GradientDialog(const Flame &flame, QWidget *parent)
     connect(&preview_, &PreviewController::imageReady, this,
             [this](const QImage &image) { canvas_->setImage(image); });
     connect(&preview_, &PreviewController::statusChanged, status_, &QLabel::setText);
+    connect(&preview_, &PreviewController::backendResolved, status_,
+            [this](const QString &, const QString &device, const QString &fallback) {
+                status_->setToolTip(device + (fallback.isEmpty() ? QString{} : "\n" + fallback));
+            });
     connect(canvas_, &PreviewCanvas::viewportChanged, this, [this] { requestPreview(); });
     connect(strip_, &PaletteStrip::indexSelected, index_, &QSpinBox::setValue);
     connect(index_, &QSpinBox::valueChanged, this, [this](int index) {
@@ -603,13 +621,13 @@ void GradientDialog::exportPaletteFile(const QString &path) const {
     write_atomic(filesystemPath(path), [&](std::ostream &out) { out << bytes; });
 }
 
-AdjustmentDialog::AdjustmentDialog(const Flame &flame, QWidget *parent)
+AdjustmentDialog::AdjustmentDialog(const Flame &flame, QWidget *parent, const PreviewSettings &settings)
     : QDialog(parent), original_(flame), flame_(flame), preview_(this),
       aspectRatio_(double(flame.width) / flame.height) {
     setObjectName("adjustmentDialog");
     setWindowTitle("Adjustment editor");
     fitDialog(this, {980, 680});
-    configurePreview(preview_);
+    configurePreview(preview_, settings);
     auto layout = new QVBoxLayout(this);
     auto split = new QSplitter;
     auto tabs = new QTabWidget;
@@ -704,6 +722,7 @@ AdjustmentDialog::AdjustmentDialog(const Flame &flame, QWidget *parent)
     status_->setObjectName("adjustmentStatus");
     status_->setWordWrap(true);
     layout->addWidget(status_);
+    layout->addWidget(rendererCaption(preview_, this));
     auto bottom = new QHBoxLayout;
     auto reset = button("Reset to original", "resetAdjustments");
     bottom->addWidget(reset);
@@ -896,15 +915,16 @@ LegacyEdits AdjustmentDialog::edits() const {
     return result;
 }
 
-ExploreDialog::ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *parent)
+ExploreDialog::ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *parent,
+                             const PreviewSettings &settings)
     : QDialog(parent), mode_(mode), initial_(parentFlame), branches_{{parentFlame, -1}}, preview_(this),
       thumbnails_(this) {
     const bool mutation = mode == Mode::mutation;
     setObjectName(mutation ? "mutationDialog" : "randomFlameDialog");
     setWindowTitle(mutation ? "Mutation explorer" : "Random flame generator");
     fitDialog(this, {1280, 790});
-    configurePreview(preview_);
-    configurePreview(thumbnails_, 80000);
+    configurePreview(preview_, settings);
+    configurePreview(thumbnails_, settings, 80000);
     auto thumbnailSettings = thumbnails_.settings();
     thumbnailSettings.debounce_ms = 0;
     thumbnails_.setSettings(thumbnailSettings);
@@ -1019,6 +1039,7 @@ ExploreDialog::ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *paren
     canvas_->setMessage("Choose a candidate to preview");
     canvas_->setMinimumSize(240, 220);
     comparisonLayout->addWidget(canvas_, 1);
+    comparisonLayout->addWidget(rendererCaption(preview_, comparison));
     showParent_ = check("Compare with parent", "compareMutationParent", false);
     comparisonLayout->addWidget(showParent_);
     history_ = new QComboBox;
@@ -1122,6 +1143,14 @@ ExploreDialog::ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *paren
                         .arg(thumbnail_)
                         .arg(tiles_.size()));
                 QTimer::singleShot(0, this, &ExploreDialog::nextThumbnail);
+            });
+    connect(&thumbnails_, &PreviewController::backendResolved, this,
+            [this](const QString &backend, const QString &device, const QString &fallback) {
+                if (generating_ || thumbnail_ >= int(tiles_.size()))
+                    return;
+                const auto details =
+                    !fallback.isEmpty() ? "CPU fallback: " + fallback : backend + " · " + device;
+                tiles_[thumbnail_]->setToolTip(tiles_[thumbnail_]->toolTip() + "\n" + details);
             });
     connect(&thumbnails_, &PreviewController::failed, this, [this](const QString &message) {
         if (generating_ || thumbnail_ >= int(tiles_.size()))

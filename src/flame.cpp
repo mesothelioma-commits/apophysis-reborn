@@ -165,7 +165,27 @@ std::string_view variation_name(Variation id) {
     throw std::invalid_argument("unrecognized variation id");
 }
 
+Rng::Rng(std::uint64_t seed, std::uint64_t stream) : engine_(seed) {
+    const auto mix = [](std::uint32_t x) {
+        x ^= x >> 16;
+        x *= 0x7feb352du;
+        x ^= x >> 15;
+        x *= 0x846ca68bu;
+        return x ^ (x >> 16);
+    };
+    portable_state_ = mix(std::uint32_t(seed) ^ mix(std::uint32_t(seed >> 32) + 0x9e3779b9u) ^
+                          mix(std::uint32_t(stream) + 0x85ebca6bu) ^
+                          mix(std::uint32_t(stream >> 32) + 0xc2b2ae35u));
+}
+
 double Rng::unit() {
+    if (portable_state_) {
+        auto& state = *portable_state_;
+        state = state * 747796405u + 2891336453u;
+        std::uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+        word = (word >> 22u) ^ word;
+        return double(word >> 8) * 0x1p-24;
+    }
     return static_cast<double>(engine_() >> 11) * 0x1p-53;
 }
 

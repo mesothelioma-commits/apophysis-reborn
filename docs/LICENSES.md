@@ -1,6 +1,6 @@
 # Dependency and reference notices
 
-The 0.5.0 desktop distribution dynamically links Qt 6.8.2, the C++ runtime, and the font/text libraries selected by the deployed DLL dependency closure. Expat remains statically linked. The Qt runtime notices and exact package hashes are under `licenses/qt`. Complete corresponding LGPL source archives, including MSYS2 recipes and patches, accompany the distribution in `third-party-sources`. Rebuilding and relinking instructions are in [QT_BUILD.md](QT_BUILD.md). [Qt licensing](https://www.qt.io/licensing/open-source-lgpl-obligations)
+The 0.6.0 desktop distribution dynamically links Qt 6.8.2, the C++ runtime, and the font/text libraries selected by the deployed DLL dependency closure. Expat remains statically linked. The Qt runtime notices and exact package hashes are under `licenses/qt`. Complete corresponding LGPL source archives, including MSYS2 recipes and patches, accompany the distribution in `third-party-sources`. Rebuilding and relinking instructions are in [QT_BUILD.md](QT_BUILD.md). [Qt licensing](https://www.qt.io/licensing/open-source-lgpl-obligations)
 
 The earlier 0.2.0 and 0.3.0 Windows console binaries linked Expat 2.10.0 and the LLVM-MinGW C++/threading runtime statically. The distribution includes the upstream notices under `licenses/windows/`, including Expat, LLVM, compiler-rt, libc++, libc++abi, libunwind, MinGW-w64, and winpthreads. Native source builds use the Expat installation selected by CMake. See WINDOWS_BUILD.md for exact build inputs and hashes.
 
@@ -13,3 +13,11 @@ The 0.3.0 historical corpus records asset-specific provenance in tests/legacy/AT
 
 
 The 0.5.0 extended variation oracle generates vectors by compiling hash-checked original FLAM3 C functions and Apophysis 2.09 Pascal methods in temporary builds. The pinned references, original numerical conventions and generator are documented in VARIATIONS.md. The ten new sample flames and seven bundled palette presets are new Reborn examples; no historical palette catalog or third-party artwork was copied for this increment. GPL palette exchange follows GIMP’s published file-format specification linked in CREATIVE_ALGORITHMS.md.
+
+## Vulkan headers and development tools in 0.6.0
+
+`third_party/vulkan` contains 13 unmodified official C headers from Khronos Vulkan-Headers **v1.4.309**: the core/API/platform headers and the video-codec headers referenced by the core interface. Their copyright notices and **Apache-2.0** SPDX identifiers remain intact. The upstream repository also contains MIT-licensed files; its license notice and both complete license texts are retained, along with source provenance and checksums. [Included provenance](../third_party/vulkan/README.md) · [Upstream pinned source](https://github.com/KhronosGroup/Vulkan-Headers/tree/v1.4.309)
+
+The application dynamically loads the operating system's Vulkan loader. The portable Windows package does not bundle a Vulkan loader, vendor GPU driver, Mesa software driver or CUDA runtime. CPU rendering remains available without them. The shader source and generated SPIR-V header accompany the application source; unchanged source builds do not need a Vulkan SDK or shader compiler. The included regeneration script uses separately installed glslang and SPIRV-Tools.
+
+Development verification used Debian packages for glslang, SPIRV-Tools, the Vulkan tools/validation layer and Mesa llvmpipe. These are external development tools rather than shipped runtime DLLs. Package identities, checksums and the software-device classification are recorded with verification evidence. The shader's PCG-style integer stream and its exact constants/conversion are documented in [GPU_KERNEL.md](GPU_KERNEL.md). The earlier historical variation formulas and their oracle references retain the attribution and scope described above. [GPU comparison methods](GPU_TESTING.md) · [Windows verification scope](WINDOWS_GPU.md)

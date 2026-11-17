@@ -1,10 +1,10 @@
 #include "editor/preview_controller.hpp"
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
-#include <QElapsedTimer>
 
 using namespace apo;
 using namespace apo::editor;
@@ -28,11 +28,11 @@ PreviewSettings quickSettings() {
     result.threads = 2;
     return result;
 }
-}
+} // namespace
 
 class PreviewTests : public QObject {
     Q_OBJECT
-private slots:
+  private slots:
     void progressiveAndLatest() {
         PreviewController controller;
         controller.setSettings(quickSettings());
@@ -60,7 +60,7 @@ private slots:
         images.clear();
         QTRY_VERIFY_WITH_TIMEOUT(!controller.isBusy(), 10000);
         QVERIFY(!images.isEmpty());
-        for (const auto& signal : images) {
+        for (const auto &signal : images) {
             image = qvariant_cast<QImage>(signal.at(0));
             QCOMPARE(image.size(), QSize(60, 30));
             QCOMPARE(image.pixelColor(30, 15).red(), 0);
@@ -129,6 +129,65 @@ private slots:
         QCOMPARE(failures.count(), 0);
         QVERIFY(saved.open(QIODevice::ReadOnly));
         QCOMPARE(saved.readAll(), original);
+    }
+
+    void backendFallbackAndStrictFailure() {
+        PreviewController controller;
+        auto settings = quickSettings();
+        settings.backend = RenderBackend::vulkan;
+        settings.device = "__missing_preview_test_device__";
+        settings.gpu_memory_mib = 32;
+        controller.setSettings(settings);
+        QSignalSpy images(&controller, &PreviewController::imageReady);
+        QSignalSpy backends(&controller, &PreviewController::backendResolved);
+        QSignalSpy failures(&controller, &PreviewController::failed);
+        controller.request(coloredPoint({0, 0, 1}), QSize(40, 20));
+        QTRY_VERIFY_WITH_TIMEOUT(!controller.isBusy(), 10000);
+        QCOMPARE(failures.count(), 0);
+        QCOMPARE(images.count(), 2);
+        QCOMPARE(backends.count(), 2);
+        for (const auto &signal : backends) {
+            QCOMPARE(signal.at(0).toString(), QString("CPU"));
+            QVERIFY(!signal.at(2).toString().isEmpty());
+        }
+        const auto image = qvariant_cast<QImage>(images.back().at(0));
+        QVERIFY(image.pixelColor(20, 10).blue() > 0);
+
+        images.clear();
+        backends.clear();
+        settings.allow_cpu_fallback = false;
+        controller.setSettings(settings);
+        QTRY_VERIFY_WITH_TIMEOUT(!controller.isBusy(), 10000);
+        QCOMPARE(failures.count(), 1);
+        QCOMPARE(images.count(), 0);
+        QCOMPARE(backends.count(), 0);
+        auto invalid = settings;
+        invalid.gpu_memory_mib = 0;
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument, controller.setSettings(invalid));
+        QCOMPARE(controller.settings().gpu_memory_mib, UINT64_C(32));
+    }
+
+    void strictBackendFailureKeepsExistingOutput() {
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        const auto path = folder.filePath("keep existing.ppm");
+        QFile original(path);
+        QVERIFY(original.open(QIODevice::WriteOnly));
+        QCOMPARE(original.write("keep these bytes"), qint64(16));
+        original.close();
+        PreviewController controller;
+        QSignalSpy complete(&controller, &PreviewController::fileReady);
+        QSignalSpy failures(&controller, &PreviewController::failed);
+        RenderOptions options{10000, 13, 2};
+        options.backend = RenderBackend::vulkan;
+        options.device = "__missing_export_test_device__";
+        options.allow_cpu_fallback = false;
+        controller.requestFileRender(coloredPoint({1, 0, 0}), path, options);
+        QTRY_VERIFY_WITH_TIMEOUT(!controller.isBusy(), 10000);
+        QCOMPARE(complete.count(), 0);
+        QCOMPARE(failures.count(), 1);
+        QVERIFY(original.open(QIODevice::ReadOnly));
+        QCOMPARE(original.readAll(), QByteArray("keep these bytes"));
     }
 };
 

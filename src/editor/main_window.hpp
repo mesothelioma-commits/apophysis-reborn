@@ -70,6 +70,8 @@ class MainWindow : public QMainWindow {
         *moveUp_, *moveDown_;
     QAction *gradient_, *adjustments_, *mutations_, *randomFlames_, *duplicateFlame_, *deleteFlame_;
     QByteArray defaultLayout_;
+    QString previewBackend_ = "CPU", previewDevice_ = "CPU", previewFallback_, lastBackendReport_;
+    QString exportBackend_ = "CPU";
 
     void makeActions();
     void makeLibrary();

@@ -47,7 +47,8 @@ class PaletteStrip : public QWidget {
 class GradientDialog : public QDialog {
     Q_OBJECT
   public:
-    explicit GradientDialog(const Flame &flame, QWidget *parent = nullptr);
+    explicit GradientDialog(const Flame &flame, QWidget *parent = nullptr,
+                            const PreviewSettings &settings = {});
     ~GradientDialog() override;
     const Flame &resultFlame() const {
         return flame_;
@@ -82,7 +83,8 @@ class GradientDialog : public QDialog {
 class AdjustmentDialog : public QDialog {
     Q_OBJECT
   public:
-    explicit AdjustmentDialog(const Flame &flame, QWidget *parent = nullptr);
+    explicit AdjustmentDialog(const Flame &flame, QWidget *parent = nullptr,
+                              const PreviewSettings &settings = {});
     ~AdjustmentDialog() override;
     const Flame &resultFlame() const {
         return flame_;
@@ -111,7 +113,8 @@ class ExploreDialog : public QDialog {
   public:
     enum class Mode { random, mutation };
     enum class Disposition { replace, append };
-    ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *parent = nullptr);
+    ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *parent = nullptr,
+                  const PreviewSettings &settings = {});
     ~ExploreDialog() override;
     const std::vector<Flame> &candidates() const {
         return candidates_;

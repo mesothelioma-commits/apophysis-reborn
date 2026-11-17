@@ -1,6 +1,6 @@
-# Native Editor guide — 0.5.0
+# Native Editor guide — 0.6.0
 
-Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU engine and legacy document model as the command-line tools. It starts with Ember Spiral when a file has not been supplied. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md).
+Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU/Vulkan rendering paths and legacy document model as the command-line tools. It starts with Ember Spiral when a file has not been supplied. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md); device selection and backend behavior are described in [GPU_RENDERING.md](GPU_RENDERING.md).
 
 ## Open a flame library
 
@@ -14,7 +14,7 @@ A preservation-only entry displays its first render blocker. Its name, output di
 
 ## Live preview
 
-The preview restarts after a flame parameter changes. It renders a quick pass, then increases the sample count through successive passes. The standard sequence is 80,000 samples, 400,000 samples, and the selected final limit. Presets provide **Draft · 400k**, **Standard · 2M**, and **Fine · 8M**. The statistics show samples, workers, elapsed time, and completion. Hover over the statistics for plotted samples and invalid orbit steps.
+The preview restarts after a flame parameter changes. It renders a quick pass, then increases the sample count through successive passes. The standard sequence is 80,000 samples, 400,000 samples, and the selected final limit. Presets provide **Draft · 400k**, **Standard · 2M**, and **Fine · 8M**. The statistics show samples, the actual Vulkan backend or CPU worker count, elapsed time, and completion. Hover over the statistics for plotted samples, invalid orbit steps, the device and any fallback reason. The Activity panel records backend changes.
 
 Use **Pause preview** to stop preview work. Releasing Pause starts the latest edited flame again. **Restart** starts a fresh preview. A change during a render replaces the pending preview, and completed images from an older selection are discarded.
 
@@ -76,13 +76,15 @@ While a library has unsaved edits, the editor writes a recovery copy every 45 se
 
 ## Render an image
 
-Choose **File → Render image** or press **Ctrl+R**. The dialog shows the saved output dimensions and accepts a sample count, CPU worker count, and buffer budget. The default sample count derives from the flame's quality and zoom. Select a `.bmp` or `.ppm` destination after accepting the settings.
+Choose **File → Render image** or press **Ctrl+R**. The dialog shows the saved output dimensions and accepts a sample count, CPU worker count, system buffer budget, renderer, preferred device, GPU working budget and CPU fallback policy. Renderer controls start with the current preview preferences; changing them here applies to this export. The default sample count derives from the flame's quality and zoom. Select a `.bmp` or `.ppm` destination after accepting the settings.
 
-The render runs in the background. **Activity** shows its status and progress and provides **Cancel render**. Output is staged and replaces the destination after rendering and writing complete. The renderer's memory estimate includes the histogram, output pixels, and worker hit buffers. Increasing output dimensions or oversampling can require a larger budget.
+The render runs in the background. **Activity** shows its status and progress and provides **Cancel render**. Output is staged and replaces the destination after rendering and writing complete. System and GPU working budgets are checked separately, along with each device's storage-buffer limits. Increasing output dimensions or oversampling can require a larger budget. A strict Vulkan error or cancellation leaves an existing destination intact. Vulkan cancellation waits for already submitted bounded compute work to finish.
 
 ## Preferences and workspace
 
-**Edit → Preferences** sets the preview's CPU worker count, buffer budget, random seed, and final sample limit. Automatic preview worker selection leaves one reported hardware thread for the interface when more than one is available. Preferences are stored per user through Qt's settings system.
+**Edit → Preferences** sets the preview's CPU worker count, system buffer budget, random seed, final sample limit, renderer, preferred device, GPU working budget and fallback policy. Automatic CPU worker selection leaves one reported hardware thread for the interface when more than one is available. Preferences are stored per user through Qt's settings system and are inherited by creative previews.
+
+**CPU (reference)** retains the 64-bit calculation path. **Vulkan (FP32 sampling)** uses 32-bit orbit calculations with CPU image reconstruction; identical pixels across backends or devices are not guaranteed. **Automatic** uses an explicitly selected device, or chooses suitable hardware Vulkan when device selection is automatic. Software implementations are labeled and skipped by automatic device selection. A new saved-settings profile defaults to Automatic with CPU fallback enabled. The capability panel shows device memory and limits; **CPU fallback** is reported when it actually occurs. [GPU_RENDERING.md](GPU_RENDERING.md) gives the full behavior and command-line equivalents.
 
 Library, transform, properties, and activity panels can be docked, tabbed, floated, hidden, and restored through **View**. The editor saves the window geometry and dock layout between sessions. **View → Reset workspace** restores the initial arrangement. **F11** toggles full screen.
 
