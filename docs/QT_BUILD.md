@@ -52,11 +52,7 @@ python3 scripts/stage_editor_runtime.py \
   --compiler-runtime "$APO_TOOLCHAIN/x86_64-w64-mingw32/bin" \
   --objdump "$APO_TOOLCHAIN/bin/llvm-objdump" \
   --output "$APO_EDITOR_BUILD/portable" \
-  "$APO_EDITOR_BUILD/app/apophysis-reborn.exe" \
-  "$APO_EDITOR_BUILD/app/editor-tests.exe" \
-  "$APO_EDITOR_BUILD/app/preview-tests.exe" \
-  "$APO_EDITOR_BUILD/app/canvas-tests.exe" \
-  "$APO_EDITOR_BUILD/app/document-session-tests.exe"
+  "$APO_EDITOR_BUILD/app/"*.exe
 ```
 
 For an extracted Debian host Qt installation, set `LD_LIBRARY_PATH` to its `usr/lib/x86_64-linux-gnu` directory while running CMake and host Qt tools. This is specific to the isolated development environment. Installed Qt kits use their normal runtime lookup.
