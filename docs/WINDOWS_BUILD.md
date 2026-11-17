@@ -17,7 +17,9 @@ For a single render, use the executable with the included flame.
 
 ## What was verified
 
-The 0.3.0 core checkpoint compiled and linked the CLI and four C++ test programs for 64-bit Windows with static Expat, C++ and threading runtimes. The 0.4.0 desktop package builds these targets alongside the Qt editor with a shared C++ runtime. Preserve the complete `bin/windows-x64` folder so its DLLs remain available. The core executables have PE32+ x86-64 console headers. The editor uses the Windows GUI subsystem. The host executes the corresponding native Linux tests. Running the distributed binaries on Windows 11 is a separate pending check. Wine 10.0 could not start its local IPC server on the test host because the host denies Unix-domain sockets.
+The 0.3.0 core checkpoint compiled and linked the CLI and four C++ test programs for 64-bit Windows with static Expat, C++ and threading runtimes. The current 0.5.0 desktop package builds the CLI, six core test programs, five Qt test programs and the editor with a shared C++ runtime: 13 executables in total. Preserve the complete `bin/windows-x64` folder so its DLLs remain available. The core executables have PE32+ x86-64 console headers. The editor uses the Windows GUI subsystem. The final runtime audit resolved all 12,922 non-system imports across the staged PE modules with zero missing. [QT_BUILD.md](QT_BUILD.md) records the full desktop runtime and creative smoke checks.
+
+The corresponding native Linux Release and ASan/UBSan builds passed all 16 CTest entries. The distributed Windows programs were compiled and audited, not executed. Running them on Windows 11 remains a separate pending check. Wine 10.0 could not start its local IPC server on the test host because the host denies Unix-domain sockets.
 
 ## Reproduce a standalone core cross-build on Linux
 

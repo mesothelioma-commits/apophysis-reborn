@@ -3,6 +3,7 @@
 | Layer | Files | Responsibility |
 | --- | --- | --- |
 | Model and math | src/flame.hpp, src/flame.cpp | Model version 1, double-precision affine transforms, named variation registry, color, camera, palettes and weighted selection |
+| Creative algorithms | src/creative.hpp, src/creative.cpp | Seeded generation/mutation, palette operations and exchange, robust orbit framing without Qt dependencies |
 | Legacy documents | src/legacy_document.hpp, src/legacy_document.cpp | Index direct library members by original byte range. Preserve original XML, patch only requested field values and validate the result before publishing it |
 | Input and serialization | src/flame_io.hpp, src/flame_io.cpp | Stream XML with Expat; parse and validate a whole collection. Serialize one supported model to UTF-8 XML |
 | Sampling and tone mapping | src/render.hpp, src/render.cpp | Keep private orbits, run fixed independent batches, accumulate RGB and visibility, then filter and tone-map |
@@ -14,7 +15,7 @@ The model's schema version describes Reborn's in-memory contract. The XML produc
 
 Workers take independent 8,192-iteration batches. Each has a deterministic seed, a private orbit, a 32-step settling period and a short buffer of hits. Workers merge exact fixed-point channel sums into one shared histogram. The memory budget covers the histogram, RGB image and simultaneous hit buffers. Thread stacks, parser/model memory, probability tables, output encoder scratch space and allocator overhead are additional.
 
-A native UI can call the core directly. Interactive cancellation, progress callbacks and tiled high-resolution storage belong in the scheduling and rendering milestone before the UI starts unbounded interactive work.
+The native UI calls the core directly. Cancellation and progress are implemented in the CPU jobs; tiled high-resolution storage and resumable queues remain subsequent work.
 
 
 ## Native editor
@@ -26,3 +27,12 @@ The Qt Widgets layer in `src/editor` owns the main window, dock layout, library 
 The editor's recovery files have a unique identity and a held lock while their owning session is alive. Interrupted copies are recoverable as unsaved libraries. Saving, explicit discard and undo back to the saved state remove the active recovery. File saves compare the original content digest before staging and immediately before replacement to detect changes from another application.
 
 Window geometry, docking and preview preferences use Qt settings. Activity is written to the visible log and a size-rotated local text file. The editor uses the existing canonical serializer only for a requested standalone export and for new transform markup. Changes to loaded transform fields use the source-preserving document API.
+
+
+## Creative editors
+
+The gradient and adjustment dialogs hold independent working models and their own cancelable preview controllers. Accepted values become one document command. Palette edits replace only the chosen entry’s palette and retain its source encoding, surrounding comments, history and siblings. Adjustment edits retain historical attribute aliases.
+
+The explorer generates bounded random or mutation batches on a background thread. A separate preview controller processes candidate thumbnails sequentially; another refines the selected candidate. Generation/preview state is owned by the dialog, and workers finish before its destruction. Child input signals are disconnected before derived dialog members are destroyed, including the focused-field teardown path.
+
+Mutation ancestry is a local branch graph while the explorer is open. Add branch history saves the chosen ancestry as source-preserving copies in the flame library, making that path durable through ordinary Save and reopen. Batch/duplicate/delete commands record both before and after flame selections in the undo stack. New random entries use canonical model serialization; changes to existing and duplicated legacy entries patch only changed fields.

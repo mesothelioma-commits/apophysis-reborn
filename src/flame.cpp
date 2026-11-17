@@ -10,14 +10,19 @@
 namespace apo {
 namespace {
 
-constexpr std::array<VariationInfo, 21> variations{{
+constexpr std::array<VariationInfo, 31> variations{{
     {Variation::linear, "linear"}, {Variation::sinusoidal, "sinusoidal"},
     {Variation::spherical, "spherical"}, {Variation::swirl, "swirl"},
     {Variation::horseshoe, "horseshoe"}, {Variation::polar, "polar"},
     {Variation::handkerchief, "handkerchief"}, {Variation::heart, "heart"},
     {Variation::disc, "disc"}, {Variation::spiral, "spiral"},
     {Variation::hyperbolic, "hyperbolic"}, {Variation::diamond, "diamond"},
-    {Variation::ex, "ex"}, {Variation::julia, "julia"}, {Variation::bent, "bent"}, {Variation::bubble, "bubble"}, {Variation::noise, "noise"},
+    {Variation::ex, "ex"}, {Variation::julia, "julia"}, {Variation::bent, "bent"},
+    {Variation::waves, "waves"}, {Variation::fisheye, "fisheye"},
+    {Variation::popcorn, "popcorn"}, {Variation::exponential, "exponential"},
+    {Variation::power, "power"}, {Variation::cosine, "cosine"},
+    {Variation::rings, "rings"}, {Variation::fan, "fan"}, {Variation::eyefish, "eyefish"},
+    {Variation::bubble, "bubble"}, {Variation::cylinder, "cylinder"}, {Variation::noise, "noise"},
     {Variation::julian, "julian"}, {Variation::blur, "blur"}, {Variation::foci, "foci"},
     {Variation::pre_blur, "pre_blur"}
 }};
@@ -186,7 +191,8 @@ Point Rng::pre_blur_offset(const VariationParameters& transform) {
     return {radius * std::cos(angle), radius * std::sin(angle)};
 }
 
-Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters& parameters) {
+Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters& parameters,
+                      const Affine& pre) {
     const auto [x, y] = p;
     const double radius_squared = x * x + y * y;
     // The historical polar angle is measured from the positive y axis. Only
@@ -249,6 +255,58 @@ Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters
         const double r = std::sqrt(radius());
         return {r * std::cos(a), r * std::sin(a)};
     }
+    case Variation::waves: {
+        const double dx = 1 / (pre.e * pre.e + guard);
+        const double dy = 1 / (pre.f * pre.f + guard);
+        // XML coefs c,d are the second basis vector (upstream c[1][0],c[1][1]).
+        return {x + pre.c * std::sin(y * dx), y + pre.d * std::sin(x * dy)};
+    }
+    case Variation::fisheye: {
+        const double factor = 2 / (radius() + 1);
+        return {factor * y, factor * x}; // Historical fisheye intentionally exchanges X and Y.
+    }
+    case Variation::popcorn:
+        return {x + pre.e * std::sin(std::tan(3 * y)),
+                y + pre.f * std::sin(std::tan(3 * x))};
+    case Variation::exponential: {
+        const double extent = std::exp(x - 1), phase = pi * y;
+        return {extent * std::cos(phase), extent * std::sin(phase)};
+    }
+    case Variation::power: {
+        const double r = radius() + (parameters.apophysis_math ? guard : 0);
+        const double extent = std::pow(r, x / r);
+        return {extent * (y / r), extent * (x / r)};
+    }
+    case Variation::cosine: {
+        const double phase = pi * x;
+        return {std::cos(phase) * std::cosh(y), -std::sin(phase) * std::sinh(y)};
+    }
+    case Variation::rings: {
+        const double spacing = pre.e * pre.e + guard;
+        const double r = radius() + (parameters.apophysis_math ? guard : 0);
+        const double extent = parameters.apophysis_math
+            ? 2 * r - spacing * (std::trunc((r / spacing + 1) / 2) * 2 + r)
+            : std::fmod(r + spacing, 2 * spacing) - spacing + r * (1 - spacing);
+        return {extent * (y / r), extent * (x / r)};
+    }
+    case Variation::fan: {
+        const double period = pi * (pre.e * pre.e + guard);
+        const double half = .5 * period;
+        double a = angle();
+        if (parameters.apophysis_math) {
+            const double turns = (a + pre.f) / period;
+            a += (turns - std::trunc(turns) > .5) ? -half : half;
+        } else {
+            a += (std::fmod(a + pre.f, period) > half) ? -half : half;
+        }
+        return {radius() * std::cos(a), radius() * std::sin(a)};
+    }
+    case Variation::eyefish: {
+        const double factor = 2 / (radius() + 1);
+        return {factor * x, factor * y};
+    }
+    case Variation::cylinder:
+        return {std::sin(x), y};
     case Variation::pre_blur:
         return rng.pre_blur_offset(parameters);
     case Variation::bubble: {
@@ -297,7 +355,7 @@ Orbit apply_transform(const Transform& transform, Orbit previous, Rng& rng) {
     Point sum;
     for (const auto& term : transform.variations) {
         if (term.id == Variation::pre_blur || term.weight == 0) continue; // A disabled stochastic variation must not consume a draw.
-        const Point v = apply_variation(term.id, input, rng, transform.parameters);
+        const Point v = apply_variation(term.id, input, rng, transform.parameters, transform.pre);
         sum.x += term.weight * v.x;
         sum.y += term.weight * v.y;
     }

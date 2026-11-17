@@ -1,5 +1,28 @@
 # Verification record
 
+## 0.5.0 Creative Tools — 17 November 2026
+
+The final Linux Release build passed all **16 CTest entries** with GCC 14.2.0 and Qt 6.8.2 in 1.01 seconds. A separate Debug build with AddressSanitizer and UndefinedBehaviorSanitizer passed the same 16 entries in 9.98 seconds. Its options were `ASAN_OPTIONS=detect_leaks=0` and `UBSAN_OPTIONS=halt_on_error=1`; this does not claim a LeakSanitizer result. The distribution's `verification` directory retains the executed test logs and Windows build/runtime records.
+
+| Added or expanded check | Executed behavior |
+| --- | --- |
+| `creative` | Palette interpolation and validation, neutral adjustments, rotation/reversal/smoothing, GPL exchange, seeded generation, variation constraints, symmetry, mutation groups and zero-strength identity, finite-orbit framing and failed-fit rollback. |
+| `extended_variations` | All 640 independently generated original-source vectors for the ten new variations, named and numbered import, save/reopen, producer registry differences, affine coupling, signed weights, random-state preservation and ten nonuniform sample renders with zero invalid steps. [Methods and pinned sources](VARIATIONS.md) |
+| `creative_editor` | RGB precision, gradient history/reset, stop building and invalid-input rollback, palette/flame import with Unicode and spaced paths, adjustment validation/reset/aspect/filter behavior, source-preserving Apply/undo, locked/unlocked random seeds, batch insertion, zero-strength mutation, branch history and dialog destruction during pending input/generation. The default candidate grid also checks complete visibility of the first row. |
+| `editor_workflow` and `document_session` | Creative actions and modal Cancel/Apply, saved mutation branches, collection append/duplicate/delete, restored selection on undo/redo, and invalid-entry-selection rollback. |
+| `legacy_document` | Palette replacement across historical encodings and representations, retained comments/history/siblings, source aliases, adjustment validation, append/duplicate/delete and byte-preserving rollback. |
+| Earlier checks | All prior FLAM3 vectors, producer-pixel fixtures, XML import, rendering, CLI, preview, canvas and editor workflows continue to pass. |
+
+**Native desktop interaction.** On the actual Linux Qt desktop, the Gradient editor applied Glacier, reversed the palette, undid that operation and committed the result. The Adjustment editor changed gamma to 2.6 and committed it. The Mutation explorer selected candidate 4, used it as a new parent, selected a descendant and added its branch history. Saving through the native file dialog produced the three-entry `examples/creative-branches.flame`; independent CLI inspection marked all three entries renderable. A subsequent launch verified that the corrected default 1280 × 790 explorer shows all nine candidate tiles without resizing its dividers.
+
+**Creative smoke workflow.** The final `--creative-smoke-test DIR` run rendered the main editor and all four creative dialogs and exited successfully after producing all 12 required files: five window screenshots, a preview PNG, five flame files and a GPL palette. Every screenshot decoded. The nine entries in the saved random batch were independently inspected as renderable and are included as `examples/seeded-random.flame`. The current dialog screenshots are in `preview`; [the creative guide](CREATIVE_TOOLS.md) explains their controls.
+
+**Windows build and runtime audit.** The final x86-64 build compiled and linked all **13 executables**. Its editor uses the Windows GUI subsystem. The staged runtime contains **46 files**, including **44 PE modules**. Inspection resolved **12,922 non-system imports** against the exact packaged exports, with zero missing. Every staged executable matched its build output, and recorded fingerprints match all 39 source, test and resource files. The Windows programs were compiled and audited; they were not executed.
+
+**Pending acceptance.** Windows 11 execution, DPI/multiple-monitor behavior and historical-editor reopening remain pending. The new deterministic random and mutation workflows do not claim historical generator sequence equivalence. Broader palette formats/catalogs, alpha output, non-default historical reconstruction curves, density estimation and additional variations remain open. GPU acceleration is Milestone 6; tiled output and native 16K acceptance remain subsequent work. The older milestone sections below are historical records of their own scope.
+
+Use `bash scripts/build-editor.sh` for a native rebuild and all 16 CTest entries. On Windows, `bash scripts/verify-editor-windows.sh` runs the packaged core/Qt tests and the creative smoke workflow. Its outputs and exact filenames are described in [QT_BUILD.md](QT_BUILD.md).
+
 ## 0.4.0 Primary Editor — 17 November 2026
 
 The full Release build passed all 13 CTest entries on x86-64 Linux with GCC 14.2.0 and Qt 6.8.2. The Debug build with AddressSanitizer and UndefinedBehaviorSanitizer also passed all 13. Leak detection was disabled because the host tracer prevents LeakSanitizer from running. The editor was additionally exercised through the actual Linux desktop using the packaged native Qt runtime.

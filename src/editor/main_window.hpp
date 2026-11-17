@@ -27,6 +27,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
   public:
     explicit MainWindow(bool useSettings = true, QWidget *parent = nullptr);
+    ~MainWindow() override;
     DocumentSession &session() {
         return session_;
     }
@@ -67,6 +68,7 @@ class MainWindow : public QMainWindow {
     QPlainTextEdit *log_;
     QAction *save_, *pause_, *render_, *duplicate_, *remove_, *add_, *addFinal_, *copy_, *paste_,
         *moveUp_, *moveDown_;
+    QAction *gradient_, *adjustments_, *mutations_, *randomFlames_, *duplicateFlame_, *deleteFlame_;
     QByteArray defaultLayout_;
 
     void makeActions();
@@ -90,6 +92,9 @@ class MainWindow : public QMainWindow {
     void renderImage();
     void preferences();
     void newDocument();
+    void editGradient();
+    void editAdjustments();
+    void exploreFlames(bool mutation);
     void filterLibrary();
     void record(const QString &message);
     void run(const std::function<void()> &operation);

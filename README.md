@@ -1,14 +1,27 @@
-# Apophysis Reborn 0.4.0 — Primary Editor
+# Apophysis Reborn 0.5.0 — Creative Tools
 
-This checkpoint adds a native Qt desktop editor around the existing CPU flame engine and legacy document model. The window includes a searchable flame library, a refining live preview, interactive transform triangles, exact numeric controls, undo/redo, background image rendering, and recovery copies.
+This checkpoint adds gradient and adjustment editors, seeded random flame batches, and a mutation explorer to the native Qt desktop application. Candidate grids, parent comparison and saved branches support creative exploration. Accepted changes use the existing source-preserving document model, undo/redo, recovery and background CPU rendering. The variation registry now contains 31 verified functions.
 
 ## Open the editor
 
 Extract the complete ZIP and open `bin/windows-x64/apophysis-reborn.exe`. Keep the accompanying DLLs and `platforms` folder beside it. The program starts with Ember Spiral and works offline. Use **Open library** to load a `.flame`, `.xml`, or historical `.temp` collection.
 
-Select a transform in the lower canvas, then drag its origin or its X/Y handles. The **Pre-affine / Post-affine** selector and the coefficient fields edit the same matrix. The right-hand tabs expose geometry, all 21 supported variation weights, JuliaN parameters, color controls, and Xaos. **Save library** retains the original collection and unrelated XML. The [editor guide](docs/EDITOR.md) covers the controls and recovery behavior.
+Select a transform in the lower canvas, then drag its origin or its X/Y handles. The **Pre-affine / Post-affine** selector and the coefficient fields edit the same matrix. The right-hand tabs expose geometry, all 31 supported variation weights, JuliaN parameters, color controls, and Xaos. **Save library** retains the original collection and unrelated XML. The [editor guide](docs/EDITOR.md) covers the controls and recovery behavior.
 
-![Native Qt editor displaying Ember Spiral](preview/editor-0.4.0.png)
+## Creative tools
+
+Use **Flame → Gradient editor**, **Adjustment editor**, **Mutation explorer**, or **Random flame generator**. The toolbar provides the same tools. Each editor previews a working copy; Apply commits one undo step, while Cancel retains the loaded flame. Random batches and kept mutation branches become ordinary collection entries.
+
+| Tool | Available controls |
+| --- | --- |
+| Gradient | Individual RGB/HSV colors, indexed stops, RGB/HSV interpolation, presets, GPL exchange and local palette library, rotation/reversal/smoothing, seeded random palettes, hue/saturation/value, RGB gamma curves and contrast |
+| Adjustment | Dimensions and aspect ratio, camera center/scale/zoom/rotation, orbit framing, background, gamma/threshold/brightness/vibrancy, sample density, oversampling and the supported Gaussian filter |
+| Random generation | 1–24 candidates, a 64-bit seed, variation allowlist, transform counts, contraction and translation limits, explicit rotation/reflection symmetry and palette choice |
+| Mutation | Candidate grid, strength/trend, independent geometry/variation/color/parameter/palette controls, parent comparison, branching history and selected/batch/branch saving |
+
+Read the [creative tools guide](docs/CREATIVE_TOOLS.md) for exact controls, save behavior and limits.
+
+![Native mutation explorer](preview/creative-tools-0.5.0.png)
 
 The screenshot was captured from the running Linux Qt build. The portable Windows x64 application and its tests compiled successfully. Windows 11 execution remains pending.
 
@@ -20,7 +33,7 @@ When ready, open Git Bash in the extracted `apophysis-reborn` directory and run 
 bash scripts/verify-editor-windows.sh
 ```
 
-It runs the core and Qt tests, launches the editor, renders the example, saves a screenshot and a flame copy, and records a log. Add `--no-open` to suppress Explorer. The [test report](docs/TEST_PLAN.md) distinguishes executed checks from pending platform acceptance.
+It runs the core and Qt tests, launches the editor and all four creative dialogs, and saves screenshots, example flames and a GPL palette with a log. Add `--no-open` to suppress Explorer. The [test report](docs/TEST_PLAN.md) distinguishes executed checks from pending platform acceptance.
 
 ## Command-line legacy files
 
@@ -50,7 +63,7 @@ Render a different file from the supported subset with:
 ./bin/windows-x64/flame-cpu.exe --list-variations
 ```
 
-The 21 studies in `examples/variation-studies.flame` cover every registered variation. Use `inspect` to list their names, then select a study by its one-based `--index`.
+The 31 studies in `examples/variation-studies.flame` cover every registered variation. Use `inspect` to list their names, then select a study by its one-based `--index`. `examples/seeded-random.flame` contains a nine-candidate generated batch; `examples/creative-branches.flame` contains an original, parent and child saved through the native editor.
 
 The CLI accepts `--index` (1-based), `--seed`, `--samples`, `--threads`, and `--memory-mib`. The flame provides the dimensions and camera. For the original foundation command syntax use `flame-cpu width height samples output.ppm`. Both BMP and PPM store RGB8. Use a fresh output name to keep both renders. A successful write replaces an existing output of the same name.
 
@@ -70,6 +83,9 @@ A core-only build can use `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF`. The [Q
 | File | What it covers |
 | --- | --- |
 | [Editor](docs/EDITOR.md) | Native library, preview, geometry, saving and recovery controls |
+| [Creative tools](docs/CREATIVE_TOOLS.md) | Gradient, adjustment, random generation and mutation workflows |
+| [Creative algorithms](docs/CREATIVE_ALGORITHMS.md) | Deterministic generation, palette operations and framing definitions |
+| [Variations](docs/VARIATIONS.md) | Complete supported registry, producer conventions and original-source vector evidence |
 | [Qt build](docs/QT_BUILD.md) | Desktop build, runtime deployment and Windows checks |
 | [Engine](docs/RENDERING_ENGINE.md) | How inputs become pixels, accepted numeric settings, rendering differences |
 | [Architecture](docs/ARCHITECTURE.md) | Model, parser, sampling, image output and extension points |
@@ -84,4 +100,4 @@ A core-only build can use `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF`. The [Q
 
 The ZIP also includes `apophysis-reborn.bundle` and `BUILD.txt`. For a checkout with the complete checkpoint history, run `git clone apophysis-reborn.bundle ../apophysis-reborn-git` from the extracted folder. The checkout holds source, example flames, tests and documentation. The precompiled Windows executables and their runtime DLLs are distribution outputs. Corresponding third-party sources accompany the distribution. No remote repository is required.
 
-Milestone 5 adds the full creative tools, including gradient and adjustment editors, mutation, random generation, and further variation coverage. Advanced editor work still includes multi-selection, persistent per-transform locks, synchronization tools, custom shortcuts and broader workspace presets. Windows 11 testing remains deferred.
+Milestone 6 introduces GPU acceleration, with the CPU engine retained as a fallback and numerical reference. Advanced editor work still includes multi-selection, persistent per-transform locks, synchronization tools, custom shortcuts and broader workspace presets. Creative compatibility remains open for historical generator sequences, additional palette formats/catalogs, alpha output, non-default historical curves, density estimation and further variations. Windows 11 testing remains deferred; this checkpoint does not claim GPU or 16K rendering acceptance.

@@ -35,23 +35,25 @@ QByteArray digest(const QString &path) {
 
 class DocumentChange : public QUndoCommand {
   public:
-    DocumentChange(DocumentSession &session, QString label, std::string after, int next, bool final)
+    DocumentChange(DocumentSession &session, QString label, std::string after, int next, bool final,
+                   int nextFlame)
         : QUndoCommand(std::move(label)), session_(session), before_(session.document().bytes()),
-          after_(std::move(after)), flame_(session.selectedFlame()),
+          after_(std::move(after)), beforeFlame_(session.selectedFlame()),
+          afterFlame_(nextFlame < 0 ? beforeFlame_ : nextFlame),
           beforeTransform_(session.selectedTransform()),
           afterTransform_(next < 0 ? beforeTransform_ : next), beforeFinal_(session.isFinalTransform()),
           afterFinal_(next < 0 ? beforeFinal_ : final) {}
     void undo() override {
-        session_.restore(before_, flame_, beforeTransform_, beforeFinal_);
+        session_.restore(before_, beforeFlame_, beforeTransform_, beforeFinal_);
     }
     void redo() override {
-        session_.restore(after_, flame_, afterTransform_, afterFinal_);
+        session_.restore(after_, afterFlame_, afterTransform_, afterFinal_);
     }
 
   private:
     DocumentSession &session_;
     std::string before_, after_;
-    int flame_, beforeTransform_, afterTransform_;
+    int beforeFlame_, afterFlame_, beforeTransform_, afterTransform_;
     bool beforeFinal_, afterFinal_;
 };
 
@@ -134,20 +136,22 @@ void DocumentSession::selectTransform(int index, bool final) {
 }
 
 void DocumentSession::change(const QString &label, const std::function<void(LegacyDocument &)> &edit,
-                             int nextTransform, bool nextFinal) {
+                             int nextTransform, bool nextFinal, int nextFlame) {
     if (!document_)
         throw std::runtime_error("Open a flame before editing");
     auto next = *document_;
     edit(next);
     if (next.bytes() == document_->bytes())
         return;
-    undo_.push(new DocumentChange(*this, label, next.bytes(), nextTransform, nextFinal));
+    if (nextFlame >= int(next.entries().size()))
+        throw std::invalid_argument("The next selected flame does not exist");
+    undo_.push(new DocumentChange(*this, label, next.bytes(), nextTransform, nextFinal, nextFlame));
 }
 
 void DocumentSession::restore(const std::string &bytes, int flame, int transform, bool final) {
     auto next = LegacyDocument::parse(bytes);
     document_ = std::move(next);
-    flame_ = flame;
+    flame_ = std::clamp(flame, 0, int(document_->entries().size()) - 1);
     transform_ = transform;
     final_ = final;
     emit changed();

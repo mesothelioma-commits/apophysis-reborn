@@ -1,6 +1,6 @@
 # Dependency and reference notices
 
-The 0.4.0 desktop distribution dynamically links Qt 6.8.2, the C++ runtime, and the font/text libraries selected by the deployed DLL dependency closure. Expat remains statically linked. The Qt runtime notices and exact package hashes are under `licenses/qt`. Complete corresponding LGPL source archives, including MSYS2 recipes and patches, accompany the distribution in `third-party-sources`. Rebuilding and relinking instructions are in [QT_BUILD.md](QT_BUILD.md). [Qt licensing](https://www.qt.io/licensing/open-source-lgpl-obligations)
+The 0.5.0 desktop distribution dynamically links Qt 6.8.2, the C++ runtime, and the font/text libraries selected by the deployed DLL dependency closure. Expat remains statically linked. The Qt runtime notices and exact package hashes are under `licenses/qt`. Complete corresponding LGPL source archives, including MSYS2 recipes and patches, accompany the distribution in `third-party-sources`. Rebuilding and relinking instructions are in [QT_BUILD.md](QT_BUILD.md). [Qt licensing](https://www.qt.io/licensing/open-source-lgpl-obligations)
 
 The earlier 0.2.0 and 0.3.0 Windows console binaries linked Expat 2.10.0 and the LLVM-MinGW C++/threading runtime statically. The distribution includes the upstream notices under `licenses/windows/`, including Expat, LLVM, compiler-rt, libc++, libc++abi, libunwind, MinGW-w64, and winpthreads. Native source builds use the Expat installation selected by CMake. See WINDOWS_BUILD.md for exact build inputs and hashes.
 
@@ -10,3 +10,6 @@ The Apophysis AV corpus spot check uses a separately published flame, identified
 
 
 The 0.3.0 historical corpus records asset-specific provenance in tests/legacy/ATTRIBUTION.md and docs/LEGACY_CORPUS.md. The Fox parameter listing and the new rendered preview carry CC BY-SA 4.0 attribution in tests/legacy/ATTRIBUTION.md. External artist images and the original application release archives remain available from their publishers. The optional producer-oracle regeneration harness reads a separately obtained, hash-checked Apophysis Pascal source tree. Its controlled output files, source references and test scope are described in docs/PRODUCER_ORACLE.md.
+
+
+The 0.5.0 extended variation oracle generates vectors by compiling hash-checked original FLAM3 C functions and Apophysis 2.09 Pascal methods in temporary builds. The pinned references, original numerical conventions and generator are documented in VARIATIONS.md. The ten new sample flames and seven bundled palette presets are new Reborn examples; no historical palette catalog or third-party artwork was copied for this increment. GPL palette exchange follows GIMP’s published file-format specification linked in CREATIVE_ALGORITHMS.md.

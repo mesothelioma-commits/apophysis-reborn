@@ -17,6 +17,13 @@ struct LegacyEdits {
     std::optional<std::array<int, 2>> size;
     std::optional<Point> center;
     std::optional<double> scale;
+    std::optional<double> zoom, rotate, gamma, gamma_threshold, brightness, vibrancy, quality;
+    std::optional<double> filter_radius;
+    std::optional<int> oversample;
+    std::optional<RGB> background;
+    std::optional<PaletteMode> palette_mode;
+    // Remove explicit filter/filter_shape overrides. The producer's defaults then apply.
+    bool clear_filter_radius = false;
 };
 
 struct LegacyTransformEdits {
@@ -40,6 +47,14 @@ public:
     Flame render_model(std::size_t index) const;
     std::optional<std::string> render_issue(std::size_t index) const;
     void edit(std::size_t index, const LegacyEdits& edits);
+    // Replace only the selected entry's palette payload. Embedded palette comments are retained.
+    // Indexed palette references become palette="-1"; other source data and encoding survive.
+    void edit_palette(std::size_t index, const Palette& palette);
+    // Appending to a standalone flame adds a collection wrapper without rewriting its bytes.
+    // New models are validated and serialized; duplicate retains even unsupported source data.
+    std::size_t append_flame(const Flame& flame);
+    std::size_t duplicate_flame(std::size_t index, const std::string& new_name);
+    void remove_flame(std::size_t index); // At least one entry must remain.
     // Transform operations require a renderable selected flame and commit atomically.
     // final=true addresses its final transform and ignores transform_index.
     void edit_transform(std::size_t index, std::size_t transform_index,
@@ -52,7 +67,7 @@ public:
 private:
     LegacyDocument() = default;
     friend class LegacyIndexer;
-    struct Range { std::size_t begin, open_end, end; };
+    struct Range { std::size_t begin, open_end, end, close_begin = 0; };
     struct TransformSource {
         Range range;
         std::map<std::string, std::string> attributes;
@@ -60,6 +75,11 @@ private:
     struct EntrySource {
         std::vector<TransformSource> transforms;
         std::optional<TransformSource> final_transform;
+        struct PaletteSource {
+            Range range;
+            std::vector<Range> annotations;
+        };
+        std::vector<PaletteSource> palettes;
     };
     struct Patch { std::size_t begin, end; std::string text; };
     using AttributeChanges = std::map<std::string, std::optional<std::string>>;
@@ -67,11 +87,14 @@ private:
     void attribute_patches(const Range& range, const std::map<std::string, std::string>& attributes,
                            AttributeChanges changes, std::vector<Patch>& patches) const;
     std::string edited_element(const TransformSource& source, const AttributeChanges& changes) const;
+    std::size_t append_fragment(std::string encoded_fragment);
     void commit(std::vector<Patch> patches, std::optional<std::size_t> render_index = {});
     std::string bytes_;
     std::vector<LegacyEntry> entries_;
     std::vector<Range> ranges_;
     std::vector<EntrySource> sources_;
+    Range root_range_{};
+    bool root_is_flame_ = false;
     enum class Encoding { utf8, ascii, latin1, windows1252, utf16le, utf16be };
     Encoding encoding_ = Encoding::utf8;
     std::string wrapper_issue_;

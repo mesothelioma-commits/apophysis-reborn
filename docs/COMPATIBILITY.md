@@ -1,4 +1,4 @@
-# Legacy flame compatibility in 0.3.0
+# Legacy flame compatibility — 0.5.0
 
 Opening a document, converting an entry for rendering, and exporting a normalized entry have different requirements. The document path retains the complete original file, including unsupported variations, comments, unknown namespaces, history and other entries. Its no-edit save preserves the original bytes. The renderer checks the selected entry independently; an unsupported sibling can still be preserved in the same collection. The internal `parse_flames` bulk API continues to validate all entries together.
 
@@ -22,7 +22,7 @@ Tagged 7X/AV files commonly write density estimator parameters alongside `enable
 
 ## Mathematical coverage
 
-All 15 original registry entries from Milestone 2 remain available. New entries can be inspected using `--list-variations`.
+The current registry contains 31 variations. All 15 original registry entries from Milestone 2 remain available. The following six were added in 0.3.0; the ten additions in 0.5.0 are described below and in [VARIATIONS.md](VARIATIONS.md). Use `--list-variations` to inspect the complete current registry.
 
 | FLAM3 ID | XML name | Computation / historical controls |
 | ---: | --- | --- |
@@ -35,7 +35,7 @@ All 15 original registry entries from Milestone 2 remain available. New entries 
 
 For example, a pre-blur followed by bubble evaluates bubble on the displaced point. The order of XML attributes cannot change that stage boundary. The original x86 Apophysis and AV pre-blur use one draw for the direction and ring replacement; the 7X Pascal branch uses a separate replacement draw. Reborn's seeded generator and thread-independent batches determine the actual random sequence. Original Delphi/x87 floating-point paths and historical random streams can yield different orbits.
 
-`var1` and vector `var` support verified numerical indices. For original 2.x the first 15 are shared with FLAM3; its bubble/noise/blur/pre_blur indices are 24/26/27/29. 3D hack, 7X and AV changed built-in order or loaded plugins at runtime. Named variations are required there. Mixed numbered and named definitions are rejected. Tagged Apophysis uses the source-level 1e-300 spherical denominator guard; FLAM3 uses 1e-10. A known additive `var_order` can specify ordinary term order. Unknown, incomplete or duplicated XY operations fail conversion.
+`var1` and vector `var` support verified numerical indices. For original 2.x the first 23 IDs (0–22) are shared with FLAM3; its eyefish/bubble/cylinder/noise/blur/pre_blur indices are 23/24/25/26/27/29. 3D hack, 7X and AV changed built-in order or loaded plugins at runtime. Named variations are required there. Mixed numbered and named definitions are rejected. Tagged Apophysis uses the source-level 1e-300 spherical denominator guard; FLAM3 uses 1e-10. A known additive `var_order` can specify ordinary term order. Unknown, incomplete or duplicated XY operations fail conversion.
 
 The XY part of `linear3D` equals linear when no camera or transform couples Z to XY. Reborn validates those constraints, then uses the XY projection for the bundled 2.08 3D-hack artwork. In admitted 7X/AV inputs, flatten's Z-only action has no effect on projected XY. `sinusoidal_use3D="0"` is accepted; active 3D parameters remain blocked.
 
@@ -58,3 +58,15 @@ Color-speed edits retain the original `symmetry` or `color_speed` spelling and a
 New ordinary transforms are appended. Existing omitted chaos destinations continue to mean one. Duplicate appends a copy, splits the original selection weight between the two copies, duplicates the incoming chaos column, and copies the outgoing row. This keeps their combined probability equal to the original branch before subsequent edits. Reordering moves each transform's source element and remaps both axes of the transition matrix. Deleting a transform removes its outgoing row and its destination from every other row. Deletions that would leave a positive-weight transform with no reachable destination are rejected. At least one ordinary transform must remain. When an untagged source relies on implicit alternating transform colors, affected values become explicit so structural edits retain their effective colors.
 
 Final transforms have affine, color and variation controls. They have no selection weight or chaos row. Adding a final transform to a document that already contains one, including a disabled historical definition, reports that existing definition. Every operation reindexes and validates the complete changed document before replacing the editing state. A failed operation leaves the document bytes intact. Undo and redo can restore the full document snapshot, including its original lexical details.
+
+## Creative editing and expanded variations in 0.5.0
+
+The added classic functions are `waves`, `fisheye`, `popcorn`, `exponential`, `power`, `cosine`, `rings`, `fan`, `eyefish` and `cylinder`. Waves, popcorn, rings and fan receive the selected transform's actual pre-affine coefficients; final transforms use their own matrix. Producer-specific formula guards and ring/fan behavior are retained. The new numerical suite compares 640 results from compiled original FLAM3 C and Apophysis 2.09 Pascal code. [VARIATIONS.md](VARIATIONS.md) lists all 31 names, producer IDs, formulas, evidence and remaining gaps.
+
+The document layer now patches zoom, rotation, gamma, gamma threshold, brightness, vibrancy, quality, oversampling, background, filter radius and palette interpolation alongside the existing name/size/center/scale fields. It retains historical `angle` and `supersample` spellings when applicable. Clearing an explicit filter restores the source default: Gaussian radius 0.5 for recognized Apophysis inputs, box reconstruction for generic inputs. Validation rejects an invalid combined edit before replacing the original document.
+
+Palette replacement handles packed RGB/leading-byte palettes, indexed colors, sparse generic stops and missing/catalog palettes. It writes an embedded 256-entry palette and replaces a catalog reference with `palette="-1"`; it does not resolve the missing external catalog. The operation retains the document encoding, comments and processing instructions, edit history, unrelated attributes and sibling flames. Unmodified fields retain their existing spelling and precision. Palette gamma/contrast adjustments are baked into the stored colors; they do not implement non-default legacy reconstruction `curves`.
+
+Appending a generated flame validates its model and adds a collection wrapper when the original file contains one standalone flame, retaining that original element's bytes. Duplicating an entry also preserves unsupported source fields. Deletion retains at least one flame. Collection changes and accepted creative edits restore source bytes and the selected entry through undo/redo. Applying a mutation to the current flame patches its supported fields while retaining its original name and unrelated XML; saving a branch appends its chosen ancestry as separate entries.
+
+The seeded random and mutation algorithms are new Reborn workflows and do not reproduce historical random streams. GPL palette exchange uses RGB8, while embedded palette entries can retain fractional channels. Broader palette formats/catalogs, alpha output, active density estimation, non-default historical reconstruction curves and additional variations remain outside this checkpoint. See [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) for the exact controls and save behavior.

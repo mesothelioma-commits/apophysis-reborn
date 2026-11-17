@@ -1,12 +1,12 @@
 #pragma once
 
 #include "legacy_document.hpp"
+#include <QLockFile>
 #include <QObject>
 #include <QString>
 #include <QUndoStack>
-#include <QLockFile>
-#include <memory>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 
 namespace apo::editor {
@@ -55,7 +55,7 @@ class DocumentSession : public QObject {
     void selectFlame(int index);
     void selectTransform(int index, bool final = false);
     void change(const QString &label, const std::function<void(LegacyDocument &)> &edit,
-                int nextTransform = -1, bool nextFinal = false);
+                int nextTransform = -1, bool nextFinal = false, int nextFlame = -1);
     QString writeRecovery();
     void recover(const QString &path);
     void discardRecovery();

@@ -1,4 +1,4 @@
-# Primary Editor guide — 0.4.0
+# Native Editor guide — 0.5.0
 
 Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU engine and legacy document model as the command-line tools. It starts with Ember Spiral when a file has not been supplied. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md).
 
@@ -50,7 +50,7 @@ The **Geometry** tab exposes all six affine coefficients in their `.flame` order
 
 ### Variations, color, and Xaos
 
-The **Variations** tab lists the 21 registered variations. Search by name and edit its weight in the table. Signed weights are supported. Setting a weight to zero disables its contribution. JuliaN exposes its nonzero integer power and finite distance parameter when its weight is active.
+The **Variations** tab lists the 31 registered variations. Search by name and edit its weight in the table. Signed weights are supported. Setting a weight to zero disables its contribution. JuliaN exposes its nonzero integer power and finite distance parameter when its weight is active.
 
 The **Color** tab controls palette coordinate, color speed, and opacity, each from zero to one. The palette strip shows the selected flame's current palette. A color speed of zero retains the incoming color coordinate, while one adopts the transform's color. The saved producer determines the historical interpretation of opacity and the serialized color-speed field.
 
@@ -97,9 +97,14 @@ Library, transform, properties, and activity panels can be docked, tabbed, float
 | Ctrl+D | Duplicate transform |
 | Ctrl+Shift+C | Copy transform |
 | Ctrl+Shift+V | Paste transform |
+| Ctrl+Shift+D | Duplicate flame entry |
+| Ctrl+G | Gradient editor |
+| Ctrl+J | Adjustment editor |
+| Ctrl+M | Mutation explorer |
+| Ctrl+Shift+N | Random flame generator |
 | Ctrl+R | Render image |
 | F11 | Full screen |
 
 ## Further editor work
 
-The next creative-tools work includes the full gradient and adjustment editors, mutation and random-generation tools, and further variation coverage. Multi-selection, transform synchronization, persistent per-transform locks, custom shortcut profiles, and broader workspace presets remain open. Native Windows execution and historical-application reopen results are recorded separately in the checkpoint's [test report](TEST_PLAN.md).
+The **Flame** menu and **Gradient / Adjust / Mutate / Random** toolbar open the creative editors. See [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) for their controls, previews and save behavior. The Flame menu also duplicates and deletes collection entries; both operations restore entry selection on undo/redo. At least one entry remains. Further historical variation and creative-workflow coverage remains open. Multi-selection, transform synchronization, persistent per-transform locks, custom shortcut profiles, and broader workspace presets remain open. Native Windows execution and historical-application reopen results are recorded separately in the checkpoint's [test report](TEST_PLAN.md).

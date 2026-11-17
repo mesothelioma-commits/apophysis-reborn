@@ -178,17 +178,19 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
 }
 
 Variation legacy_variation_id(int id, Text version) {
-    // After the first 15 IDs, Apophysis 2 and FLAM3 registries diverge. 7X/AV
+    // After the first 23 IDs, Apophysis 2 and FLAM3 registries diverge. 7X/AV
     // inserted/reordered built-ins; plugin-dependent indices cannot be inferred from a name tag.
     if (is_apophysis(version) && identify_producer(version) != Producer::classic)
         fail("Numbered variation needs the original 3D-hack/7X/AV registry; use named variations");
     if (is_apophysis_2(version)) {
+        if (id == 23) return Variation::eyefish;
         if (id == 24) return Variation::bubble;
+        if (id == 25) return Variation::cylinder;
         if (id == 26) return Variation::noise;
         if (id == 27) return Variation::blur;
         if (id == 29) return Variation::pre_blur;
     }
-    if (id >= 0 && (!is_apophysis_2(version) || id <= 14))
+    if (id >= 0 && (!is_apophysis_2(version) || id <= 22))
         for (const auto& entry : variation_registry())
             if (static_cast<unsigned>(entry.id) == static_cast<unsigned>(id)) return entry.id;
     fail("Unsupported variation ID " + std::to_string(id));

@@ -12,6 +12,7 @@
 #include <locale>
 #include <memory>
 #include <numeric>
+#include <numbers>
 #include <sstream>
 #include <stdexcept>
 
@@ -87,6 +88,20 @@ std::string escape_attribute(Text utf8, char quote) {
     return result;
 }
 
+// A canonical UTF-8 fragment is already escaped XML. Convert only its Unicode
+// characters to references so it can be inserted into any supported encoding.
+std::string ascii_xml(Text utf8) {
+    std::string result;
+    for (std::size_t i = 0; i < utf8.size();) {
+        const auto lead = static_cast<unsigned char>(utf8[i]);
+        if (lead < 0x80) { result += utf8[i++]; continue; }
+        const std::size_t length = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : 2;
+        result += escape_attribute(utf8.substr(i, length), '"');
+        i += length;
+    }
+    return result;
+}
+
 bool same_field_value(Text field, const std::string& original, const std::string& proposed) {
     if (original == proposed) return true;
     if (field == "name") return false;
@@ -124,6 +139,7 @@ class LegacyIndexer {
     std::size_t depth_ = 0;
     std::optional<std::size_t> active_depth_;
     std::optional<std::size_t> transform_depth_;
+    std::optional<std::size_t> palette_depth_;
     bool active_final_ = false;
     bool root_flame_ = false;
 
@@ -164,6 +180,8 @@ class LegacyIndexer {
             if (end-begin >= 2 && doc_.bytes_[begin] == '\0') doc_.encoding_ = LegacyDocument::Encoding::utf16be;
             else if (end-begin >= 2 && doc_.bytes_[begin+1] == '\0') doc_.encoding_ = LegacyDocument::Encoding::utf16le;
             root_flame_ = name == "flame";
+            doc_.root_is_flame_ = root_flame_;
+            doc_.root_range_ = {begin, end, end, end};
             if (!root_flame_) {
                 if (name != "flames" && name != "Flames" && name != "pick" && name != "test")
                     doc_.wrapper_issue_ = "Unrecognized collection wrapper <" + std::string(name) + ">";
@@ -203,6 +221,11 @@ class LegacyIndexer {
                 doc_.sources_.back().transforms.push_back(std::move(source));
                 transform_depth_ = depth_;
             }
+        } else if (active_depth_ && depth_ == *active_depth_ + 1 &&
+                   (name == "palette" || name == "color" || name == "colors")) {
+            const auto [begin, open_end] = position();
+            doc_.sources_.back().palettes.push_back({{begin, open_end, open_end, open_end}, {}});
+            palette_depth_ = depth_;
         }
         ++depth_;
     }
@@ -212,12 +235,29 @@ class LegacyIndexer {
             auto& sources = doc_.sources_.back();
             auto& source = active_final_ ? *sources.final_transform : sources.transforms.back();
             source.range.end = position().second;
+            source.range.close_begin = position().first;
             transform_depth_.reset();
+        }
+        if (palette_depth_ && *palette_depth_ == depth_) {
+            auto& range = doc_.sources_.back().palettes.back().range;
+            range.close_begin = position().first;
+            range.end = position().second;
+            palette_depth_.reset();
         }
         if (active_depth_ && *active_depth_ == depth_) {
             doc_.ranges_.back().end = position().second;
+            doc_.ranges_.back().close_begin = position().first;
             active_depth_.reset();
         }
+        if (!depth_) {
+            doc_.root_range_.close_begin = position().first;
+            doc_.root_range_.end = position().second;
+        }
+    }
+    void annotation() {
+        if (!palette_depth_) return;
+        const auto [begin, end] = position();
+        doc_.sources_.back().palettes.back().annotations.push_back({begin, end, end, end});
     }
     void feed(const char* bytes, int count, bool last) {
         if (XML_Parse(parser_.get(), bytes, count, last) == XML_STATUS_OK) return;
@@ -239,6 +279,12 @@ public:
         XML_SetElementHandler(p,
             [](void* d, const char* n, const char** a) { callback(d,[&](auto& s){ s.start(n,a); }); },
             [](void* d, const char*) { callback(d,[](auto& s){ s.end(); }); });
+        XML_SetCommentHandler(p, [](void* d, const char*) {
+            callback(d, [](auto& s) { s.annotation(); });
+        });
+        XML_SetProcessingInstructionHandler(p, [](void* d, const char*, const char*) {
+            callback(d, [](auto& s) { s.annotation(); });
+        });
         XML_SetXmlDeclHandler(p, [](void* d,const char*,const char* encoding,int) {
             if (!encoding) return;
             auto& enc = static_cast<LegacyIndexer*>(d)->doc_.encoding_;
@@ -319,23 +365,103 @@ std::optional<std::string> LegacyDocument::render_issue(std::size_t index) const
 void LegacyDocument::edit(std::size_t index, const LegacyEdits& edits) {
     const auto& range = ranges_.at(index);
     const auto& entry = entries_[index];
-    std::map<std::string,std::string> changes;
+    std::optional<Flame> model;
+    // Header edits remain available for preservation-only entries. If a model can
+    // be rendered, also validate interactions such as scale multiplied by zoom.
+    try { model = render_model(index); }
+    catch (const std::runtime_error&) {}
+    catch (const std::invalid_argument&) {}
+    const bool apophysis = is_apophysis(entry.version);
+    AttributeChanges changes;
     if (edits.name) changes["name"] = *edits.name;
     if (edits.size) {
         const auto [w,h] = *edits.size;
         if (w <= 0 || h <= 0) throw std::invalid_argument("Size must contain two positive integers");
         changes["size"] = std::to_string(w) + " " + std::to_string(h);
+        if (model) { model->width = w; model->height = h; }
     }
-    if (edits.center) changes["center"] = shortest(edits.center->x) + " " + shortest(edits.center->y);
-    if (edits.scale) {
-        if (!(*edits.scale > 0)) throw std::invalid_argument("Scale must be positive");
-        changes["scale"] = shortest(*edits.scale);
+    if (edits.center) {
+        changes["center"] = shortest(edits.center->x) + " " + shortest(edits.center->y);
+        if (model) model->center = *edits.center;
     }
+    const auto scalar = [&](const char* key, const std::optional<double>& value, double Flame::*member) {
+        if (!value) return;
+        const auto encoded = shortest(*value);
+        if (!model || model.value().*member != *value) changes[key] = encoded;
+        if (model) model.value().*member = *value;
+    };
+    if (edits.scale && !(*edits.scale > 0)) throw std::invalid_argument("Scale must be positive");
+    if (edits.gamma && !(*edits.gamma > 0)) throw std::invalid_argument("Gamma must be positive");
+    if (edits.quality && !(*edits.quality > 0)) throw std::invalid_argument("Quality must be positive");
+    if (edits.brightness && !(*edits.brightness >= 0))
+        throw std::invalid_argument("Brightness must be nonnegative");
+    if (edits.gamma_threshold && !(*edits.gamma_threshold >= 0))
+        throw std::invalid_argument("Gamma threshold must be nonnegative");
+    if (edits.vibrancy && !(*edits.vibrancy >= 0 && *edits.vibrancy <= 1))
+        throw std::invalid_argument("Vibrancy must be in [0,1]");
+    scalar("scale", edits.scale, &Flame::scale);
+    scalar("zoom", edits.zoom, &Flame::zoom);
+    scalar("gamma", edits.gamma, &Flame::gamma);
+    scalar("gamma_threshold", edits.gamma_threshold, &Flame::gamma_threshold);
+    scalar("brightness", edits.brightness, &Flame::brightness);
+    scalar("vibrancy", edits.vibrancy, &Flame::vibrancy);
+    scalar("quality", edits.quality, &Flame::quality);
+    if (edits.rotate) {
+        const auto degrees = shortest(*edits.rotate);
+        if (!model || model->rotate != *edits.rotate) {
+            if (entry.attributes.contains("angle")) {
+                if (entry.attributes.contains("rotate") && !apophysis) {
+                    // A requested rotation can repair an ambiguous generic pair.
+                    changes["angle"] = std::nullopt;
+                    changes["rotate"] = degrees;
+                } else {
+                    changes["angle"] = shortest(-*edits.rotate * (std::numbers::pi / 180));
+                    if (entry.attributes.contains("rotate")) changes["rotate"] = degrees;
+                }
+            } else changes["rotate"] = degrees;
+        }
+        if (model) model->rotate = *edits.rotate;
+    }
+    if (edits.oversample) {
+        if (*edits.oversample < 1) throw std::invalid_argument("Oversampling must be positive");
+        if (!model || model->oversample != *edits.oversample) {
+            const bool historical = entry.attributes.contains("supersample");
+            changes[historical ? "supersample" : "oversample"] = std::to_string(*edits.oversample);
+            if (historical) changes["oversample"] = std::nullopt;
+        }
+        if (model) model->oversample = *edits.oversample;
+    }
+    if (edits.background) {
+        const auto [r,g,b] = *edits.background;
+        if (!(r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1))
+            throw std::invalid_argument("Background channels must be in [0,1]");
+        if (!model || model->background.r != r || model->background.g != g || model->background.b != b)
+            changes["background"] = shortest(r) + " " + shortest(g) + " " + shortest(b);
+        if (model) model->background = *edits.background;
+    }
+    if (edits.palette_mode) {
+        if (*edits.palette_mode != PaletteMode::step && *edits.palette_mode != PaletteMode::linear)
+            throw std::invalid_argument("Unrecognized palette mode");
+        if (!model || model->palette_mode != *edits.palette_mode)
+            changes["palette_mode"] = *edits.palette_mode == PaletteMode::linear ? "linear" : "step";
+        if (model) model->palette_mode = *edits.palette_mode;
+    }
+    if (edits.clear_filter_radius && edits.filter_radius)
+        throw std::invalid_argument("Cannot set and clear the filter radius together");
+    if (edits.filter_radius) {
+        if (!(*edits.filter_radius >= 0)) throw std::invalid_argument("Filter radius must be nonnegative");
+        const auto encoded = shortest(*edits.filter_radius);
+        if (!model || model->filter_radius != edits.filter_radius) changes["filter"] = encoded;
+        if (model) model->filter_radius = edits.filter_radius;
+    } else if (edits.clear_filter_radius) {
+        changes["filter"] = std::nullopt;
+        changes["filter_shape"] = std::nullopt;
+        if (model) model->filter_radius = apophysis ? std::optional<double>(.5) : std::nullopt;
+    }
+    if (model) validate(*model);
     std::vector<Patch> patches;
-    AttributeChanges attributes;
-    for (auto& [key, value] : changes) attributes[key] = std::move(value);
-    attribute_patches(range, entry.attributes, std::move(attributes), patches);
-    commit(std::move(patches));
+    attribute_patches(range, entry.attributes, std::move(changes), patches);
+    commit(std::move(patches), model ? std::optional<std::size_t>(index) : std::nullopt);
 }
 
 std::string LegacyDocument::encode_ascii(Text ascii) const {
@@ -426,6 +552,89 @@ void LegacyDocument::commit(std::vector<Patch> patches, std::optional<std::size_
     auto updated = parse(std::move(output));
     if (render_index) (void)updated.render_model(*render_index);
     *this = std::move(updated);
+}
+
+void LegacyDocument::edit_palette(std::size_t index, const Palette& palette) {
+    const auto& range = ranges_.at(index);
+    for (const auto& [r,g,b] : palette) {
+        if (!(r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1))
+            throw std::invalid_argument("Palette channels must be in [0,1]");
+    }
+    bool renderable = false;
+    try {
+        const auto original = render_model(index);
+        renderable = true;
+        if (std::equal(palette.begin(), palette.end(), original.palette.begin(), [](RGB a, RGB b) {
+                return a.r == b.r && a.g == b.g && a.b == b.b;
+            })) return;
+    } catch (const std::runtime_error&) {
+        // Supplying an embedded palette can repair a missing/catalog palette.
+    } catch (const std::invalid_argument&) {}
+    const std::string newline = bytes_.find(encode_ascii("\r\n")) != std::string::npos ? "\r\n" : "\n";
+    std::string payload;
+    for (std::size_t i = 0; i < palette.size(); ++i) {
+        if (i) payload += newline + "  ";
+        const auto& [r,g,b] = palette[i];
+        payload += "<color index=\"" + std::to_string(i) + "\" rgb=\"" + shortest(r * 255) +
+                   " " + shortest(g * 255) + " " + shortest(b * 255) + "\"/>";
+    }
+    std::vector<Patch> patches;
+    if (entries_[index].attributes.contains("palette"))
+        attribute_patches(range, entries_[index].attributes, {{"palette", "-1"}}, patches);
+    const auto& sources = sources_[index].palettes;
+    if (!sources.empty()) {
+        for (std::size_t i = 0; i < sources.size(); ++i) {
+            const auto& source = sources[i];
+            std::string replacement = i == 0 ? encode_ascii(payload) : std::string{};
+            for (const auto& note : source.annotations)
+                replacement += bytes_.substr(note.begin, note.end - note.begin);
+            patches.push_back({source.range.begin, source.range.end, std::move(replacement)});
+        }
+    } else {
+        const auto ending = encode_ascii("/>");
+        if (range.open_end >= ending.size() &&
+                bytes_.compare(range.open_end - ending.size(), ending.size(), ending) == 0) {
+            patches.push_back({range.open_end - ending.size(), range.open_end,
+                encode_ascii(">" + newline + "  " + payload + newline + "</flame>")});
+        } else {
+            patches.push_back({range.close_begin, range.close_begin,
+                              encode_ascii(newline + "  " + payload + newline)});
+        }
+    }
+    commit(std::move(patches), renderable ? std::optional<std::size_t>(index) : std::nullopt);
+}
+
+std::size_t LegacyDocument::append_fragment(std::string fragment) {
+    const auto index = entries_.size();
+    const std::string newline = bytes_.find(encode_ascii("\r\n")) != std::string::npos ? "\r\n" : "\n";
+    std::vector<Patch> patches;
+    if (root_is_flame_) {
+        patches.push_back({root_range_.begin, root_range_.begin, encode_ascii("<flames>" + newline)});
+        patches.push_back({root_range_.end, root_range_.end,
+                          encode_ascii(newline) + fragment + encode_ascii(newline + "</flames>")});
+    } else {
+        patches.push_back({root_range_.close_begin, root_range_.close_begin,
+                          encode_ascii(newline) + fragment + encode_ascii(newline)});
+    }
+    commit(std::move(patches));
+    return index;
+}
+
+std::size_t LegacyDocument::append_flame(const Flame& flame) {
+    const auto generated = parse(serialize_flame(flame));
+    (void)generated.render_model(0);
+    return append_fragment(encode_ascii(ascii_xml(generated.element_bytes(0))));
+}
+
+std::size_t LegacyDocument::duplicate_flame(std::size_t index, const std::string& new_name) {
+    const TransformSource source{ranges_.at(index), entries_.at(index).attributes};
+    return append_fragment(edited_element(source, {{"name", new_name}}));
+}
+
+void LegacyDocument::remove_flame(std::size_t index) {
+    const auto& range = ranges_.at(index);
+    if (entries_.size() <= 1) throw std::invalid_argument("At least one flame must remain");
+    commit({{range.begin, range.end, {}}});
 }
 
 namespace {

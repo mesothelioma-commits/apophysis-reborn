@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include "creative_widgets.hpp"
 #include "flame_io.hpp"
 #include "output_file.hpp"
 #include <QAction>
@@ -22,9 +23,9 @@
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLocale>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QLocale>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
@@ -32,23 +33,23 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QScrollArea>
 #include <QScreen>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QStyle>
-#include <QTableWidget>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QTimer>
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <algorithm>
-#include <cmath>
-#include <climits>
 #include <charconv>
+#include <climits>
+#include <cmath>
 #include <numbers>
 
 namespace apo::editor {
@@ -190,9 +191,10 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent)
     });
     help->addAction("About Apophysis Reborn", this, [this] {
         QMessageBox::about(
-            this, "Apophysis Reborn 0.4.0",
-            "Primary Editor development checkpoint\nC++20 / Qt 6 / multithreaded CPU renderer\n\n"
-            "21 registered variations and source-preserving legacy documents.\n"
+            this, "Apophysis Reborn 0.5.0",
+            "Creative Tools development checkpoint\nC++20 / Qt 6 / multithreaded CPU renderer\n\n"
+            "31 registered variations, gradient and adjustment editors, seeded generation and "
+            "mutations.\n"
             "See the packaged compatibility report for historical rendering coverage.\n\n"
             "Qt and other third-party license texts accompany the portable distribution.");
     });
@@ -273,6 +275,12 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent)
     refresh();
 }
 
+MainWindow::~MainWindow() {
+    for (auto child : findChildren<QObject *>())
+        QObject::disconnect(child, nullptr, this, nullptr);
+    preview_.stop();
+    exporter_.stop();
+}
 void MainWindow::makeActions() {
     auto file = menuBar()->addMenu("&File");
     auto create = file->addAction(style()->standardIcon(QStyle::SP_FileIcon), "&New flame", this,
@@ -424,6 +432,45 @@ void MainWindow::makeActions() {
         });
     });
     addFinal_->setObjectName("actionAddFinal");
+    auto flame = menuBar()->addMenu("&Flame");
+    duplicateFlame_ = flame->addAction("Duplicate selected flame", this, [this] {
+        run([&] {
+            if (!session_.hasDocument())
+                return;
+            const auto index = std::size_t(session_.selectedFlame());
+            const auto next = int(session_.document().entries().size());
+            const auto name = session_.document().entries()[index].name + " copy";
+            session_.change(
+                "Duplicate flame", [&](auto &doc) { doc.duplicate_flame(index, name); }, 0, false, next);
+        });
+    });
+    duplicateFlame_->setObjectName("actionDuplicateFlame");
+    duplicateFlame_->setShortcut(QKeySequence("Ctrl+Shift+D"));
+    deleteFlame_ = flame->addAction("Delete selected flame", this, [this] {
+        run([&] {
+            if (!session_.hasDocument() || session_.document().entries().size() < 2)
+                return;
+            const auto index = session_.selectedFlame();
+            const int next = std::min(index, int(session_.document().entries().size()) - 2);
+            session_.change(
+                "Delete flame", [&](auto &doc) { doc.remove_flame(std::size_t(index)); }, 0, false,
+                next);
+        });
+    });
+    deleteFlame_->setObjectName("actionDeleteFlame");
+    flame->addSeparator();
+    gradient_ = flame->addAction("Gradient editor…", this, &MainWindow::editGradient);
+    gradient_->setObjectName("actionGradient");
+    gradient_->setShortcut(QKeySequence("Ctrl+G"));
+    adjustments_ = flame->addAction("Adjustment editor…", this, &MainWindow::editAdjustments);
+    adjustments_->setObjectName("actionAdjustments");
+    adjustments_->setShortcut(QKeySequence("Ctrl+J"));
+    mutations_ = flame->addAction("Mutation explorer…", this, [this] { exploreFlames(true); });
+    mutations_->setObjectName("actionMutations");
+    mutations_->setShortcut(QKeySequence("Ctrl+M"));
+    randomFlames_ = flame->addAction("Random flame generator…", this, [this] { exploreFlames(false); });
+    randomFlames_->setObjectName("actionRandomFlames");
+    randomFlames_->setShortcut(QKeySequence("Ctrl+Shift+N"));
     auto toolbar = addToolBar("Main");
     toolbar->setObjectName("mainToolbar");
     toolbar->setMovable(false);
@@ -452,6 +499,18 @@ void MainWindow::makeActions() {
         pause_->setChecked(false);
         preview_.restart();
     });
+    auto creativeTools = addToolBar("Creative tools");
+    creativeTools->setObjectName("creativeToolbar");
+    creativeTools->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    for (const auto &[label, action] :
+         std::array<std::pair<QString, QAction *>, 4>{{{"Gradient", gradient_},
+                                                       {"Adjust", adjustments_},
+                                                       {"Mutate", mutations_},
+                                                       {"Random", randomFlames_}}}) {
+        auto shortcut = creativeTools->addAction(label, action, &QAction::trigger);
+        connect(action, &QAction::changed, shortcut,
+                [action, shortcut] { shortcut->setEnabled(action->isEnabled()); });
+    }
 }
 
 void MainWindow::makeLibrary() {
@@ -1011,6 +1070,8 @@ void MainWindow::refreshSelection() {
     model_.reset();
     const bool available = session_.hasDocument();
     save_->setEnabled(available);
+    duplicateFlame_->setEnabled(available);
+    deleteFlame_->setEnabled(available && session_.document().entries().size() > 1);
     name_->setEnabled(available);
     for (auto field : {centerX_, centerY_, scale_})
         field->setEnabled(available);
@@ -1073,6 +1134,9 @@ void MainWindow::refreshSelection() {
     lock_->setEnabled(model_.has_value());
     render_->setEnabled(model_.has_value() && !exporter_.isBusy());
     properties_->setEnabled(model_.has_value());
+    gradient_->setEnabled(model_.has_value());
+    adjustments_->setEnabled(model_.has_value());
+    mutations_->setEnabled(model_.has_value());
     refreshing_ = false;
     refreshTransform();
     requestPreview();
@@ -1161,6 +1225,93 @@ void MainWindow::editTransform(const QString &label, const LegacyTransformEdits 
     session_.change(label, [&](auto &document) {
         document.edit_transform(session_.selectedFlame(), session_.selectedTransform(), edit,
                                 session_.isFinalTransform());
+    });
+}
+void MainWindow::editGradient() {
+    if (!model_)
+        return;
+    const auto original = *model_;
+    const bool paused = preview_.isPaused();
+    preview_.setPaused(true);
+    GradientDialog dialog(original, this);
+    const auto result = dialog.exec();
+    preview_.setPaused(paused);
+    if (result != QDialog::Accepted)
+        return;
+    run([&] {
+        const auto &next = dialog.resultFlame();
+        const bool samePalette =
+            std::equal(original.palette.begin(), original.palette.end(), next.palette.begin(),
+                       [](RGB a, RGB b) { return a.r == b.r && a.g == b.g && a.b == b.b; });
+        session_.change("Edit gradient", [&](auto &document) {
+            if (!samePalette)
+                document.edit_palette(std::size_t(session_.selectedFlame()), next.palette);
+            if (original.palette_mode != next.palette_mode) {
+                LegacyEdits edit;
+                edit.palette_mode = next.palette_mode;
+                document.edit(std::size_t(session_.selectedFlame()), edit);
+            }
+        });
+    });
+}
+void MainWindow::editAdjustments() {
+    if (!model_)
+        return;
+    const bool paused = preview_.isPaused();
+    preview_.setPaused(true);
+    AdjustmentDialog dialog(*model_, this);
+    const auto result = dialog.exec();
+    preview_.setPaused(paused);
+    if (result != QDialog::Accepted)
+        return;
+    run([&] {
+        session_.change("Adjust flame", [&](auto &document) {
+            document.edit(std::size_t(session_.selectedFlame()), dialog.edits());
+        });
+    });
+}
+void MainWindow::exploreFlames(bool mutation) {
+    if (mutation && !model_)
+        return;
+    const bool paused = preview_.isPaused();
+    preview_.setPaused(true);
+    ExploreDialog dialog(mutation ? ExploreDialog::Mode::mutation : ExploreDialog::Mode::random,
+                         model_.value_or(demo_flame()), this);
+    const auto result = dialog.exec();
+    preview_.setPaused(paused);
+    if (result != QDialog::Accepted || dialog.acceptedFlames().empty())
+        return;
+    run([&] {
+        const auto &flames = dialog.acceptedFlames();
+        if (!session_.hasDocument()) {
+            session_.loadBytes(serialize_flame(flames.front()), {}, true);
+            if (flames.size() > 1)
+                session_.change("Add generated batch", [&](auto &document) {
+                    for (std::size_t i = 1; i < flames.size(); ++i)
+                        document.append_flame(flames[i]);
+                });
+            return;
+        }
+        const auto source = std::size_t(session_.selectedFlame());
+        if (mutation && dialog.disposition() == ExploreDialog::Disposition::replace) {
+            session_.change("Apply mutation", [&](auto &document) {
+                applyCreativeFlame(document, source, flames.front());
+            });
+        } else {
+            const auto next = int(session_.document().entries().size());
+            session_.change(
+                mutation ? "Keep mutation candidates" : "Add generated flames",
+                [&](auto &document) {
+                    for (const auto &flame : flames) {
+                        if (mutation) {
+                            const auto index = document.duplicate_flame(source, flame.name);
+                            applyCreativeFlame(document, index, flame);
+                        } else
+                            document.append_flame(flame);
+                    }
+                },
+                0, false, next);
+        }
     });
 }
 void MainWindow::commitAffine(const Affine &value) {

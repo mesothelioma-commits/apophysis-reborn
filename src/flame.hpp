@@ -30,7 +30,9 @@ struct Affine {
 
 enum class Variation : unsigned {
     linear, sinusoidal, spherical, swirl, horseshoe, polar, handkerchief, heart,
-    disc, spiral, hyperbolic, diamond, ex, julia, bent, bubble = 28, noise = 31, julian = 32, blur = 34, foci = 64, pre_blur = 67
+    disc, spiral, hyperbolic, diamond, ex, julia, bent, waves, fisheye, popcorn,
+    exponential, power, cosine, rings, fan, eyefish = 27, bubble = 28,
+    cylinder = 29, noise = 31, julian = 32, blur = 34, foci = 64, pre_blur = 67
 };
 struct VariationInfo { Variation id; std::string_view name; };
 std::span<const VariationInfo> variation_registry();
@@ -85,7 +87,9 @@ private:
     std::vector<BlurHistory> blur_histories_; // Per transform, private to this orbit stream.
 };
 
-Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters& parameters = {});
+// The affine-coupled classic variations read the transform's pre-affine coefficients.
+Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters& parameters = {},
+                      const Affine& pre = {});
 struct Orbit { Point point; double color = 0; };
 Orbit apply_transform(const Transform& transform, Orbit previous, Rng& rng);
 void validate(const Flame& flame); // Throws std::invalid_argument with the offending setting.

@@ -1,0 +1,48 @@
+// This harness supplies inputs. Original Pascal methods are inserted by the generator.
+program ClassicVariationOracle;
+{$mode delphi}
+uses Math, SysUtils;
+const EPS: double = 1E-300;
+type TXForm = class
+    vars: array[0..29] of double;
+    c10, c11, c20, c21: double;
+    waves_f1, waves_f2, rings_dx, fan_dx, fan_dx2: double;
+    FTx, FTy, FPx, FPy, FAngle, FLength, FSinA, FCosA: double;
+    procedure PrecalcAll;
+    procedure Waves; procedure Fisheye; procedure Popcorn; procedure Exponential;
+    procedure Power; procedure Cosine; procedure Rings; procedure Fan;
+    procedure Eyefish; procedure Cylinder;
+end;
+@METHODS@
+
+var xf: TXForm; kind, classic, i: integer;
+    a, b, c, d, e, f, weight, x, y: double;
+begin
+    DefaultFormatSettings.DecimalSeparator := '.';
+    xf := TXForm.Create;
+    while not eof(input) do begin
+        readln(kind, a, b, c, d, e, f, weight, x, y);
+        for i := 0 to 29 do xf.vars[i] := 0;
+        classic := kind;
+        if kind = 27 then classic := 23;
+        if kind = 29 then classic := 25;
+        xf.vars[classic] := weight;
+        xf.c10 := c; xf.c11 := d; xf.c20 := e; xf.c21 := f;
+        xf.waves_f1 := 1 / (sqr(e) + EPS);
+        xf.waves_f2 := 1 / (sqr(f) + EPS);
+        xf.rings_dx := sqr(e) + EPS;
+        xf.fan_dx := pi * (sqr(e) + EPS);
+        xf.fan_dx2 := xf.fan_dx / 2;
+        xf.FTx := a * x + c * y + e;
+        xf.FTy := b * x + d * y + f;
+        xf.FPx := 0; xf.FPy := 0;
+        xf.PrecalcAll;
+        case kind of
+            @CALLS@
+            else Halt(1);
+        end;
+        writeln(FloatToStrF(0.91 * xf.FPx + 0.27 * xf.FPy - 0.05, ffGeneral, 17, 0), #9,
+                FloatToStrF(-0.13 * xf.FPx + 0.75 * xf.FPy + 0.08, ffGeneral, 17, 0));
+    end;
+    xf.Free;
+end.

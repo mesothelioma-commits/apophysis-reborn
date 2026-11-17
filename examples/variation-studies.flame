@@ -254,4 +254,124 @@
     <color index="197" rgb="247 107 77"/>
     <color index="255" rgb="141 50 123"/>
   </flame>
+  <flame name="waves" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" waves="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="fisheye" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" fisheye="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="popcorn" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" popcorn="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="exponential" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" exponential="1"
+           coefs="0.38 -0.18 0.18 0.38 0.1 0.2" post="0.65 0 0 0.65 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="power" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" power="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="cosine" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" cosine="1"
+           coefs="0.38 -0.18 0.18 0.38 0.1 0.2" post="0.65 0 0 0.65 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="rings" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" rings="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="fan" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" fan="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="eyefish" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" eyefish="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="cylinder" size="480 360" center="0 0" scale="110"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" cylinder="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.75 0 0 0.75 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
 </flames>

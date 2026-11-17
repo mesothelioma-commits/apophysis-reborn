@@ -1,6 +1,6 @@
 # Native Qt desktop build
 
-The primary editor uses Qt 6 Widgets and the same C++20 rendering and legacy-document library as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The existing core CLI remains available and shares the packaged C++ runtime. Keep the complete executable directory together.
+The 0.5.0 editor and its creative tools use Qt 6 Widgets and the same C++20 rendering and legacy-document library as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The existing core CLI remains available and shares the packaged C++ runtime. Keep the complete executable directory together.
 
 ## Build with an installed Qt development kit
 
@@ -69,7 +69,9 @@ export QT_QPA_PLATFORM_PLUGIN_PATH=/path/to/native-qt/usr/lib/x86_64-linux-gnu/q
 ctest --test-dir build --output-on-failure
 ```
 
-The Linux editor was compiled with Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. A relocated runtime also executed its complete offscreen smoke workflow, producing an editor screenshot, a preview image and a saved flame. The Windows editor and nine console executables cross-compiled against the matched Qt headers and import libraries. The staged set contains 41 executables, DLLs and plugins. Import inspection resolved all 11,349 non-system imported symbols against the exact copied libraries. Execution of the Windows editor remains a separate platform check.
+The Linux editor was compiled with Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. All 16 CTest entries passed in both Release and ASan/UBSan Debug builds. The running native desktop exercised creative editing and saved a mutation branch. The final creative smoke workflow rendered the editor and all four creative dialogs and produced all 12 required outputs.
+
+The Windows editor and twelve console executables cross-compiled against the matched Qt headers and import libraries. The staged set contains 46 files, including 44 executable/DLL/plugin PE modules. Import inspection resolved all 12,922 non-system imported symbols against the exact copied libraries, with zero missing. All staged executables match the final build. Execution of the Windows programs remains a separate platform check; cross-compilation and import inspection do not establish a Windows execution result.
 
 When ready to run that check on Windows 11, extract the complete milestone ZIP and run from Git Bash.
 
@@ -77,4 +79,19 @@ When ready to run that check on Windows 11, extract the complete milestone ZIP a
 bash scripts/verify-editor-windows.sh
 ```
 
-The script records the OS version, runs the core and Qt test programs, launches the editor's automated smoke workflow, and keeps a log and its screenshots under the project's `logs` and `out` directories. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+The script records the OS version, runs the core and Qt test programs, launches the editor's automated creative smoke workflow, verifies every required output and inspects the saved original, random batch and mutation flame through the CLI. It keeps a log and artifacts under the project's `logs` and `out` directories. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+
+The creative workflow can also be invoked directly:
+
+```bash
+./bin/windows-x64/apophysis-reborn.exe --creative-smoke-test out/creative-smoke
+```
+
+It waits for the main preview, renders the Gradient, Adjustment, Mutation and Random dialogs, waits for their previews and candidate thumbnails, writes the following files, and exits with a status code. It has a 120-second timeout. The original `--smoke-test DIR` remains available for the main-editor-only workflow.
+
+| Outputs | Files |
+| --- | --- |
+| Window screenshots | `editor.png`, `gradient-editor.png`, `adjustment-editor.png`, `mutation-explorer.png`, `random-explorer.png` |
+| Preview image | `preview.png` |
+| Flame examples | `saved-example.flame`, `gradient-example.flame`, `adjustment-example.flame`, `mutation-example.flame`, `random-batch.flame` |
+| Palette exchange | `palette.gpl` |

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <numbers>
 #include <stdexcept>
 
 namespace {
@@ -293,10 +294,223 @@ void test_encoded_transform_edits() {
         check(d.render_model(0).transforms[1].pre.e == -1,"UTF-16 append");
     }
 }
+void same_palette(const Palette& actual, const Palette& expected) {
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        check(std::abs(actual[i].r - expected[i].r) < 1e-15 &&
+              std::abs(actual[i].g - expected[i].g) < 1e-15 &&
+              std::abs(actual[i].b - expected[i].b) < 1e-15, "edited palette values changed");
+    }
+}
+
+void test_adjustment_fields() {
+    auto flame = demo_flame();
+    flame.source_version = "Apophysis 7x";
+    std::string xml = serialize_flame(flame);
+    xml = replaced(xml, "rotate=\"0\"", "angle='-0.25' rotate='14'");
+    xml = replaced(xml, "oversample=", "supersample=");
+    const std::string history = "<!-- keep adjustment note --><edit><flame angle='0.1' gamma='8'/></edit>";
+    xml = replaced(xml, "</flame>", history+"</flame>");
+    auto standalone = LegacyDocument::parse(xml);
+    const std::string entry(standalone.element_bytes(0));
+    const std::string sibling = "<flame name='Archive' vendor='1'><xform future='1'/></flame>";
+    auto doc = LegacyDocument::parse("<Flames>"+entry+sibling+"</Flames>");
+    const auto original = doc.bytes();
+    auto model = doc.render_model(0);
+    LegacyEdits no_change;
+    no_change.zoom = model.zoom; no_change.rotate = model.rotate;
+    no_change.gamma = model.gamma; no_change.gamma_threshold = model.gamma_threshold;
+    no_change.brightness = model.brightness; no_change.vibrancy = model.vibrancy;
+    no_change.quality = model.quality; no_change.filter_radius = model.filter_radius;
+    no_change.oversample = model.oversample; no_change.background = model.background;
+    no_change.palette_mode = model.palette_mode;
+    doc.edit(0, no_change);
+    check(doc.bytes() == original, "same-value adjustments changed original source");
+
+    LegacyEdits change;
+    change.zoom = 1.25; change.rotate = 90; change.gamma = 2.5; change.gamma_threshold = .025;
+    change.brightness = 1.25; change.vibrancy = .75; change.quality = 25;
+    change.filter_radius = .8; change.oversample = 3; change.background = RGB{.25,.5,.75};
+    change.palette_mode = PaletteMode::step;
+    doc.edit(0, change);
+    model = doc.render_model(0);
+    check(model.zoom == 1.25 && std::abs(model.rotate - 90) < 1e-12 && model.gamma == 2.5 &&
+          model.gamma_threshold == .025 && model.brightness == 1.25 && model.vibrancy == .75 &&
+          model.quality == 25 && model.filter_radius == .8 && model.oversample == 3 &&
+          model.palette_mode == PaletteMode::step, "adjustment values or producer aliases did not survive");
+    check(model.background.r == 63.0/255 && model.background.g == 127.0/255 &&
+          model.background.b == 191.0/255, "Apophysis background quantization changed");
+    check(doc.bytes().find("supersample=\"3\"") != std::string::npos &&
+          doc.bytes().find("oversample=") == std::string::npos &&
+          doc.bytes().find("rotate='90'") != std::string::npos &&
+          doc.bytes().find("angle='-1.5707963267948966'") != std::string::npos,
+          "historical camera and sampling aliases were not retained");
+    check(doc.element_bytes(1) == sibling && doc.bytes().find(history) != std::string::npos,
+          "adjustments changed sibling or historical markup");
+    change = {}; change.clear_filter_radius = true;
+    doc.edit(0, change);
+    check(doc.render_model(0).filter_radius == .5 && doc.entries()[0].attributes.count("filter") == 0,
+          "clearing Apophysis filter should restore its producer default");
+
+    auto generic = LegacyDocument::parse("<flame filter='1' filter_shape='gaussian' angle='0.3' "
+                                         "supersample='1'>"+supported+"</flame>");
+    change = {}; change.clear_filter_radius = true; change.rotate = 180; change.oversample = 2;
+    generic.edit(0,change);
+    check(!generic.render_model(0).filter_radius &&
+          std::abs(generic.render_model(0).rotate - 180) < 1e-12 &&
+          generic.bytes().find("rotate=") == std::string::npos &&
+          generic.bytes().find("filter_shape") == std::string::npos,
+          "generic angle alias or filter reset");
+    auto repaired = LegacyDocument::parse("<flame rotate='0' angle='1'>"+supported+"</flame>");
+    change = {}; change.rotate = 45; repaired.edit(0,change);
+    check(repaired.render_model(0).rotate == 45 && repaired.bytes().find("angle=") == std::string::npos,
+          "explicit rotation should repair ambiguous generic aliases");
+
+    const auto good = doc.bytes();
+    const auto rejected = [&](LegacyEdits invalid, Text diagnostic) {
+        rejects([&]{ doc.edit(0,invalid); },diagnostic);
+        check(doc.bytes() == good,"rejected adjustment changed source bytes");
+    };
+    change = {}; change.gamma = 0; rejected(change,"positive");
+    change = {}; change.quality = 0; rejected(change,"positive");
+    change = {}; change.brightness = -1; rejected(change,"nonnegative");
+    change = {}; change.gamma_threshold = -1; rejected(change,"nonnegative");
+    change = {}; change.vibrancy = 1.01; rejected(change,"[0,1]");
+    change = {}; change.oversample = 0; rejected(change,"positive");
+    change = {}; change.filter_radius = std::numeric_limits<double>::infinity(); rejected(change,"finite");
+    change = {}; change.filter_radius = -.1; rejected(change,"nonnegative");
+    change = {}; change.filter_radius = .2; change.clear_filter_radius = true; rejected(change,"together");
+    change = {}; change.background = RGB{1,0,std::numeric_limits<double>::quiet_NaN()}; rejected(change,"[0,1]");
+    change = {}; change.zoom = 1e6; rejected(change,"density");
+    change = {}; change.palette_mode = static_cast<PaletteMode>(7); rejected(change,"palette mode");
+    change = {}; change.gamma = 2.75; doc.edit(1,change);
+    check(doc.entries()[1].attributes.at("gamma") == "2.75" &&
+          doc.entries()[1].attributes.at("vendor") == "1", "preservation-only tone edit");
+}
+
+void test_palette_edits() {
+    Palette palette = default_palette();
+    for (std::size_t i = 0; i < palette.size(); ++i)
+        palette[i] = {double(i)/255, .123456789012345, double(255-i)/255};
+    const std::string sibling = "<flame name='Unchanged' future='1'><palette unknown='yes'/></flame>";
+    const std::string history = "<edit><flame><palette count='2'>historical data</palette></flame></edit>";
+    std::string packed;
+    for (int i = 0; i < 256; ++i) packed += "112233";
+    packed.insert(60,"<!-- palette note --><?palette source?>");
+    const std::string entry = "<flame name='Palette'><xform weight='1' linear='1'/>"+history+
+        "<palette count='256' format='RGB'>"+packed+"</palette></flame>";
+    auto doc = LegacyDocument::parse("<flames>"+entry+sibling+"</flames>");
+    const auto original = doc.bytes();
+    doc.edit_palette(0,doc.render_model(0).palette);
+    check(doc.bytes() == original,"same palette edit should retain original payload");
+    doc.edit_palette(0,palette);
+    same_palette(doc.render_model(0).palette,palette);
+    check(doc.element_bytes(1) == sibling && doc.bytes().find(history) != std::string::npos &&
+          doc.bytes().find("<!-- palette note --><?palette source?>") != std::string::npos,
+          "palette edit lost comments, processing instruction, history or siblings");
+    const auto after = doc.bytes();
+    auto invalid = palette; invalid[23].b = std::numeric_limits<double>::quiet_NaN();
+    rejects([&]{ doc.edit_palette(0,invalid); },"[0,1]");
+    check(doc.bytes() == after,"invalid palette committed");
+
+    for (const auto& payload : {std::string("<color index='0' rgb='32 64 128'/><!-- stop note -->"),
+            std::string("<color index='0' rgba='32 64 128 255'/><color index='128' rgb='255 255 255'/>")}) {
+        auto stops = LegacyDocument::parse("<flame>"+payload+supported.substr(0,supported.find("<color"))+"</flame>");
+        stops.edit_palette(0,palette);
+        same_palette(stops.render_model(0).palette,palette);
+    }
+    std::string argb;
+    for (int i = 0; i < 256; ++i) argb += "FF112233";
+    auto old_colors = LegacyDocument::parse("<flame><xform weight='1' linear='1'/><colors count='256' data='"+argb+"'/></flame>");
+    old_colors.edit_palette(0,palette);
+    same_palette(old_colors.render_model(0).palette,palette);
+    for (const auto* reference : {"17","named-gradient"}) {
+        auto catalog = LegacyDocument::parse("<flame palette='"+std::string(reference)+"'><xform weight='1' linear='1'/></flame>");
+        catalog.edit_palette(0,palette);
+        same_palette(catalog.render_model(0).palette,palette);
+        check(catalog.entries()[0].attributes.at("palette") == "-1", "palette reference was not made explicit");
+    }
+    auto empty = LegacyDocument::parse("<flame name='Incomplete' />");
+    empty.edit_palette(0,palette);
+    check(empty.bytes().find("<flame name='Incomplete' >") == 0 && empty.bytes().ends_with("</flame>"),
+          "palette insertion in a self-closing preserved flame");
+}
+
+void test_library_operations() {
+    const std::string body = "<flame name='Parent' unknown='kept'>"+supported+
+        "<edit><flame name='history'/></edit></flame>";
+    const std::string prefix = "\xef\xbb\xbf<?xml version='1.0'?>\r\n<!-- before -->";
+    const std::string suffix = "<!-- after -->\r\n";
+    auto doc = LegacyDocument::parse(prefix+body+suffix);
+    check(doc.duplicate_flame(0,"Caf\xc3\xa9 & copy") == 1,"duplicate flame index");
+    check(doc.element_bytes(0) == body && doc.entries()[1].name == "Caf\xc3\xa9 & copy" &&
+          doc.bytes().starts_with(prefix+"<flames>\r\n") && doc.bytes().ends_with("</flames>"+suffix),
+          "standalone wrapping changed prolog, original entry or trailing comments");
+    check(doc.element_bytes(1) == replaced(body,"name='Parent'","name='Caf&#233; &amp; copy'"),
+          "duplication rewrote unrequested source fields");
+    auto generated = demo_flame(); generated.name = "\xe9\x9b\xaa snow";
+    check(doc.append_flame(generated) == 2 && doc.render_model(2).name == generated.name,
+          "generated flame append or Unicode name");
+    doc.remove_flame(1);
+    check(doc.entries().size() == 2 && doc.element_bytes(0) == body && doc.entries()[1].name == generated.name,
+          "flame deletion changed retained entries");
+    doc.remove_flame(0);
+    const auto good = doc.bytes();
+    rejects([&]{ doc.remove_flame(0); },"must remain");
+    generated.gamma = 0;
+    rejects([&]{ doc.append_flame(generated); },"positive");
+    rejects([&]{ doc.duplicate_flame(0,std::string("bad\0name",8)); },"XML");
+    check(doc.bytes() == good,"rejected library edit changed source");
+    auto restored = LegacyDocument::parse(prefix+body+suffix);
+    check(restored.bytes() == prefix+body+suffix,"source snapshot restore changed original bytes");
+
+    for (const auto* wrapper : {"flames","Flames","pick","test"}) {
+        const std::string before = "<"+std::string(wrapper)+" name='kept'><!-- leading -->"+body+"<!-- trailing -->";
+        const std::string end = "</"+std::string(wrapper)+">";
+        auto collection = LegacyDocument::parse(before+end);
+        collection.duplicate_flame(0,"Copied");
+        check(collection.bytes().starts_with(before) && collection.bytes().ends_with(end) &&
+              collection.element_bytes(0) == body, "existing collection wrapper changed");
+    }
+}
+
+void test_encoded_creative_edits() {
+    const std::string source = "<?xml version='1.0' encoding='UTF-16'?><flame name='Old'>"+supported+
+        "<!-- encoding note --></flame>";
+    const auto palette = default_palette();
+    for (bool le : {false,true}) {
+        const std::string bom = le ? "\xff\xfe" : "\xfe\xff";
+        auto doc = LegacyDocument::parse(bom+utf16(source,le));
+        LegacyEdits edit; edit.gamma = 2.2; edit.rotate = 45; edit.oversample = 2;
+        doc.edit(0,edit); doc.edit_palette(0,palette);
+        const std::string parent(doc.element_bytes(0));
+        doc.duplicate_flame(0,"\xe9\x9b\xaa");
+        auto generated = demo_flame(); generated.name = "\xf0\x9f\x8c\x8c";
+        doc.append_flame(generated);
+        same_palette(doc.render_model(0).palette,palette);
+        check(doc.bytes().starts_with(bom+utf16("<?xml version='1.0' encoding='UTF-16'?>",le)) &&
+              doc.element_bytes(0) == parent && doc.entries()[1].name == "\xe9\x9b\xaa" &&
+              doc.render_model(2).name == generated.name &&
+              doc.bytes().find(utf16("<!-- encoding note -->",le)) != std::string::npos,
+              "UTF-16 creative edit changed encoding, Unicode or original source");
+        doc.remove_flame(1);
+        check(doc.entries().size() == 2 && doc.render_model(1).name == generated.name,"UTF-16 library remove");
+    }
+    for (const auto* encoding : {"ISO-8859-1", "windows-1252", "US-ASCII"}) {
+        auto doc = LegacyDocument::parse("<?xml version='1.0' encoding='"+std::string(encoding)+"'?>"
+            "<flame name='Original'>"+supported+"</flame>");
+        auto generated = demo_flame(); generated.name = "Caf\xc3\xa9 \xe9\x9b\xaa";
+        doc.append_flame(generated); doc.edit_palette(0,palette);
+        check(doc.render_model(1).name == generated.name && doc.bytes().find("&#233;") != std::string::npos,
+              "single-byte append failed to escape Unicode metadata");
+        same_palette(doc.render_model(0).palette,palette);
+    }
+}
+
 }
 int main() {
     try { test_archival_collection(); test_boundaries(); test_encodings();
-          test_transform_fields(); test_transform_structure(); test_producer_transform_edits(); test_encoded_transform_edits(); }
+          test_transform_fields(); test_transform_structure(); test_producer_transform_edits(); test_encoded_transform_edits();
+          test_adjustment_fields(); test_palette_edits(); test_library_operations(); test_encoded_creative_edits(); }
     catch (const std::exception& e) { std::cerr << e.what() << "\n"; return 1; }
     std::cout << "Legacy document byte preservation, independent rendering, edits, encodings and rejections passed\n";
 }

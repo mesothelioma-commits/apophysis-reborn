@@ -148,6 +148,100 @@ private slots:
         QVERIFY(!session.isModified());
     }
 
+    void libraryChangesRestoreBeforeAndAfterSelection() {
+        DocumentSession session;
+        const auto original = fixture();
+        session.loadBytes(original);
+        session.selectFlame(1);
+        auto generated = demo_flame();
+        generated.name = "Generated entry";
+        session.change(QStringLiteral("Append generated flame"), [&](LegacyDocument& document) {
+            document.append_flame(generated);
+        }, 0, false, 2);
+        const auto appended = session.document().bytes();
+        QCOMPARE(session.document().entries().size(), std::size_t(3));
+        QCOMPARE(session.selectedFlame(), 2);
+        QCOMPARE(session.selectedTransform(), 0);
+        QVERIFY(!session.isFinalTransform());
+        session.undoStack().undo();
+        QCOMPARE(session.document().bytes(), original);
+        QCOMPARE(session.selectedFlame(), 1);
+        QVERIFY(!session.isModified());
+        session.undoStack().redo();
+        QCOMPARE(session.document().bytes(), appended);
+        QCOMPARE(session.selectedFlame(), 2);
+
+        session.selectFlame(0);
+        session.change(QStringLiteral("Duplicate source entry"), [](LegacyDocument& document) {
+            document.duplicate_flame(0, "Duplicate \xc3\xa9");
+        }, 0, false, 3);
+        const auto duplicated = session.document().bytes();
+        QCOMPARE(session.selectedFlame(), 3);
+        QCOMPARE(session.document().entries()[3].name, std::string("Duplicate \xc3\xa9"));
+        session.undoStack().undo();
+        QCOMPARE(session.document().bytes(), appended);
+        QCOMPARE(session.selectedFlame(), 0);
+        session.undoStack().redo();
+        QCOMPARE(session.document().bytes(), duplicated);
+        QCOMPARE(session.selectedFlame(), 3);
+
+        session.change(QStringLiteral("Delete selected entry"), [](LegacyDocument& document) {
+            document.remove_flame(3);
+        }, 0, false, 2);
+        const auto deleted = session.document().bytes();
+        QCOMPARE(session.document().entries().size(), std::size_t(3));
+        QCOMPARE(session.selectedFlame(), 2);
+        session.undoStack().undo();
+        QCOMPARE(session.document().bytes(), duplicated);
+        QCOMPARE(session.selectedFlame(), 3);
+        session.undoStack().redo();
+        QCOMPARE(session.document().bytes(), deleted);
+        QCOMPARE(session.selectedFlame(), 2);
+        QCOMPARE(session.undoStack().count(), 3);
+        session.undoStack().undo();
+        session.undoStack().undo();
+        session.undoStack().undo();
+        QCOMPARE(session.document().bytes(), original);
+        QCOMPARE(session.selectedFlame(), 1);
+        QVERIFY(!session.isModified());
+        QVERIFY(session.document().bytes().find("<!-- owner caf\xe9 -->\r\n") != std::string::npos);
+    }
+
+    void invalidNextFlameRollsBackMutationAndHistory() {
+        DocumentSession session;
+        session.loadBytes(fixture());
+        session.selectFlame(1);
+        const auto before = session.document().bytes();
+        QSignalSpy changes(&session, &DocumentSession::changed);
+        QVERIFY_EXCEPTION_THROWN(session.change(QStringLiteral("Invalid append destination"),
+            [](LegacyDocument& document) {
+                document.append_flame(demo_flame());
+            }, 0, false, 3), std::invalid_argument);
+        QCOMPARE(session.document().bytes(), before);
+        QCOMPARE(session.selectedFlame(), 1);
+        QCOMPARE(session.undoStack().count(), 0);
+        QCOMPARE(session.undoStack().index(), 0);
+        QCOMPARE(changes.count(), 0);
+        QVERIFY(!session.isModified());
+
+        renameFirst(session, "Keep this edit");
+        const auto edited = session.document().bytes();
+        const auto undoCount = session.undoStack().count();
+        const auto undoIndex = session.undoStack().index();
+        QVERIFY_EXCEPTION_THROWN(session.change(QStringLiteral("Invalid deletion destination"),
+            [](LegacyDocument& document) {
+                document.remove_flame(1);
+            }, 0, false, 1), std::invalid_argument);
+        QCOMPARE(session.document().bytes(), edited);
+        QCOMPARE(session.selectedFlame(), 1);
+        QCOMPARE(session.undoStack().count(), undoCount);
+        QCOMPARE(session.undoStack().index(), undoIndex);
+        QVERIFY(session.isModified());
+        session.undoStack().undo();
+        QCOMPARE(session.document().bytes(), before);
+        QCOMPARE(session.selectedFlame(), 1);
+    }
+
     void externalChangesAndExplicitReplacement() {
         QTemporaryDir folder;
         QVERIFY(folder.isValid());

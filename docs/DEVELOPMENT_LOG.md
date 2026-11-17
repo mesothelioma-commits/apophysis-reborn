@@ -39,3 +39,16 @@ The Windows portable distribution includes the Qt runtime and complete correspon
 ### Continue with Milestone 5
 
 Start from the `v0.4.0-editor` tag and the source commit in BUILD.txt. Reuse DocumentSession for undo and recovery, LegacyDocument for original XML preservation, and PreviewController for responsive preview updates. Extend the preservation API when introducing editable palette and adjustment data. Add the full gradient editor, adjustment editor, mutation/random-generation tools and further source-verified variations. Advanced transform multi-selection, synchronization, persistent locks and configurable shortcut profiles remain on the editor backlog.
+
+
+## 0.5.0 — Creative Tools
+
+Added native gradient and adjustment dialogs, deterministic random flame batches, and a mutation explorer with candidate thumbnails, parent comparison and branching history. Palette tools include indexed RGB/HSV edits, RGB/HSV stops, presets, a local GPL library, rotation/reversal/smoothing, hue/saturation/value and RGB gamma/contrast operations. Adjustment controls expose the current camera, tone and reconstruction model. Changes preview independently and apply through one undo command.
+
+Source-preserving edits now cover palettes and adjustment fields, with historical aliases and encodings retained. Collections support append, exact-data duplication and removal; undo restores before/after entry selection. Kept mutation branches become saved library entries. Ten additional deterministic classic variations bring the registry to 31, checked against 640 new vectors from original FLAM3 and Apophysis implementations.
+
+The generator uses documented Reborn sampling distributions. Exact historical random-sequence parity, non-default historical curves, active density estimation, alpha output and additional palette formats remain open. Windows runtime acceptance is still deferred.
+
+### Continue with Milestone 6
+
+Start from `v0.5.0-creative` and the source commit in BUILD.txt. Preserve the CPU engine and all producer-aware oracle checks while adding device discovery and a real GPU rendering backend. Vulkan is the cross-vendor target; CUDA is optional. Report actual available devices and capability gaps, keep CPU fallback available, and compare numerical behavior and rendered output on real hardware before marking acceleration verified. Tiled 16K output, checkpointing and queues remain Milestone 7 work. The creative and advanced-editor compatibility backlog stays explicit in FEATURE_MATRIX.md and CREATIVE_TOOLS.md.
