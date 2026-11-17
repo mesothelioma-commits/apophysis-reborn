@@ -1,4 +1,5 @@
-#include "flame_io.hpp"
+#include "document_cli.hpp"
+#include "legacy_document.hpp"
 #include "render.hpp"
 
 #include <algorithm>
@@ -20,8 +21,13 @@ namespace {
 namespace fs = std::filesystem;
 
 void usage(std::ostream& out) {
-    out << "Apophysis Reborn 0.2.0 | CPU core\n"
+    out << "Apophysis Reborn 0.3.0 | Legacy flame files and CPU renderer\n"
         << "  flame-cpu --flame input.flame --output image.bmp [options]\n"
+        << "  flame-cpu inspect input.flame [--json]\n"
+        << "  flame-cpu save input.flame --output copy.flame [--index N] [--name TEXT]\n"
+        << "                 [--size W H] [--center X Y] [--scale PIXELS_PER_UNIT]\n"
+        << "  flame-cpu export input.flame --output single.flame [--index N]\n"
+        << "    save preserves the whole document. export writes one supported render model.\n"
         << "  flame-cpu --list-variations\n"
         << "  flame-cpu width height samples output.ppm    (foundation demo)\n"
         << "Options:\n"
@@ -50,6 +56,8 @@ int run(const std::vector<fs::path>& args) {
         for (const auto& v : apo::variation_registry()) std::cout << unsigned(v.id) << " " << v.name << "\n";
         return 0;
     }
+    if (!args.empty() && (args[0] == "inspect" || args[0] == "save" || args[0] == "export"))
+        return apo::document_command(args);
     apo::Flame flame;
     apo::RenderOptions options;
     fs::path output;
@@ -86,10 +94,10 @@ int run(const std::vector<fs::path>& args) {
         if (ext != ".bmp" && ext != ".ppm") throw std::invalid_argument("Use .bmp or .ppm for output");
         if (fs::exists(output) && fs::equivalent(input, output))
             throw std::invalid_argument("Input and output refer to the same file");
-        auto flames = apo::load_flames(input);
-        if (index == 0 || index > flames.size())
-            throw std::invalid_argument("--index must be between 1 and " + std::to_string(flames.size()));
-        flame = std::move(flames[index - 1]);
+        auto document = apo::LegacyDocument::load(input);
+        if (index == 0 || index > document.entries().size())
+            throw std::invalid_argument("--index must be between 1 and " + std::to_string(document.entries().size()));
+        flame = document.render_model(index - 1);
         options.samples = samples ? *samples : apo::default_samples(flame);
     }
     auto ext = output.extension().string();

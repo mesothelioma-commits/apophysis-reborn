@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <numbers>
 #include <stdexcept>
 #include <utility>
@@ -9,14 +10,16 @@
 namespace apo {
 namespace {
 
-constexpr std::array<VariationInfo, 15> variations{{
+constexpr std::array<VariationInfo, 21> variations{{
     {Variation::linear, "linear"}, {Variation::sinusoidal, "sinusoidal"},
     {Variation::spherical, "spherical"}, {Variation::swirl, "swirl"},
     {Variation::horseshoe, "horseshoe"}, {Variation::polar, "polar"},
     {Variation::handkerchief, "handkerchief"}, {Variation::heart, "heart"},
     {Variation::disc, "disc"}, {Variation::spiral, "spiral"},
     {Variation::hyperbolic, "hyperbolic"}, {Variation::diamond, "diamond"},
-    {Variation::ex, "ex"}, {Variation::julia, "julia"}, {Variation::bent, "bent"}
+    {Variation::ex, "ex"}, {Variation::julia, "julia"}, {Variation::bent, "bent"}, {Variation::bubble, "bubble"}, {Variation::noise, "noise"},
+    {Variation::julian, "julian"}, {Variation::blur, "blur"}, {Variation::foci, "foci"},
+    {Variation::pre_blur, "pre_blur"}
 }};
 
 constexpr double eps = 1e-10;
@@ -46,16 +49,16 @@ void validate_transform(const Transform& t) {
         throw std::invalid_argument("weight must be finite and nonnegative");
     if (!unit_interval(t.color) || !unit_interval(t.color_speed) || !unit_interval(t.opacity))
         throw std::invalid_argument("color, color_speed and opacity must be in [0,1]");
-    std::array<bool, variations.size()> seen{};
+    if (t.parameters.julian_power == 0 || !std::isfinite(t.parameters.julian_dist))
+        throw std::invalid_argument("JuliaN needs a nonzero integer power and finite distance");
+    std::array<bool, static_cast<unsigned>(Variation::pre_blur) + 1> seen{};
     for (const auto& term : t.variations) {
-        const auto index = static_cast<std::size_t>(term.id);
-        if (index >= variations.size())
-            throw std::invalid_argument("unrecognized variation id");
-        if (seen[index])
-            throw std::invalid_argument("duplicate variation: " + std::string(variations[index].name));
+        const auto name = variation_name(term.id);
+        const auto i = static_cast<unsigned>(term.id);
+        if (seen[i]) throw std::invalid_argument("duplicate variation: " + std::string(name));
         if (!std::isfinite(term.weight))
-            throw std::invalid_argument("nonfinite variation weight: " + std::string(variations[index].name));
-        seen[index] = true;
+            throw std::invalid_argument("nonfinite variation weight: " + std::string(name));
+        seen[i] = true;
     }
 }
 
@@ -108,6 +111,29 @@ std::vector<double> cumulative_weights(const Flame& flame, std::span<const doubl
 
 } // namespace
 
+namespace {
+bool prefix_ci(std::string_view text, std::string_view lower_prefix) {
+    return text.size() >= lower_prefix.size() &&
+        std::equal(lower_prefix.begin(), lower_prefix.end(), text.begin(),
+            [](char lower, unsigned char c){ return lower == std::tolower(c); });
+}
+}
+Producer identify_producer(std::string_view version) {
+    if (prefix_ci(version, "apophysis 7x")) return Producer::seven;
+    if (prefix_ci(version, "apophysis av")) return Producer::av;
+    if (prefix_ci(version, "apophysis 2.")) {
+        for (std::size_t i = 11; i < version.size(); ++i)
+            if (prefix_ci(version.substr(i), "3d hack")) return Producer::hack3d;
+        return Producer::classic;
+    }
+    return Producer::generic;
+}
+bool is_apophysis_2(std::string_view version) {
+    const auto producer = identify_producer(version);
+    return producer == Producer::classic || producer == Producer::hack3d;
+}
+bool is_apophysis(std::string_view version) { return identify_producer(version) != Producer::generic; }
+
 Palette default_palette() {
     Palette palette;
     for (std::size_t i = 0; i < palette.size(); ++i) {
@@ -129,15 +155,43 @@ std::optional<Variation> find_variation(std::string_view name) {
     return std::nullopt;
 }
 
+std::string_view variation_name(Variation id) {
+    for (const auto& entry : variations) if (entry.id == id) return entry.name;
+    throw std::invalid_argument("unrecognized variation id");
+}
+
 double Rng::unit() {
     return static_cast<double>(engine_() >> 11) * 0x1p-53;
 }
 
-Point apply_variation(Variation id, Point p, Rng& rng) {
+Point Rng::pre_blur_offset(const VariationParameters& transform) {
+    double radius = -2;
+    double direction;
+    if (transform.apophysis_math) {
+        auto history = std::find_if(blur_histories_.begin(), blur_histories_.end(),
+            [&](const BlurHistory& h){ return h.transform == &transform; });
+        if (history == blur_histories_.end()) {
+            blur_histories_.push_back({&transform, {unit(), unit(), unit(), unit()}});
+            history = std::prev(blur_histories_.end());
+        }
+        for (double draw : history->ring) radius += draw;
+        direction = unit();
+        history->ring[history->cursor] = transform.separate_blur_angle ? unit() : direction;
+        history->cursor = (history->cursor + 1) % history->ring.size();
+    } else {
+        for (unsigned i = 0; i < 4; ++i) radius += unit();
+        direction = unit();
+    }
+    const double angle = 2 * pi * direction;
+    return {radius * std::cos(angle), radius * std::sin(angle)};
+}
+
+Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters& parameters) {
     const auto [x, y] = p;
     const double radius_squared = x * x + y * y;
     // The historical polar angle is measured from the positive y axis. Only
     // calculate square roots / atan2 where a variation actually requires them.
+    const double guard = parameters.apophysis_math ? 1e-300 : eps;
     const auto angle = [&] { return std::atan2(x, y); };
     const auto radius = [&] { return std::sqrt(radius_squared); };
     switch (id) {
@@ -145,14 +199,16 @@ Point apply_variation(Variation id, Point p, Rng& rng) {
         return p;
     case Variation::sinusoidal:
         return {std::sin(x), std::sin(y)};
-    case Variation::spherical:
-        return {x / (radius_squared + eps), y / (radius_squared + eps)};
+    case Variation::spherical: {
+        const double d = radius_squared + guard;
+        return {x / d, y / d};
+    }
     case Variation::swirl: {
         const double s = std::sin(radius_squared), c = std::cos(radius_squared);
         return {x * s - y * c, x * c + y * s};
     }
     case Variation::horseshoe: {
-        const double denominator = radius() + eps;
+        const double denominator = radius() + guard;
         return {(x - y) * (x + y) / denominator, 2 * x * y / denominator};
     }
     case Variation::polar:
@@ -174,6 +230,7 @@ Point apply_variation(Variation id, Point p, Rng& rng) {
         return {(y / r + std::sin(guarded)) / guarded, (x / r - std::cos(guarded)) / guarded};
     }
     case Variation::hyperbolic: {
+        if (parameters.apophysis_math) return {x / (radius_squared + guard), y};
         const double r = radius(), guarded = r + eps;
         return {(x / r) / guarded, (y / r) * guarded};
     }
@@ -192,6 +249,34 @@ Point apply_variation(Variation id, Point p, Rng& rng) {
         const double r = std::sqrt(radius());
         return {r * std::cos(a), r * std::sin(a)};
     }
+    case Variation::pre_blur:
+        return rng.pre_blur_offset(parameters);
+    case Variation::bubble: {
+        const double divisor = 1 + radius_squared/4;
+        return {x/divisor, y/divisor};
+    }
+    case Variation::noise:
+    case Variation::blur: {
+        const double direction = rng.unit() * 2 * pi;
+        const double extent = rng.unit();
+        Point delta{extent * std::cos(direction), extent * std::sin(direction)};
+        if (id == Variation::noise) { delta.x *= x; delta.y *= y; }
+        return delta;
+    }
+    case Variation::julian: {
+        const double power = parameters.julian_power;
+        const double branch = std::floor(rng.unit() * std::abs(power));
+        const double theta = (std::atan2(y, x) + 2 * pi * branch) / power;
+        const double r = std::pow(radius_squared, parameters.julian_dist / (2 * power));
+        return {r * std::cos(theta), r * std::sin(theta)};
+    }
+    case Variation::foci: {
+        const double e = .5 * std::exp(x);
+        const double inverse = .25 / e;
+        const double d = e + inverse - std::cos(y);
+        const double denominator = d == 0 && parameters.apophysis_math ? 1e-6 : d;
+        return {(e - inverse) / denominator, std::sin(y) / denominator};
+    }
     case Variation::bent:
         return {x < 0 ? 2 * x : x, y < 0 ? y / 2 : y};
     }
@@ -199,11 +284,20 @@ Point apply_variation(Variation id, Point p, Rng& rng) {
 }
 
 Orbit apply_transform(const Transform& transform, Orbit previous, Rng& rng) {
-    const Point input = transform.pre.apply(previous.point);
+    Point input = transform.pre.apply(previous.point);
+    // Pre-blur changes the shared input before any ordinary term reads it.
+    for (const auto& term : transform.variations) {
+        if (term.id == Variation::pre_blur && term.weight != 0) {
+            const Point delta = rng.pre_blur_offset(transform.parameters);
+            input.x += term.weight * delta.x;
+            input.y += term.weight * delta.y;
+            break;
+        }
+    }
     Point sum;
     for (const auto& term : transform.variations) {
-        if (term.weight == 0) continue; // A disabled stochastic variation must not consume a draw.
-        const Point v = apply_variation(term.id, input, rng);
+        if (term.id == Variation::pre_blur || term.weight == 0) continue; // A disabled stochastic variation must not consume a draw.
+        const Point v = apply_variation(term.id, input, rng, transform.parameters);
         sum.x += term.weight * v.x;
         sum.y += term.weight * v.y;
     }
@@ -226,6 +320,9 @@ void validate(const Flame& flame) {
     if (!positive_finite(flame.gamma) || !std::isfinite(flame.brightness) || flame.brightness < 0 ||
         !unit_interval(flame.vibrancy))
         throw std::invalid_argument("gamma must be positive, brightness nonnegative and vibrancy in [0,1]");
+    if ((flame.filter_radius && (!std::isfinite(*flame.filter_radius) || *flame.filter_radius < 0)) ||
+        !std::isfinite(flame.gamma_threshold) || flame.gamma_threshold < 0)
+        throw std::invalid_argument("filter and gamma_threshold must be finite and nonnegative");
     if (flame.palette_mode != PaletteMode::step && flame.palette_mode != PaletteMode::linear)
         throw std::invalid_argument("unsupported palette mode");
     if (!valid_rgb(flame.background) || !std::all_of(flame.palette.begin(), flame.palette.end(), valid_rgb))

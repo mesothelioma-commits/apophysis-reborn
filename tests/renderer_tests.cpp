@@ -109,6 +109,46 @@ void test_final_feedback_and_worker_order() {
     auto singular = render(f, opt);
     require(singular.invalid >= opt.samples && !singular.plotted, "non-finite orbit recovery");
 }
+void test_legacy_reconstruction() {
+    auto f = point_flame();
+    f.brightness = .8;
+    f.filter_radius = 1.3;
+    const RenderOptions opt{45000, 35, 3};
+    auto image = render(f, opt).image;
+    // Each row is the rounded central scanline of a unit impulse after log-density.
+    // The historical implementations use different Gaussian cutoffs and support rounding.
+    const auto scan = [&](const Image& im, int x, int y, const std::array<unsigned,5>& values) {
+        for (std::size_t i = 0; i < values.size(); ++i)
+            require(pixel(im,x+int(i)-2,y)[0] == values[i], "Gaussian impulse reconstruction");
+    };
+    scan(image,8,4,{1,40,129,40,1});
+    f.source_version = "Apophysis 2.09";
+    scan(render(f,opt).image,8,4,{0,35,175,35,0});
+    f.source_version.clear();
+    f.transforms[0].pre.e = -3.5; // Point lies half a pixel outside the left edge.
+    require(pixel(render(f,opt).image,0,4)[0] == 40,"filter must sample the outside gutter");
+    f = point_flame();
+    f.brightness = .015;
+    f.gamma = 2;
+    f.gamma_threshold = .16;
+    const double density = (268./256)*std::log(5.)*f.brightness;
+    const double t = density/.16;
+    const auto adjusted = std::lround(255*((1-t)*t*.4 + t*std::sqrt(density)));
+    require(pixel(render(f,opt).image,8,4)[0] == static_cast<unsigned>(adjusted), "gamma knee");
+    f = point_flame();
+    f.source_version = "Apophysis 7x";
+    f.transforms[0].opacity = .5;
+    auto result = render(f,opt);
+    require(result.plotted > opt.samples*.48 && result.plotted < opt.samples*.52,
+            "Apophysis opacity is a plot probability");
+    f.transforms[0].opacity = 1;
+    f.transforms[0].color = .6/255;
+    f.palette[1] = {0,1,0};
+    require(pixel(render(f,opt).image,8,4)[1] != 0, "historical nearest palette index");
+    f.filter_radius = 1e300;
+    try { render(f,opt); throw std::runtime_error("Unrepresentable filter footprint"); }
+    catch (const std::invalid_argument&) {}
+}
 void test_limits() {
     auto f = point_flame();
     f.width = f.height = 16384;
@@ -128,6 +168,7 @@ int main() {
         test_projection_and_color();
         test_final_feedback_and_worker_order();
         test_limits();
+        test_legacy_reconstruction();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -1,0 +1,115 @@
+program ProducerOracle;
+{$mode delphi}{$goto on}
+uses SysUtils, Math {$ifdef SEVEN}, Bezier {$endif};
+const
+  @CONSTANTS@
+  pf24bit = 24;
+type
+  TRGB = packed record blue,green,red: byte; end;
+  TByteArray = array[0..0] of byte;
+  PByteArray = ^TByteArray;
+  TRGBArray = array[0..0] of TRGB;
+  PRGBArray = ^TRGBArray;
+  TMemoryBitmap = class
+    width,height,PixelFormat: integer;
+    data: array of array of byte;
+    function row(y:integer):pointer;
+    property scanline[y:integer]:pointer read row;
+  end;
+  TBucket = record
+    {$ifdef SEVEN}red,green,blue,count:double;{$else}red,green,blue,count:int64;{$endif}
+  end;
+  TBucket64 = TBucket;
+  TImageMaker = class
+    fcp: record
+      width,height,spatial_oversample,White_level:integer;
+      spatial_filter_radius,gamma,gamma_threshold,vibrancy,actual_density,zoom:double;
+      contrast,brightness,ppux,ppuy:double;
+      background:array[0..2] of double;
+      Transparency:boolean;
+      {$ifdef SEVEN}
+      enable_de:boolean;
+      estimator,estimator_min,estimator_curve:double;
+      curvePoints:array[0..3] of BezierPoints;
+      curveWeights:array[0..3] of BezierWeights;
+      {$endif}
+    end;
+    FOversample,FFilterSize,FBucketWidth,FBucketHeight:integer;
+    FFilter: array of array of double;
+    grid:array of array of TBucket;
+    FBitmap,FAlphaBitmap:TMemoryBitmap;
+    FGetBucket:function(x,y:integer):TBucket of object;
+    FOnProgress:procedure(value:double) of object;
+    {$ifdef SEVEN}
+    comp_max_radius,comp_min_radius,num_de_filters_d,num_de_filters,de_max_ind,de_count_limit,
+    de_cutoff_val,de_row_size,de_half_size,de_kernel_index:double;
+    de_filter_coefs,de_filter_widths:array of double;
+    procedure InitDE;
+    {$endif}
+    function ReadGrid(x,y:integer):TBucket;
+    function SafeGetBucket(x,y:integer):TBucket;
+    procedure CreateFilter;
+    procedure NormalizeFilter;
+    procedure CreateImage(YOffset:integer);
+  end;
+function TMemoryBitmap.row(y:integer):pointer;
+begin result:=@data[y][0]; end;
+function TImageMaker.ReadGrid(x,y:integer):TBucket;
+begin result:=grid[y][x]; end;
+
+@ORIGINAL_METHODS@
+
+procedure Run;
+var m:TImageMaker; x,y,g,n:integer; r:PRGBArray; outFile:File; rgb:array[0..2] of byte;
+    header:AnsiString;
+begin
+  m:=TImageMaker.Create;
+  with m do begin
+    fcp.width:=8; fcp.height:=6; fcp.ppux:=2; fcp.ppuy:=2;
+    fcp.gamma:=2.2; fcp.vibrancy:=0.75; fcp.gamma_threshold:=StrToFloat(ParamStr(3));
+    fcp.actual_density:=200; fcp.White_level:=200; fcp.contrast:=1; fcp.brightness:=0.14;
+    fcp.background[0]:=16; fcp.background[1]:=32; fcp.background[2]:=64;
+    fcp.spatial_oversample:=StrToInt(ParamStr(1)); fcp.spatial_filter_radius:=StrToFloat(ParamStr(2));
+    {$ifdef SEVEN}
+    for y:=0 to 3 do
+      for x:=0 to 3 do begin
+        fcp.curvePoints[y][x].x:=ord(x>=2); fcp.curvePoints[y][x].y:=ord(x>=2);
+        fcp.curveWeights[y][x]:=1;
+      end;
+    {$endif}
+    FBitmap:=TMemoryBitmap.Create; FAlphaBitmap:=TMemoryBitmap.Create;
+    FBitmap.width:=fcp.width; FBitmap.height:=fcp.height;
+    SetLength(FBitmap.data,fcp.height,fcp.width*3); SetLength(FAlphaBitmap.data,fcp.height,fcp.width);
+    CreateFilter;
+    // Force an integer-position impulse at the center. The grid is already accumulated.
+    g:=(FFilterSize-FOversample) div 2;
+    FBucketWidth:=fcp.width*FOversample+2*g;
+    FBucketHeight:=fcp.height*FOversample+2*g;
+    SetLength(grid,FBucketHeight,FBucketWidth);
+    FGetBucket:=ReadGrid;
+    n:=Round(fcp.width*fcp.height*fcp.actual_density);
+    with grid[g+3*FOversample,g+4*FOversample] do begin
+      count:=n; red:=150*n; green:=75*n; blue:=25*n;
+    end;
+    CreateImage(0);
+    header:='P6'+#10+'8 6'+#10+'255'+#10;
+    Assign(outFile,ParamStr(4)); Rewrite(outFile,1); BlockWrite(outFile,header[1],Length(header));
+    for y:=0 to fcp.height-1 do begin
+      r:=FBitmap.row(y);
+      for x:=0 to fcp.width-1 do begin
+        rgb[0]:=r[x].red; rgb[1]:=r[x].green; rgb[2]:=r[x].blue;
+        BlockWrite(outFile,rgb,3);
+      end;
+    end;
+    Close(outFile);
+    // Also emit every original Gaussian kernel coefficient, in row-major order.
+    for y:=0 to FFilterSize-1 do for x:=0 to FFilterSize-1 do
+      WriteLn(FOversample,#9,ParamStr(2),#9,FFilterSize,#9,y,#9,x,#9,FloatToStr(FFilter[y,x]));
+    FBitmap.Free; FAlphaBitmap.Free;
+  end;
+  m.Free;
+end;
+begin
+  DefaultFormatSettings.DecimalSeparator:='.';
+  Run;
+end.

@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <numbers>
 #include <stdexcept>
 
 namespace {
@@ -20,7 +21,7 @@ void check(bool pass, Text detail) {
 }
 
 void close(double expected, double actual, Text detail) {
-    if (std::abs(expected - actual) > 1e-12) throw std::runtime_error(std::string(detail));
+    if (!std::isfinite(actual) || std::abs(expected - actual) > 1e-12) throw std::runtime_error(std::string(detail));
 }
 
 void rejects(Text xml, Text diagnostic) {
@@ -107,6 +108,89 @@ void test_packed_palette() {
     }
 }
 
+void test_producer_import() {
+    std::string hex;
+    for (int i = 0; i < 256; ++i) hex += "001234fe";
+    const std::string packed = "<palette count='256' format='RGBA'>" + hex + "</palette>";
+    const auto test_xml = document("<xform weight='1' var='0 .5 1' color_speed='-.5' plotmode='off'/>"
+         "<finalxform enabled='0' linear='1'/><edit><flame unknown='ignore'><p>History only</p></flame></edit>" + packed,
+         "version='Apophysis 2.09' angle='1.5707963267948966' rotate='17' filter='0' gamma_threshold='.04'");
+    const auto f = parse_flames("<Flames name='stock'>" + test_xml + "</Flames>")[0];
+    check(f.filter_radius == 0 && f.gamma_threshold == .04 && f.gamma == 1 && f.quality == 50,
+          "specific producer filter and constructor defaults");
+    close(-90, f.rotate, "angle in radians takes precedence for tagged Apophysis");
+    check(!f.final_transform && f.transforms[0].opacity == 0 && f.transforms[0].color_speed == .75,
+          "disabled final, off and signed classic color_speed");
+    check(f.transforms[0].variations.size() == 2 && f.transforms[0].variations[0].id == Variation::sinusoidal &&
+        f.transforms[0].variations[0].weight == .5 && f.transforms[0].variations[1].id == Variation::spherical,
+        "numbered weights in a classic vector");
+    close(0x12/255., f.palette[8].r, "packed leading unused byte");
+    close(0xfe/255., f.palette[4].b, "packed blue");
+    const auto reread = parse_flames(serialize_flame(f))[0];
+    check(reread.transforms[0].color_speed == .75 && reread.filter_radius == 0 && reread.gamma_threshold == .04,
+        "canonical producer output reads consistently");
+    const auto colors = "<colors count='256' data='" + hex + "'/>";
+    auto seven = parse_flames(document("<xform weight='1' julian='1' julian_power='4' julian_dist='-1'/>" + colors,
+           "version='Apophysis 7x' filter='.5' enable_de='0' estimator_radius='9' new_linear='1' plugins='julian'"))[0];
+    check(seven.filter_radius == .5 && seven.transforms[0].parameters.julian_power == 4 &&
+          seven.transforms[0].parameters.julian_dist == -1, "7X JuliaN parameters");
+    close(0x34/255., seven.palette[0].g, "legacy colors attribute");
+    auto hack = parse_flames(document("<xform weight='1' linear3D='2'/>"+colors,"version='Apophysis 2.08 3D hack'"))[0];
+    check(hack.transforms[0].variations.size() == 1 && hack.transforms[0].variations[0].id == Variation::linear &&
+         hack.transforms[0].variations[0].weight == 2, "uncoupled 3D-hack linear projection");
+    const std::string opts = "version='Apophysis AV Phoenix Edition' new_linear='1'";
+    const auto av = parse_flames(document("<xform weight='1' blur='.3' flatten='1' noise='.4' var_order='noise blur flatten'/>"+colors,opts))[0];
+    check(av.transforms[0].variations.size() == 2 && av.transforms[0].variations[0].id == Variation::noise &&
+          av.transforms[0].variations[1].id == Variation::blur, "Z-only flatten and AV execution order");
+    const auto ordered = parse_flames(document("<xform weight='1' blur='.3' noise='.4' var_order='blur noise'/>"+colors,opts))[0];
+    check(parse_flames(serialize_flame(ordered))[0].transforms[0].variations[0].id == Variation::blur,
+          "canonical save retains non-canonical additive order");
+    rejects(document("<xform weight='1' julian='1'/>"+colors,opts), "explicit julian_power");
+    rejects(document("<xform weight='1' var1='2'/>"+colors,opts), "original");
+    rejects(document("<xform weight='1' julian='1' julian_power='0'/>"+colors,opts), "julian_power");
+    rejects(document("<xform weight='1' blur='1' noise='1' var_order='blur'/>"+colors,opts), "cover every");
+    rejects(document(std::string(transform)+colors,opts + " enable_de='1' estimator_radius='9'"), "density");
+    rejects(document(std::string(transform)+colors,opts + " cam_pitch='1'"), "3D");
+    rejects(document("<xform weight='1' linear3D='1'/>"+colors, "version='Apophysis 2.08 3D hack' cam_yaw='.2'"), "3D");
+    rejects(document(std::string(transform)+colors,opts + " curves='0 1'"), "curves");
+    rejects(document(std::string(transform)+colors,"filter_shape='lanczos3'"), "filter_shape");
+    rejects(document(std::string(transform)+colors,"gamma_threshold='-1'"), "gamma_threshold");
+}
+
+void test_extended_variations() {
+    constexpr double pi = std::numbers::pi;
+    Rng rng(2), draws(2);
+    Point bubble = apply_variation(Variation::bubble,{2,0},rng);
+    close(1.,bubble.x,"bubble radius"); close(0,bubble.y,"bubble axis");
+    Point foci = apply_variation(Variation::foci,{std::log(2.),pi/2},rng);
+    close(.6,foci.x,"foci exponential pair"); close(.8,foci.y,"foci sine");
+    VariationParameters julian{4, 1};
+    const double branch = std::floor(draws.unit()*4);
+    Point j = apply_variation(Variation::julian,{4,0},rng,julian);
+    close(std::sqrt(2.)*std::cos(branch*pi/2),j.x,"JuliaN radius and branch x");
+    close(std::sqrt(2.)*std::sin(branch*pi/2),j.y,"JuliaN radius and branch y");
+    for (Variation id : {Variation::blur, Variation::noise}) {
+        const double theta = 2*pi*draws.unit(), r = draws.unit();
+        Point sample = apply_variation(id,{-2,3},rng);
+        close(r*std::cos(theta)*(id == Variation::noise ? -2 : 1),sample.x,"random term x");
+        close(r*std::sin(theta)*(id == Variation::noise ? 3 : 1),sample.y,"random term y");
+    }
+    Transform t;
+    t.parameters.apophysis_math = true;
+    t.variations = {{Variation::bubble, 1},{Variation::pre_blur, .6}};
+    std::array<double,4> ring{draws.unit(),draws.unit(),draws.unit(),draws.unit()};
+    for (unsigned n = 0; n < 6; ++n) {
+        const double r = .6*(ring[0]+ring[1]+ring[2]+ring[3]-2);
+        ring[n%4] = draws.unit();
+        const double angle = ring[n%4]*2*pi;
+        const double x = 1 + r*std::cos(angle), y = .25 + r*std::sin(angle);
+        const double d = 1+(x*x+y*y)/4;
+        const auto actual = apply_transform(t,{{1,.25},.5},rng);
+        close(x/d,actual.point.x,"pre-blur ring before ordinary variation x");
+        close(y/d,actual.point.y,"pre-blur ring before ordinary variation y");
+    }
+}
+
 void test_rejections() {
     const std::string normal = std::string(transform) + std::string(white);
     rejects(document(normal, "size='32 40x'"), "size");
@@ -114,7 +198,7 @@ void test_rejections() {
     rejects(document(normal, "scale='1e9999'"), "scale");
     rejects(document(normal, "palette='15'"), "Indexed palette");
     rejects(document(normal, "palette_mode='other'"), "palette_mode");
-    rejects(document(normal, "filter='0.5'"), "filter");
+    rejects(document(normal, "filter='-0.5'"), "filter");
     rejects(document(normal, "oversample='2' supersample='2'"), "one of");
     rejects(document("<xform weight='1' mystery='1'/>" + std::string(white)), "mystery");
     rejects(document("<xform weight='1' var1='99'/>" + std::string(white)), "99");
@@ -145,6 +229,8 @@ int main() {
         test_collection_and_geometry();
         test_packed_palette();
         test_rejections();
+        test_producer_import();
+        test_extended_variations();
         std::cout << "XML collection, geometry, palette, round-trip and diagnostic checks passed\n";
         return 0;
     } catch (const std::exception& e) {

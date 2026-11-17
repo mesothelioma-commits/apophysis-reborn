@@ -1,7 +1,7 @@
 #include "render.hpp"
+#include "output_file.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -45,28 +45,13 @@ void write_bmp(std::ostream& out, const Image& image) {
 }
 }
 void write_image(const fs::path& output, const Image& image, bool bmp) {
-    // Reserve a private directory beside the destination, even for concurrent writers.
-    const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
-    fs::path temp;
-    for (unsigned i = 0;; ++i) {
-        temp = output.parent_path() / (".apophysis-" + std::to_string(tick) + "-" + std::to_string(i));
-        if (fs::create_directory(temp)) break;
-        if (i == 99) throw std::runtime_error("Unable to reserve temporary output");
-    }
-    struct Cleanup {
-        const fs::path& dir;
-        ~Cleanup() { std::error_code ec; fs::remove_all(dir, ec); }
-    } cleanup{temp};
-    const auto staged = temp / "image";
-    std::ofstream out(staged, std::ios::binary);
-    out.exceptions(std::ios::badbit | std::ios::failbit);
-    if (bmp) {
-        write_bmp(out, image);
-    } else {
-        out << "P6\n" << image.width << " " << image.height << "\n255\n";
-        out.write(reinterpret_cast<const char*>(image.rgb.data()), static_cast<std::streamsize>(image.rgb.size()));
-    }
-    out.close();
-    fs::rename(staged, output);
+    write_atomic(output, [&](std::ostream& out) {
+        if (bmp) {
+            write_bmp(out, image);
+        } else {
+            out << "P6\n" << image.width << " " << image.height << "\n255\n";
+            out.write(reinterpret_cast<const char*>(image.rgb.data()), static_cast<std::streamsize>(image.rgb.size()));
+        }
+    });
 }
 }

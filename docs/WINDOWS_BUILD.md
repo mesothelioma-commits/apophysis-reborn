@@ -15,7 +15,7 @@ For a single render, use the executable with the included flame.
 
 ## What was verified
 
-The CLI and all three C++ test programs compiled and linked for 64-bit Windows. Each executable has a PE32+ x86-64 console header. Inspection of the import tables found Windows Kernel32 and Universal CRT interfaces in all four programs, and Shell32 in the CLI. Expat and the C++ and threading runtimes are linked statically. The host executed the corresponding native Linux tests. Running the distributed binaries on Windows 11 is a separate pending check. Wine 10.0 could not start its local IPC server on the test host because the host denies Unix-domain sockets.
+The CLI and all four C++ test programs compiled and linked for 64-bit Windows. Each executable has a PE32+ x86-64 console header. Inspection of the import tables found Windows Kernel32 and Universal CRT interfaces in all five programs, and Shell32 in the CLI. Expat and the C++ and threading runtimes are linked statically. The host executed the corresponding native Linux tests. Running the distributed binaries on Windows 11 is a separate pending check. Wine 10.0 could not start its local IPC server on the test host because the host denies Unix-domain sockets.
 
 ## Reproduce the Windows cross-build on Linux
 
@@ -53,7 +53,7 @@ cmake --build "$APO_BUILD/app" --parallel
 "$APO_TOOLCHAIN/bin/x86_64-w64-mingw32-objdump" -p "$APO_BUILD/app/flame-cpu.exe"
 ```
 
-The cross-build emits `flame-cpu.exe`, `reference-tests.exe`, `import-tests.exe` and `renderer-tests.exe` in `$APO_BUILD/app`. Copy the four binaries into the extracted package's `bin/windows-x64` directory to run the native Windows checks above. The verification script supplies the required arguments. A direct invocation of the reference suite also needs the reference image flame and its upstream-rendered image, alongside the transform vector table and its geometry flame. Preserve the `tests` and `examples` directories from the package.
+The cross-build emits `flame-cpu.exe`, `reference-tests.exe`, `import-tests.exe`, `renderer-tests.exe` and `legacy-document-tests.exe` in `$APO_BUILD/app`. Copy the five binaries into the extracted package's `bin/windows-x64` directory to run the native Windows checks above. The verification script supplies the required arguments. A direct invocation of the reference suite also needs the reference image flame and its upstream-rendered image, alongside the transform vector table and its geometry flame. Preserve the `tests` and `examples` directories from the package.
 
 | Build input | SHA-256 of archive used |
 |---|---|

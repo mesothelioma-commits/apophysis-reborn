@@ -182,4 +182,76 @@
     <color index="197" rgb="247 107 77"/>
     <color index="255" rgb="141 50 123"/>
   </flame>
+  <flame name="bubble" size="480 360" center="0 0" scale="180"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" bubble="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.87 0 0 0.87 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="noise" size="480 360" center="0 0" scale="179"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" noise="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.87 0 0 0.87 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="julian" size="480 360" center="0 0" scale="136"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" julian="1" julian_power="3" julian_dist="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.87 0 0 0.87 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="blur" size="480 360" center="0 0" scale="152"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" blur="1"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.87 0 0 0.87 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="foci" size="480 360" center="0 0" scale="100"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" foci="0.72"
+           coefs="0.52 -0.21 0.21 0.52 0.85 0.34" post="0.87 0 0 0.87 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
+  <flame name="pre_blur" size="480 360" center="0 0" scale="157"
+         quality="14" gamma="2.2" brightness="3.6" vibrancy="0.87" palette_mode="linear">
+    <xform weight="1" color="0.1" linear="1" coefs="0.43 0.46 -0.46 0.43 -0.46 -0.27"/>
+    <xform weight="1" color="0.97" linear="1" coefs="0.48 -0.47 0.47 0.48 0.42 -0.19"/>
+    <xform weight="1.45" color="0.54" color_speed="0.64" linear="1" pre_blur="0.36"
+           coefs="0.74 -0.32 0.32 0.74 0.28 0.17" post="0.87 0 0 0.87 0 0"/>
+    <color index="0" rgb="61 39 125"/>
+    <color index="68" rgb="23 168 211"/>
+    <color index="136" rgb="248 226 161"/>
+    <color index="197" rgb="247 107 77"/>
+    <color index="255" rgb="141 50 123"/>
+  </flame>
 </flames>
