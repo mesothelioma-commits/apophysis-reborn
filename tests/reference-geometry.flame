@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<flames name="Numerical checks">
+  <!-- First transform from FLAM3's test.flam3. The wrapper and palette are local. -->
+  <flame name="FLAM3 first transform" size="64 64" center="0 0" scale="20">
+    <xform weight="0.25" color="1" spherical="1"
+           coefs="-0.681206 -0.0779465 0.20769 0.755065 -0.0416126 -0.262334"/>
+    <color index="0" rgb="255 255 255"/>
+  </flame>
+  <flame name="Weighted sum with post-affine" size="64 64" center="0 0" scale="20">
+    <xform weight="1" color="0.75" symmetry="0.5" linear="0.7" spherical="-0.2" disc="0.35"
+           coefs="0.3 -0.4 0.25 0.7 0.1 0.6" post="0.9 0.35 -0.65 0.3 -0.25 0.2"/>
+    <color index="0" rgb="255 255 255"/>
+  </flame>
+</flames>

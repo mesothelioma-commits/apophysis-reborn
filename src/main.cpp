@@ -1,12 +1,127 @@
-#include <cmath>
-#include <cstdint>
-#include <fstream>
-#include <iostream>
-#include <random>
-#include <string>
-#include <vector>
+#include "flame_io.hpp"
+#include "render.hpp"
+
 #include <algorithm>
-struct Point {double x=0,y=0;};
-Point variation(int id,Point p){double r2=p.x*p.x+p.y*p.y; switch(id){case 0:return p;case 1:return {sin(p.x),sin(p.y)};case 2:{double d=std::max(r2,1e-20);return {p.x/d,p.y/d};}case 3:{double s=sin(r2),c=cos(r2);return {p.x*s-p.y*c,p.x*c+p.y*s};}default:throw std::runtime_error("Unsupported variation");}}
-struct Xform {double a,b,c,d,e,f,weight,color;int var;};
-int main(int argc,char**argv){if(argc!=5){std::cerr<<"usage: flame-cpu width height samples output.ppm\n";return 2;}try{int w=std::stoi(argv[1]),h=std::stoi(argv[2]);auto n=std::stoull(argv[3]);if(w<1||h<1||w>16384||h>16384||n<1||n>1000000000ULL)throw std::runtime_error("Invalid dimensions or samples");std::vector<Xform> xs={{.5,0,0,.5,-.5,0,1,.1,0},{.5,0,0,.5,.5,0,1,.6,0},{.5,0,0,.5,0,.7,1,.95,0}};std::vector<uint32_t> count(size_t(w)*h,0);std::vector<double> hue(size_t(w)*h,0);std::mt19937_64 rng(123456);std::uniform_int_distribution<int> pick(0,int(xs.size())-1);Point p{};double col=.5;for(uint64_t i=0;i<n+30;i++){auto &t=xs[pick(rng)];Point q{t.a*p.x+t.b*p.y+t.e,t.c*p.x+t.d*p.y+t.f};p=variation(t.var,q);col=(col+t.color)*.5;if(i<30)continue;int px=int((p.x+1.5)/3*w),py=int((1.5-p.y)/3*h);if(px>=0&&px<w&&py>=0&&py<h){size_t k=size_t(py)*w+px;count[k]++;hue[k]+=col;}}uint32_t maxv=*std::max_element(count.begin(),count.end());std::ofstream out(argv[4],std::ios::binary);if(!out)throw std::runtime_error("Cannot open output");out<<"P6\n"<<w<<" "<<h<<"\n255\n";for(size_t i=0;i<count.size();i++){double v=maxv?log1p(count[i])/log1p(maxv):0;double c=count[i]?hue[i]/count[i]:0;unsigned char rgb[3]={static_cast<unsigned char>(255*v*c),static_cast<unsigned char>(255*v*(1-std::abs(c-.5))),static_cast<unsigned char>(255*v*(1-c))};out.write(reinterpret_cast<char*>(rgb),3);}if(!out)throw std::runtime_error("Write failed");std::cout<<"Rendered "<<w<<"x"<<h<<" samples="<<n<<"\n";}catch(const std::exception&e){std::cerr<<e.what()<<"\n";return 1;}}
+#include <charconv>
+#include <chrono>
+#include <cctype>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
+namespace {
+namespace fs = std::filesystem;
+
+void usage(std::ostream& out) {
+    out << "Apophysis Reborn 0.2.0 | CPU core\n"
+        << "  flame-cpu --flame input.flame --output image.bmp [options]\n"
+        << "  flame-cpu --list-variations\n"
+        << "  flame-cpu width height samples output.ppm    (foundation demo)\n"
+        << "Options:\n"
+        << "  --index N        flame in a collection (1-based, default 1)\n"
+        << "  --samples N      iteration budget; default derives from XML quality and zoom\n"
+        << "  --seed N         unsigned 64-bit seed (default 123456)\n"
+        << "  --threads N      CPU workers (default 0 = automatic)\n"
+        << "  --memory-mib N   histogram, output pixels and worker hit buffer budget (default 512)\n"
+        << "Output formats: BMP (RGB24) and PPM (P6).\n";
+}
+template<class T>
+T integer(std::string_view arg, std::string_view name) {
+    T value{};
+    auto [end, ec] = std::from_chars(arg.data(), arg.data() + arg.size(), value);
+    if (ec != std::errc{} || end != arg.data() + arg.size() || arg.empty())
+        throw std::invalid_argument("Invalid integer for " + std::string(name) + ": " + std::string(arg));
+    return value;
+}
+
+int run(const std::vector<fs::path>& args) {
+    if (args.size() == 1 && (args[0] == "--help" || args[0] == "-h")) {
+        usage(std::cout);
+        return 0;
+    }
+    if (args.size() == 1 && args[0] == "--list-variations") {
+        for (const auto& v : apo::variation_registry()) std::cout << unsigned(v.id) << " " << v.name << "\n";
+        return 0;
+    }
+    apo::Flame flame;
+    apo::RenderOptions options;
+    fs::path output;
+    const bool legacy = args.size() == 4 && !args[0].string().starts_with("-");
+    if (legacy) {
+        flame = apo::demo_flame();
+        const int width = integer<int>(args[0].string(), "width");
+        const int height = integer<int>(args[1].string(), "height");
+        flame.scale *= double(std::min(width, height)) / std::min(flame.width, flame.height);
+        flame.width = width;
+        flame.height = height;
+        options.samples = integer<std::uint64_t>(args[2].string(), "samples");
+        output = args[3];
+    } else {
+        fs::path input;
+        std::size_t index = 1;
+        std::optional<std::uint64_t> samples;
+        for (std::size_t i = 0; i < args.size();) {
+            const auto option = args[i++].string();
+            if (i == args.size()) throw std::invalid_argument("Missing value for " + option);
+            const auto& value = args[i++];
+            if (option == "--flame") input = value;
+            else if (option == "--output") output = value;
+            else if (option == "--samples") samples = integer<std::uint64_t>(value.string(), option);
+            else if (option == "--threads") options.threads = integer<unsigned>(value.string(), option);
+            else if (option == "--seed") options.seed = integer<std::uint64_t>(value.string(), option);
+            else if (option == "--index") index = integer<std::size_t>(value.string(), option);
+            else if (option == "--memory-mib") options.memory_mib = integer<std::uint64_t>(value.string(), option);
+            else throw std::invalid_argument("Unknown option " + option);
+        }
+        if (input.empty() || output.empty()) { usage(std::cerr); return 2; }
+        std::string ext = output.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return char(std::tolower(c)); });
+        if (ext != ".bmp" && ext != ".ppm") throw std::invalid_argument("Use .bmp or .ppm for output");
+        if (fs::exists(output) && fs::equivalent(input, output))
+            throw std::invalid_argument("Input and output refer to the same file");
+        auto flames = apo::load_flames(input);
+        if (index == 0 || index > flames.size())
+            throw std::invalid_argument("--index must be between 1 and " + std::to_string(flames.size()));
+        flame = std::move(flames[index - 1]);
+        options.samples = samples ? *samples : apo::default_samples(flame);
+    }
+    auto ext = output.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return char(std::tolower(c)); });
+    auto start = std::chrono::steady_clock::now();
+    auto result = apo::render(flame, options);
+    apo::write_image(output, result.image, ext == ".bmp");
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+    std::cout << "Rendered " << result.image.width << "x" << result.image.height
+              << " samples=" << options.samples << " plotted=" << result.plotted
+              << " invalid_orbit_steps=" << result.invalid << " workers=" << result.workers
+              << " seed=" << options.seed << " elapsed_ms=" << ms.count() << "\n";
+    return 0;
+}
+}
+
+int main(int argc, char** argv) {
+    try {
+        std::vector<fs::path> arguments;
+#ifdef _WIN32
+        (void)argc; (void)argv;
+        int count = 0;
+        auto wide = CommandLineToArgvW(GetCommandLineW(), &count);
+        if (!wide) throw std::runtime_error("Cannot read Windows command line");
+        struct FreeArgs { LPWSTR* args; ~FreeArgs(){ LocalFree(args); } } freed{wide};
+        for (int i = 1; i < count; ++i) arguments.emplace_back(wide[i]);
+#else
+        for (int i = 1; i < argc; ++i) arguments.emplace_back(argv[i]);
+#endif
+        return run(arguments);
+    } catch (const std::exception& error) {
+        std::cerr << "flame-cpu: " << error.what() << "\n";
+        return 1;
+    }
+}
