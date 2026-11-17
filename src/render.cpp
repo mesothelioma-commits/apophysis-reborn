@@ -19,6 +19,10 @@ constexpr int burn_in = 32;
 using Bin = std::array<std::uint64_t, 4>; // R, G, B, opacity
 struct Hit { std::size_t bin; std::array<std::uint32_t, 4> value; };
 
+void check_cancelled(std::stop_token stop) {
+    if (stop.stop_requested()) throw RenderCancelled();
+}
+
 std::uint64_t checked_product(std::uint64_t a, std::uint64_t b) {
     if (b && a > UINT64_MAX / b) throw std::invalid_argument("Requested image storage overflows");
     return a * b;
@@ -108,7 +112,7 @@ double gamma_alpha(double light, double exponent, double threshold) {
 }
 
 Image develop(const Flame& f, const std::vector<Bin>& bins, double ppu, std::uint64_t samples,
-              const Footprint& kernel, std::size_t stride, bool apophysis) {
+              const Footprint& kernel, std::size_t stride, bool apophysis, std::stop_token stop) {
     const auto os = static_cast<std::size_t>(f.oversample);
     const auto width = static_cast<std::size_t>(f.width);
     const auto filter = f.filter_radius ? gaussian_weights(kernel) : std::vector<double>{};
@@ -121,9 +125,11 @@ Image develop(const Flame& f, const std::vector<Bin>& bins, double ppu, std::uin
     const std::array bg{f.background.r, f.background.g, f.background.b};
     Image image{f.width, f.height, std::vector<std::uint8_t>(width * f.height * 3)};
     for (int y = 0; y < f.height; ++y) {
+        check_cancelled(stop);
         for (std::size_t x = 0; x < width; ++x) {
             std::array<double, 4> sum{};
             for (std::size_t dy = 0; dy < kernel.taps; ++dy) {
+                if ((dy & 31u) == 0) check_cancelled(stop);
                 const auto row = (std::size_t(y) * os + kernel.inset + dy) * stride + x * os + kernel.inset;
                 for (std::size_t dx = 0; dx < kernel.taps; ++dx) {
                     const Bin& bin = bins[row + dx];
@@ -167,6 +173,7 @@ std::uint64_t default_samples(const Flame& f) {
 }
 
 RenderResult render(const Flame& f, const RenderOptions& opt) {
+    check_cancelled(opt.stop_token);
     validate(f);
     if (opt.samples == 0 || opt.samples > max_samples)
         throw std::invalid_argument("Sample count exceeds the supported positive fixed-point accumulator range");
@@ -199,16 +206,19 @@ RenderResult render(const Flame& f, const RenderOptions& opt) {
     std::vector<double> visibility;
     for (const auto& t : f.transforms) visibility.push_back(apophysis ? t.opacity : std::pow(t.opacity, std::log2(10.0)));
 
+    check_cancelled(opt.stop_token);
     std::vector<Bin> bins(static_cast<std::size_t>(bin_count));
     std::atomic<std::uint64_t> next{0};
     std::mutex merge;
     std::exception_ptr error;
-    std::uint64_t plotted = 0, invalid = 0;
+    std::uint64_t plotted = 0, invalid = 0, completed = 0;
+    if (opt.progress) opt.progress(0, opt.samples);
     auto run = [&]() {
         try {
             std::vector<Hit> pending;
             pending.reserve(static_cast<std::size_t>(std::min(batch_size, opt.samples)));
             for (;;) {
+                check_cancelled(opt.stop_token);
                 const auto batch = next.fetch_add(1, std::memory_order_relaxed);
                 if (batch >= batch_count) break;
                 const auto n = std::min(batch_size, opt.samples - batch * batch_size);
@@ -220,6 +230,7 @@ RenderResult render(const Flame& f, const RenderOptions& opt) {
                 int warmup = burn_in;
                 pending.clear();
                 for (std::uint64_t i = 0; i < n + burn_in; ++i) {
+                    if ((i & 255u) == 0) check_cancelled(opt.stop_token);
                     const auto idx = choose.pick(rng.unit(), previous);
                     orbit = apply_transform(f.transforms[idx], orbit, rng);
                     if (!finite(orbit)) {
@@ -259,6 +270,8 @@ RenderResult render(const Flame& f, const RenderOptions& opt) {
                 }
                 plotted += pending.size();
                 invalid += bad;
+                completed += n;
+                if (opt.progress) opt.progress(completed, opt.samples);
             }
         } catch (...) {
             std::lock_guard lock(merge);
@@ -272,6 +285,7 @@ RenderResult render(const Flame& f, const RenderOptions& opt) {
         run();
     }
     if (error) std::rethrow_exception(error);
-    return {develop(f, bins, ppu, opt.samples, kernel, static_cast<std::size_t>(width), apophysis), plotted, invalid, workers};
+    check_cancelled(opt.stop_token);
+    return {develop(f, bins, ppu, opt.samples, kernel, static_cast<std::size_t>(width), apophysis, opt.stop_token), plotted, invalid, workers};
 }
 }

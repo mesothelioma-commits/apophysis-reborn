@@ -13,7 +13,7 @@ bin=./bin/windows-x64
 for exe in flame-cpu reference-tests import-tests renderer-tests legacy-document-tests; do
     [[ -f "$bin/$exe.exe" ]] || { echo "Missing $bin/$exe.exe. Extract the full milestone ZIP before running this check."; exit 1; }
 done
-echo "Apophysis Reborn 0.3.0 / $(date -Iseconds)"
+echo "Apophysis Reborn 0.4.0 / $(date -Iseconds)"
 cmd.exe //c ver
 "$bin/reference-tests.exe" tests/reference-vectors.tsv tests/reference-geometry.flame tests/reference-image.flame tests/reference-image.ppm
 "$bin/import-tests.exe"

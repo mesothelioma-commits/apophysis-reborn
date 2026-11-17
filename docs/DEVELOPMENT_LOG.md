@@ -26,3 +26,16 @@ The CPU renderer can select a supported flame from a mixed collection. Source-pr
 ### Continue with Milestone 4
 
 Start from the 0.3.0 tag in BUILD.txt. Use LegacyDocument as the library and saving layer, its render_model method for the selected flame, and the existing CPU rendering API for previews. Keep the UI responsive by discarding stale preview jobs when the selection or a transform changes. The first editor increment should cover selecting a flame, inspecting a preserve-only entry, previewing a renderable one, editing a transform triangle, undo/redo and saving without damaging unknown settings. Transform-level lossless edits will need to extend the current byte-range editing API. Complete deferred Qt shell, settings and logging during editor integration. Windows 11 testing remains deferred.
+
+
+## 0.4.0 — Primary Editor
+
+Added the native Qt desktop application, searchable flame library and a refining CPU preview. Transform triangles and numeric fields share pre/post affine updates. The editor supports adding, duplicating, reordering, deleting and copying transforms, final transforms, geometry operations, supported variations and JuliaN variables, color controls and Xaos. Source-preserving edits are undoable. Saves check for external changes, recovery files preserve interrupted work, and preferences/workspace state persist locally.
+
+The render API now supports cooperative cancellation and progress. Preview requests are debounced and superseded work is canceled. Background file renders can be canceled before their staged output replaces a destination. Legacy CLI entry points remain available.
+
+The Windows portable distribution includes the Qt runtime and complete corresponding LGPL sources. The native Qt interaction tests and manual desktop edit/save exercise run on Linux. Windows 11 execution remains pending.
+
+### Continue with Milestone 5
+
+Start from the `v0.4.0-editor` tag and the source commit in BUILD.txt. Reuse DocumentSession for undo and recovery, LegacyDocument for original XML preservation, and PreviewController for responsive preview updates. Extend the preservation API when introducing editable palette and adjustment data. Add the full gradient editor, adjustment editor, mutation/random-generation tools and further source-verified variations. Advanced transform multi-selection, synchronization, persistent locks and configurable shortcut profiles remain on the editor backlog.

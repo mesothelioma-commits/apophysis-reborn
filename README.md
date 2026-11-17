@@ -1,10 +1,28 @@
-# Apophysis Reborn 0.3.0 — Legacy Compatibility
+# Apophysis Reborn 0.4.0 — Primary Editor
 
-This Windows x64 development build opens legacy flame libraries, reports which entries the CPU engine can render, and saves them in their original XML encoding. Unedited saves preserve every byte. A change to a name, size, center or scale affects only the selected flame's opening tag. Unknown variations, plugin values, comments, internal history and other collection members remain in the saved document.
+This checkpoint adds a native Qt desktop editor around the existing CPU flame engine and legacy document model. The window includes a searchable flame library, a refining live preview, interactive transform triangles, exact numeric controls, undo/redo, background image rendering, and recovery copies.
 
-The package includes a [593 × 593 render](preview/fox-3d-hack.png) of Fox’s 2009 3D Hack flame and the original parameter listing. [Artwork attribution and reuse terms](tests/legacy/ATTRIBUTION.md)
+## Open the editor
 
-## Work with a legacy file
+Extract the complete ZIP and open `bin/windows-x64/apophysis-reborn.exe`. Keep the accompanying DLLs and `platforms` folder beside it. The program starts with Ember Spiral and works offline. Use **Open library** to load a `.flame`, `.xml`, or historical `.temp` collection.
+
+Select a transform in the lower canvas, then drag its origin or its X/Y handles. The **Pre-affine / Post-affine** selector and the coefficient fields edit the same matrix. The right-hand tabs expose geometry, all 21 supported variation weights, JuliaN parameters, color controls, and Xaos. **Save library** retains the original collection and unrelated XML. The [editor guide](docs/EDITOR.md) covers the controls and recovery behavior.
+
+![Native Qt editor displaying Ember Spiral](preview/editor-0.4.0.png)
+
+The screenshot was captured from the running Linux Qt build. The portable Windows x64 application and its tests compiled successfully. Windows 11 execution remains pending.
+
+## Verify the Windows package
+
+When ready, open Git Bash in the extracted `apophysis-reborn` directory and run the desktop verification.
+
+```bash
+bash scripts/verify-editor-windows.sh
+```
+
+It runs the core and Qt tests, launches the editor, renders the example, saves a screenshot and a flame copy, and records a log. Add `--no-open` to suppress Explorer. The [test report](docs/TEST_PLAN.md) distinguishes executed checks from pending platform acceptance.
+
+## Command-line legacy files
 
 Run these examples from Git Bash in the extracted project folder. All paths can contain spaces.
 
@@ -23,15 +41,7 @@ Run these examples from Git Bash in the extracted project folder. All paths can 
 
 A `preserve-only` entry can still be renamed and saved. Make a copy before editing an original you wish to keep. Providing the input path as the save destination requests an in-place replacement. Failed validation leaves an existing destination intact. The CLI stages file writes next to the destination and replaces the output after a successful close.
 
-## Run the Windows build
-
-Extract the entire ZIP, open Git Bash in the extracted `apophysis-reborn` folder and run:
-
-```bash
-bash scripts/verify-windows.sh
-```
-
-This runs the reference, XML and rendering checks, renders Ember Spiral with one and four workers, compares the results, saves a timestamped text log under `logs/`, and opens Explorer with the BMP selected. It requires Git Bash and Windows x64. The prebuilt CLI does not require a development toolchain. Use `--no-open` to suppress Explorer.
+## Command-line rendering
 
 Render a different file from the supported subset with:
 
@@ -46,18 +56,21 @@ The CLI accepts `--index` (1-based), `--seed`, `--samples`, `--threads`, and `--
 
 ## Build from source
 
-CMake 3.20+, a C++20 compiler with threading support, and Expat development files are required. On Windows, the supported distribution in this checkpoint is the cross-compiled executable. A native MSVC build can be attempted from Git Bash with the Visual Studio C++ workload and an Expat installation, for example the vcpkg `expat:x64-windows` port and `VCPKG_ROOT` set. Run:
+CMake 3.20+, a C++20 compiler, Qt 6.5+ Widgets/Test development files, and Expat development files are required. The packaged GUI uses Qt 6.8.2. Supply the installed Qt kit prefix when needed.
 
 ```bash
-bash scripts/build.sh
+export APO_QT_PREFIX=/path/to/Qt/6.8.2/your-kit
+bash scripts/build-editor.sh
 ```
 
-The script configures a release build, builds every executable and runs CTest. See [Windows build](docs/WINDOWS_BUILD.md) for the exact toolchain and static Expat configuration used to produce the shipped binaries.
+A core-only build can use `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF`. The [Qt build guide](docs/QT_BUILD.md) records the exact Windows toolchain, dependencies, runtime staging, and corresponding source archives included in the ZIP.
 
 ## Included records
 
 | File | What it covers |
 | --- | --- |
+| [Editor](docs/EDITOR.md) | Native library, preview, geometry, saving and recovery controls |
+| [Qt build](docs/QT_BUILD.md) | Desktop build, runtime deployment and Windows checks |
 | [Engine](docs/RENDERING_ENGINE.md) | How inputs become pixels, accepted numeric settings, rendering differences |
 | [Architecture](docs/ARCHITECTURE.md) | Model, parser, sampling, image output and extension points |
 | [Compatibility](docs/COMPATIBILITY.md) | Exact XML subset, omitted-field behavior, serializer limits, historical files |
@@ -69,6 +82,6 @@ The script configures a release build, builds every executable and runs CTest. S
 | [Development log](docs/DEVELOPMENT_LOG.md) | Changes since the foundation and next milestone handoff |
 | [Third-party notices](docs/LICENSES.md) | Dependency and reference provenance |
 
-The ZIP also includes `apophysis-reborn.bundle` and `BUILD.txt`. For a checkout with the complete checkpoint history, run `git clone apophysis-reborn.bundle ../apophysis-reborn-git` from the extracted folder. The checkout holds source, example flames, tests and documentation. The precompiled Windows executables are distribution outputs. No remote repository is required.
+The ZIP also includes `apophysis-reborn.bundle` and `BUILD.txt`. For a checkout with the complete checkpoint history, run `git clone apophysis-reborn.bundle ../apophysis-reborn-git` from the extracted folder. The checkout holds source, example flames, tests and documentation. The precompiled Windows executables and their runtime DLLs are distribution outputs. Corresponding third-party sources accompany the distribution. No remote repository is required.
 
-Milestone 4 is the primary editor: Qt main window, flame library, live CPU preview and transform editor. Windows 11 runtime verification is deferred. Keep the original 0.2.0 ZIP if you want to compare the earlier engine checkpoint.
+Milestone 5 adds the full creative tools, including gradient and adjustment editors, mutation, random generation, and further variation coverage. Advanced editor work still includes multi-selection, persistent per-transform locks, synchronization tools, custom shortcuts and broader workspace presets. Windows 11 testing remains deferred.

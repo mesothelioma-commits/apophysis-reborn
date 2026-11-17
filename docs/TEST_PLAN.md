@@ -1,5 +1,28 @@
 # Verification record
 
+## 0.4.0 Primary Editor — 17 November 2026
+
+The full Release build passed all 13 CTest entries on x86-64 Linux with GCC 14.2.0 and Qt 6.8.2. The Debug build with AddressSanitizer and UndefinedBehaviorSanitizer also passed all 13. Leak detection was disabled because the host tracer prevents LeakSanitizer from running. The editor was additionally exercised through the actual Linux desktop using the packaged native Qt runtime.
+
+| New check | Executed behavior |
+| --- | --- |
+| `editor_workflow` | Open the built-in flame, wait for a rendered image, edit the name and an affine coefficient through Qt input events, undo/redo, save to a path with spaces, reopen, add/duplicate/delete/final/post operations, one undo command per drag, mixed supported/unsupported library selection, and pause/resume. |
+| `canvas` | Origin and both basis-handle drags, snapping, Esc rollback, screen/world coordinate inversion, panning, anchored zoom, empty selection and coincident handles. Expected geometry accounts for the actual integral screen pixel delivered by the event. |
+| `document_session` | Failed-change rollback, exact-byte undo, source encoding and CRLF preservation, save-clean state, external changes/deletions, relative paths, recovery ownership, lock rejection, adoption and cleanup. |
+| `preview` | Increasing preview budgets, aspect/camera fitting, debounce, pause/resume, replacing active work without stale images, destruction during rendering, full-size file output, and cancellation that preserves an existing destination. |
+| Expanded legacy document cases | Surgical transform edits, historical aliases, variation lists, duplicate probability/chaos behavior, reordering and deletion, implicit colors, final transforms, failed-operation rollback, UTF-16 in both byte orders. |
+| Existing core reference and CLI checks | All nine earlier entries continue to pass, including the original Pascal image references and numerical FLAM3 vectors. |
+
+**Desktop interaction.** The running native window rendered Ember Spiral. Changing coefficient a from 0.69 to 0.58 updated the numeric field, triangle and fractal. Undo restored 0.69. A subsequent triangle-origin drag changed the translation and refreshed the image. The file dialog saved the result, cleared the modified marker and showed its filename. Independent inspection of the saved XML confirmed that only the selected transform's coefficient attribute changed. The complete automated editor workflow also verifies save/reopen.
+
+**Portable launch.** The relocated Linux runtime launched under the desktop's XCB platform. Its offscreen smoke mode generated a complete 1420 × 900 editor screenshot, a decoded preview PNG and a saved flame byte-identical to the built-in source. The source package includes that editor screenshot. The normal application now sizes its first window to the available screen.
+
+**Windows build.** All ten executables compiled and linked for x86-64 Windows. The desktop program has the Windows GUI subsystem. A dependency closure inspection resolved 11,349 non-system imports against the actual packaged DLL exports with zero missing. The portable directory contains 43 executables, DLLs, plugins and metadata/configuration files. The runtime and source notices are in QT_BUILD.md and licenses/qt.
+
+**Pending acceptance.** Windows 11 execution, DPI/multiple-monitor behavior on Windows, and historical-editor reopening remain unverified. Multi-selection, synchronization, persistent per-transform locks and customizable shortcut profiles remain open editor work. GPU, full palette/mutation tools, tiled 16K rendering and an installer belong to subsequent milestones.
+
+Use `bash scripts/build-editor.sh` to rebuild the editor and run the source checks. The Windows package includes `bash scripts/verify-editor-windows.sh`. The source's `--smoke-test DIR` option opens the native editor, waits for its refined preview, writes the screenshot/preview/flame artifacts, and exits with a status code.
+
 ## 0.3.0 Legacy Compatibility — 17 November 2026
 
 All nine CTest entries passed in a Release build on x86-64 Linux (GCC 14.2.0, CMake 4.4.5) and a second Debug build using AddressSanitizer and UndefinedBehaviorSanitizer. Leak detection was disabled in the sanitizer run because the host tracer prevents LeakSanitizer from starting. The Windows x64 CLI and four test executables were cross-compiled and their PE headers and import tables inspected. Native Windows 11 execution and reopening in the original Windows editors remain pending.

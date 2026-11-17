@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/examples">
+    <file alias="ember-spiral.flame">../../examples/ember-spiral.flame</file>
+    <file alias="variation-studies.flame">../../examples/variation-studies.flame</file>
+    <file alias="ember-spiral.png">../../preview/ember-spiral.png</file>
+  </qresource>
+</RCC>

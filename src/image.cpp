@@ -15,7 +15,7 @@ void little_endian(std::ostream& out, std::uint32_t value, int bytes) {
         value >>= 8;
     }
 }
-void write_bmp(std::ostream& out, const Image& image) {
+void write_bmp(std::ostream& out, const Image& image, std::stop_token stop) {
     const std::uint64_t stride = (std::uint64_t(image.width) * 3 + 3) / 4 * 4;
     const auto bytes = stride * image.height;
     if (bytes > UINT32_MAX - 54) throw std::invalid_argument("Image exceeds the BMP file size field");
@@ -33,6 +33,7 @@ void write_bmp(std::ostream& out, const Image& image) {
     for (int i = 0; i < 4; ++i) little_endian(out, 0, 4);
     std::vector<char> row(static_cast<std::size_t>(stride), 0);
     for (int y = image.height - 1; y >= 0; --y) {
+        if (stop.stop_requested()) throw RenderCancelled();
         const auto* src = image.rgb.data() + std::size_t(y) * image.width * 3;
         for (int x = 0; x < image.width; ++x) {
             const auto i = std::size_t(x) * 3;
@@ -44,14 +45,21 @@ void write_bmp(std::ostream& out, const Image& image) {
     }
 }
 }
-void write_image(const fs::path& output, const Image& image, bool bmp) {
+void write_image(const fs::path& output, const Image& image, bool bmp, std::stop_token stop) {
+    const auto check = [&] { if (stop.stop_requested()) throw RenderCancelled(); };
+    check();
     write_atomic(output, [&](std::ostream& out) {
         if (bmp) {
-            write_bmp(out, image);
+            write_bmp(out, image, stop);
         } else {
             out << "P6\n" << image.width << " " << image.height << "\n255\n";
-            out.write(reinterpret_cast<const char*>(image.rgb.data()), static_cast<std::streamsize>(image.rgb.size()));
+            const std::size_t stride = std::size_t(image.width) * 3;
+            for (int y = 0; y < image.height; ++y) {
+                check();
+                out.write(reinterpret_cast<const char*>(image.rgb.data() + std::size_t(y)*stride),
+                          static_cast<std::streamsize>(stride));
+            }
         }
-    });
+    }, check);
 }
 }

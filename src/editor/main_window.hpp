@@ -1,0 +1,99 @@
+#pragma once
+
+#include "canvases.hpp"
+#include "document_session.hpp"
+#include "preview_controller.hpp"
+#include <QMainWindow>
+#include <QSettings>
+#include <array>
+
+class QAction;
+class QCheckBox;
+class QComboBox;
+class QDockWidget;
+class QLabel;
+class QLineEdit;
+class QListWidget;
+class QPlainTextEdit;
+class QProgressBar;
+class QSpinBox;
+class QTabWidget;
+class QTableWidget;
+class QToolBar;
+
+namespace apo::editor {
+
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+  public:
+    explicit MainWindow(bool useSettings = true, QWidget *parent = nullptr);
+    DocumentSession &session() {
+        return session_;
+    }
+    PreviewController &previewController() {
+        return preview_;
+    }
+    bool openFile(const QString &path);
+    void openExample();
+    void recoverPreviousSession();
+
+  protected:
+    void closeEvent(QCloseEvent *) override;
+    void dragEnterEvent(QDragEnterEvent *) override;
+    void dropEvent(QDropEvent *) override;
+
+  private:
+    DocumentSession session_;
+    PreviewController preview_, exporter_;
+    QSettings settings_;
+    bool useSettings_, refreshing_ = false;
+    std::optional<Flame> model_;
+    std::optional<Transform> copiedTransform_;
+    QDockWidget *libraryDock_, *transformDock_, *propertiesDock_, *logDock_;
+    QListWidget *library_;
+    QLineEdit *librarySearch_, *name_, *centerX_, *centerY_, *scale_;
+    QSpinBox *width_, *height_;
+    QComboBox *transforms_, *matrixMode_, *coordinates_, *quality_;
+    QCheckBox *lock_, *snap_, *grid_;
+    PreviewCanvas *previewCanvas_;
+    TriangleCanvas *triangles_;
+    QTabWidget *properties_;
+    std::array<QLineEdit *, 6> coefficients_{};
+    QLineEdit *weight_, *color_, *colorSpeed_, *opacity_, *power_, *distance_;
+    QLineEdit *pivotX_, *pivotY_, *rotation_, *factor_, *translateX_, *translateY_;
+    QTableWidget *variations_, *chaos_;
+    QLabel *producer_, *diagnostic_, *stats_, *coordinatesLabel_, *exportStatus_, *palette_;
+    QProgressBar *progress_, *exportProgress_;
+    QPlainTextEdit *log_;
+    QAction *save_, *pause_, *render_, *duplicate_, *remove_, *add_, *addFinal_, *copy_, *paste_,
+        *moveUp_, *moveDown_;
+    QByteArray defaultLayout_;
+
+    void makeActions();
+    void makeLibrary();
+    void makePreview();
+    void makeTransformEditor();
+    void makeProperties();
+    void makeLogs();
+    void refresh();
+    void refreshSelection();
+    void refreshTransform();
+    void requestPreview();
+    void setCoefficients(const Affine &value);
+    const Transform &selectedTransform() const;
+    void editTransform(const QString &label, const LegacyTransformEdits &edit);
+    void commitAffine(const Affine &value);
+    void applyGeometry(const QString &label, const Affine &operation);
+    void chooseOpen();
+    bool confirmDiscard();
+    bool saveDocument(bool saveAs = false);
+    void renderImage();
+    void preferences();
+    void newDocument();
+    void filterLibrary();
+    void record(const QString &message);
+    void run(const std::function<void()> &operation);
+    void updateTitle();
+};
+void applyDarkTheme();
+} // namespace apo::editor

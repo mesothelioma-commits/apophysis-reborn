@@ -11,6 +11,7 @@
 #include <iterator>
 #include <locale>
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <stdexcept>
 
@@ -52,7 +53,7 @@ bool space(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 std::string shortest(double value) {
     std::array<char, 64> buffer{};
     const auto [end, ec] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
-    if (ec != std::errc{} || !std::isfinite(value)) throw std::invalid_argument("Camera values must be finite");
+    if (ec != std::errc{} || !std::isfinite(value)) throw std::invalid_argument("Numeric values must be finite");
     return {buffer.data(), end};
 }
 std::string escape_attribute(Text utf8, char quote) {
@@ -87,7 +88,8 @@ std::string escape_attribute(Text utf8, char quote) {
 }
 
 bool same_field_value(Text field, const std::string& original, const std::string& proposed) {
-    if (field == "name") return original == proposed;
+    if (original == proposed) return true;
+    if (field == "name") return false;
     // An explicit edit with the same numeric value preserves signs, padding and entities.
     std::istringstream a(original), b(proposed);
     a.imbue(std::locale::classic());
@@ -121,6 +123,8 @@ class LegacyIndexer {
     std::exception_ptr error_;
     std::size_t depth_ = 0;
     std::optional<std::size_t> active_depth_;
+    std::optional<std::size_t> transform_depth_;
+    bool active_final_ = false;
     bool root_flame_ = false;
 
     template<class Fn>
@@ -182,12 +186,34 @@ class LegacyIndexer {
             entry.line = line();
             const auto [begin, open_end] = position();
             doc_.ranges_.push_back({begin, open_end, open_end});
+            doc_.sources_.emplace_back();
             active_depth_ = depth_;
+        } else if (active_depth_ && depth_ == *active_depth_ + 1 &&
+                   (name == "xform" || name == "finalxform")) {
+            const auto [begin, open_end] = position();
+            LegacyDocument::TransformSource source{{begin, open_end, open_end}, {}};
+            for (; *attrs; attrs += 2) source.attributes.emplace(attrs[0], attrs[1]);
+            active_final_ = name == "finalxform";
+            if (active_final_) {
+                if (!doc_.sources_.back().final_transform) {
+                    doc_.sources_.back().final_transform = std::move(source);
+                    transform_depth_ = depth_;
+                }
+            } else {
+                doc_.sources_.back().transforms.push_back(std::move(source));
+                transform_depth_ = depth_;
+            }
         }
         ++depth_;
     }
     void end() {
         --depth_;
+        if (transform_depth_ && *transform_depth_ == depth_) {
+            auto& sources = doc_.sources_.back();
+            auto& source = active_final_ ? *sources.final_transform : sources.transforms.back();
+            source.range.end = position().second;
+            transform_depth_.reset();
+        }
         if (active_depth_ && *active_depth_ == depth_) {
             doc_.ranges_.back().end = position().second;
             active_depth_.reset();
@@ -305,26 +331,38 @@ void LegacyDocument::edit(std::size_t index, const LegacyEdits& edits) {
         if (!(*edits.scale > 0)) throw std::invalid_argument("Scale must be positive");
         changes["scale"] = shortest(*edits.scale);
     }
+    std::vector<Patch> patches;
+    AttributeChanges attributes;
+    for (auto& [key, value] : changes) attributes[key] = std::move(value);
+    attribute_patches(range, entry.attributes, std::move(attributes), patches);
+    commit(std::move(patches));
+}
+
+std::string LegacyDocument::encode_ascii(Text ascii) const {
+    const bool wide = encoding_ == Encoding::utf16le || encoding_ == Encoding::utf16be;
+    if (!wide) return std::string(ascii);
+    const bool little = encoding_ == Encoding::utf16le;
+    std::string out;
+    for (char c : ascii) {
+        out += little ? c : '\0';
+        out += little ? '\0' : c;
+    }
+    return out;
+}
+
+void LegacyDocument::attribute_patches(const Range& range,
+        const std::map<std::string, std::string>& attributes,
+        AttributeChanges changes, std::vector<Patch>& patches) const {
     std::erase_if(changes, [&](const auto& item) {
-        auto found = entry.attributes.find(item.first);
-        return found != entry.attributes.end() && same_field_value(item.first, found->second, item.second);
+        const auto found = attributes.find(item.first);
+        if (!item.second) return found == attributes.end();
+        return found != attributes.end() && same_field_value(item.first, found->second, *item.second);
     });
     if (changes.empty()) return;
-
     const bool wide = encoding_ == Encoding::utf16le || encoding_ == Encoding::utf16be;
     const std::size_t step = wide ? 2 : 1;
     const bool little = encoding_ == Encoding::utf16le;
-    auto encoded = [=](Text ascii) {
-        if (!wide) return std::string(ascii);
-        std::string out;
-        for (char c : ascii) {
-            out += little ? c : '\0';
-            out += little ? '\0' : c;
-        }
-        return out;
-    };
-    // Tokenize only the Expat-validated opening tag. XML attribute values can contain
-    // '>' and the delimiter of the other quote style. Edits replace only value ranges.
+    // Tokenize only an Expat-validated opening tag, retaining its original delimiters.
     std::string tag;
     for (auto i = range.begin; i < range.open_end; i += step) {
         char c = bytes_[i];
@@ -334,24 +372,29 @@ void LegacyDocument::edit(std::size_t index, const LegacyEdits& edits) {
         }
         tag += c;
     }
-    struct Patch { std::size_t begin, end; std::string text; };
-    std::vector<Patch> patches;
-    std::size_t pos = 6; // "<flame"
+    std::size_t pos = 1;
+    while (pos < tag.size() && !space(tag[pos]) && tag[pos] != '/' && tag[pos] != '>') ++pos;
     while (pos < tag.size()) {
+        const auto attribute_begin = pos;
         while (pos < tag.size() && space(tag[pos])) ++pos;
         if (pos == tag.size() || tag[pos] == '>' || tag[pos] == '/') break;
         const auto start = pos;
         while (!space(tag.at(pos)) && tag[pos] != '=') ++pos;
         const auto name = tag.substr(start, pos-start);
         while (space(tag.at(pos))) ++pos;
-        ++pos; // equals
+        ++pos;
         while (space(tag.at(pos))) ++pos;
         const char quote = tag.at(pos++);
         const auto end = tag.find(quote, pos);
         if (end == std::string::npos) throw std::runtime_error("Cannot locate XML attribute delimiter");
         auto change = changes.find(name);
         if (change != changes.end()) {
-            patches.push_back({pos, end, escape_attribute(change->second, quote)});
+            if (change->second) {
+                patches.push_back({range.begin + step * pos, range.begin + step * end,
+                                   encode_ascii(escape_attribute(*change->second, quote))});
+            } else {
+                patches.push_back({range.begin + step * attribute_begin, range.begin + step * (end+1), {}});
+            }
             changes.erase(change);
         }
         pos = end + 1;
@@ -359,13 +402,276 @@ void LegacyDocument::edit(std::size_t index, const LegacyEdits& edits) {
     if (!changes.empty()) {
         std::string extra;
         for (const auto& [name, value] : changes)
-            extra += " " + name + "=\"" + escape_attribute(value, '"') + "\"";
-        patches.push_back({pos, pos, std::move(extra)});
+            if (value) extra += " " + name + "=\"" + escape_attribute(*value, '"') + "\"";
+        if (!extra.empty())
+            patches.push_back({range.begin + step * pos, range.begin + step * pos, encode_ascii(extra)});
     }
-    auto output = bytes_;
+}
+
+std::string LegacyDocument::edited_element(const TransformSource& source, const AttributeChanges& changes) const {
+    std::vector<Patch> patches;
+    attribute_patches(source.range, source.attributes, changes, patches);
+    std::string output = bytes_.substr(source.range.begin, source.range.end - source.range.begin);
     for (auto it = patches.rbegin(); it != patches.rend(); ++it)
-        output.replace(range.begin + step * it->begin, step * (it->end - it->begin), encoded(it->text));
+        output.replace(it->begin - source.range.begin, it->end - it->begin, it->text);
+    return output;
+}
+
+void LegacyDocument::commit(std::vector<Patch> patches, std::optional<std::size_t> render_index) {
+    if (patches.empty()) return;
+    std::sort(patches.begin(), patches.end(), [](const Patch& a, const Patch& b) { return a.begin > b.begin; });
+    auto output = bytes_;
+    for (const auto& patch : patches)
+        output.replace(patch.begin, patch.end - patch.begin, patch.text);
     auto updated = parse(std::move(output));
+    if (render_index) (void)updated.render_model(*render_index);
     *this = std::move(updated);
+}
+
+namespace {
+std::string numeric_list(std::span<const double> values) {
+    std::string result;
+    for (double value : values) {
+        if (!result.empty()) result += ' ';
+        result += shortest(value);
+    }
+    return result;
+}
+std::string affine_values(const Affine& a) {
+    return numeric_list(std::array{a.a, a.b, a.c, a.d, a.e, a.f});
+}
+bool same_affine(const Affine& a, const Affine& b) {
+    return a.a == b.a && a.b == b.b && a.c == b.c && a.d == b.d && a.e == b.e && a.f == b.f;
+}
+bool same_terms(const std::vector<Term>& a, const std::vector<Term>& b) {
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
+        [](Term lhs, Term rhs) { return lhs.id == rhs.id && lhs.weight == rhs.weight; });
+}
+}
+
+void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_index,
+        const LegacyTransformEdits& edits, bool final) {
+    auto model = render_model(index);
+    const auto& sources = sources_.at(index);
+    if (final && !model.final_transform) throw std::invalid_argument("No enabled final transform to edit");
+    const auto& source = final ? *sources.final_transform : sources.transforms.at(transform_index);
+    auto& transform = final ? *model.final_transform : model.transforms.at(transform_index);
+    const bool apophysis = is_apophysis(model.source_version);
+    AttributeChanges changes;
+    if (edits.pre && !same_affine(transform.pre, *edits.pre)) {
+        transform.pre = *edits.pre;
+        changes["coefs"] = affine_values(*edits.pre);
+    }
+    if (edits.post && !same_affine(transform.post, *edits.post)) {
+        transform.post = *edits.post;
+        changes["post"] = affine_values(*edits.post);
+    }
+    if (edits.weight) {
+        if (final) throw std::invalid_argument("A final transform has no selection weight");
+        if (transform.weight != *edits.weight) changes["weight"] = shortest(*edits.weight);
+        transform.weight = *edits.weight;
+    }
+    if (edits.color && transform.color != *edits.color) {
+        transform.color = *edits.color;
+        changes["color"] = shortest(*edits.color);
+    }
+    if (edits.color_speed && transform.color_speed != *edits.color_speed) {
+        transform.color_speed = *edits.color_speed;
+        const bool symmetry = source.attributes.contains("symmetry") ||
+                              (apophysis && !source.attributes.contains("color_speed"));
+        changes[symmetry ? "symmetry" : "color_speed"] =
+            shortest(symmetry || apophysis ? 1 - 2 * *edits.color_speed : *edits.color_speed);
+    }
+    if (edits.opacity && transform.opacity != *edits.opacity) {
+        transform.opacity = *edits.opacity;
+        if (source.attributes.contains("plotmode") && (*edits.opacity == 0 || *edits.opacity == 1))
+            changes["plotmode"] = *edits.opacity == 0 ? "off" : "on";
+        else {
+            changes["plotmode"] = std::nullopt;
+            changes["opacity"] = shortest(*edits.opacity);
+        }
+    }
+    if (edits.variations && !same_terms(transform.variations, *edits.variations)) {
+        transform.variations = *edits.variations;
+        changes["var"] = std::nullopt;
+        changes["var1"] = std::nullopt;
+        changes["linear3D"] = std::nullopt;
+        changes["var_order"] = std::nullopt;
+        for (const auto& entry : variation_registry()) changes[std::string(entry.name)] = std::nullopt;
+        bool has_sinusoidal = false;
+        std::string order;
+        if (source.attributes.contains("flatten")) order = "flatten";
+        for (const auto& term : transform.variations) {
+            const auto name = std::string(variation_name(term.id));
+            const bool linear3d = term.id == Variation::linear && source.attributes.contains("linear3D");
+            changes[linear3d ? "linear3D" : name] = shortest(term.weight);
+            if (term.id == Variation::sinusoidal) has_sinusoidal = true;
+            if (!order.empty()) order += ' ';
+            order += name;
+        }
+        if (!has_sinusoidal) changes["sinusoidal_use3D"] = std::nullopt;
+        if (apophysis && !is_apophysis_2(model.source_version)) changes["var_order"] = order;
+        if (std::any_of(transform.variations.begin(), transform.variations.end(),
+                [](Term term) { return term.id == Variation::julian; })) {
+            changes["julian_power"] = std::to_string(transform.parameters.julian_power);
+            changes["julian_dist"] = shortest(transform.parameters.julian_dist);
+        }
+    }
+    if (edits.julian_power && transform.parameters.julian_power != *edits.julian_power) {
+        transform.parameters.julian_power = *edits.julian_power;
+        changes["julian_power"] = std::to_string(*edits.julian_power);
+    }
+    if (edits.julian_dist && transform.parameters.julian_dist != *edits.julian_dist) {
+        transform.parameters.julian_dist = *edits.julian_dist;
+        changes["julian_dist"] = shortest(*edits.julian_dist);
+    }
+    if (edits.chaos) {
+        if (final) throw std::invalid_argument("A final transform has no chaos transitions");
+        if (transform.chaos != *edits.chaos) {
+            transform.chaos = *edits.chaos;
+            changes["chaos"] = edits.chaos->empty() ? std::nullopt :
+                std::optional<std::string>(numeric_list(*edits.chaos));
+        }
+    }
+    validate(model);
+    std::vector<Patch> patches;
+    attribute_patches(source.range, source.attributes, std::move(changes), patches);
+    commit(std::move(patches), index);
+}
+
+std::size_t LegacyDocument::add_transform(std::size_t index, const Transform& transform, bool final) {
+    auto model = render_model(index);
+    const auto& sources = sources_.at(index);
+    const auto added_index = final ? 0 : model.transforms.size();
+    if (final) {
+        if (sources.final_transform)
+            throw std::invalid_argument("The document already contains a final transform, possibly disabled");
+        model.final_transform = transform;
+    } else model.transforms.push_back(transform);
+    validate(model);
+    // Reuse the producer-aware canonical writer for the new element only.
+    const auto generated = parse(serialize_flame(model));
+    const auto& new_source = final ? *generated.sources_[0].final_transform :
+                                    generated.sources_[0].transforms[added_index];
+    const auto fragment = generated.bytes_.substr(new_source.range.begin,
+                                                  new_source.range.end - new_source.range.begin);
+    const auto position = sources.transforms.back().range.end;
+    const auto newline = bytes_.find(encode_ascii("\r\n")) != std::string::npos ? "\r\n  " : "\n  ";
+    std::vector<Patch> patches{{position, position, encode_ascii(newline + fragment)}};
+    // A generic final placed after the appended element would otherwise inherit a new color parity.
+    if (!final && !is_apophysis(model.source_version) && sources.final_transform &&
+            sources.final_transform->range.begin >= position &&
+            !sources.final_transform->attributes.contains("color")) {
+        attribute_patches(sources.final_transform->range, sources.final_transform->attributes,
+                          {{"color", shortest(model.final_transform->color)}}, patches);
+    }
+    commit(std::move(patches), index);
+    return added_index;
+}
+
+std::size_t LegacyDocument::duplicate_transform(std::size_t index, std::size_t transform_index) {
+    const auto model = render_model(index);
+    const auto& sources = sources_.at(index);
+    const auto& source = sources.transforms.at(transform_index);
+    const auto& original = model.transforms.at(transform_index);
+    const auto count = model.transforms.size();
+    const double clone_weight = original.weight * .5;
+    AttributeChanges clone_changes{{"weight", shortest(clone_weight)}};
+    std::vector<Patch> patches;
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto& old_row = model.transforms[i].chaos;
+        const double incoming = transform_index < old_row.size() ? old_row[transform_index] : 1;
+        AttributeChanges changes;
+        if (incoming != 1) {
+            auto row = old_row;
+            row.resize(count, 1);
+            row.push_back(incoming);
+            changes["chaos"] = numeric_list(row);
+        }
+        if (i == transform_index) {
+            clone_changes.insert(changes.begin(), changes.end());
+            changes["weight"] = shortest(original.weight - clone_weight);
+        }
+        attribute_patches(sources.transforms[i].range, sources.transforms[i].attributes, std::move(changes), patches);
+    }
+    const auto position = sources.transforms.back().range.end;
+    if (!is_apophysis(model.source_version)) {
+        const double expected_color = (count + static_cast<std::size_t>(sources.final_transform &&
+            sources.final_transform->range.begin < position)) % 2;
+        if (!source.attributes.contains("color") && original.color != expected_color)
+            clone_changes["color"] = shortest(original.color);
+        if (sources.final_transform && sources.final_transform->range.begin >= position &&
+                !sources.final_transform->attributes.contains("color")) {
+            attribute_patches(sources.final_transform->range, sources.final_transform->attributes,
+                              {{"color", shortest(model.final_transform->color)}}, patches);
+        }
+    }
+    const auto newline = bytes_.find(encode_ascii("\r\n")) != std::string::npos ? "\r\n  " : "\n  ";
+    patches.push_back({position, position, encode_ascii(newline) + edited_element(source, clone_changes)});
+    commit(std::move(patches), index);
+    return count;
+}
+
+void LegacyDocument::remove_transform(std::size_t index, std::size_t transform_index, bool final) {
+    const auto model = render_model(index);
+    const auto& sources = sources_.at(index);
+    if (final && !sources.final_transform) throw std::invalid_argument("No final transform to remove");
+    if (!final && model.transforms.size() == 1)
+        throw std::invalid_argument("At least one ordinary transform must remain");
+    const auto& removed = final ? *sources.final_transform : sources.transforms.at(transform_index);
+    std::vector<Patch> patches{{removed.range.begin, removed.range.end, {}}};
+    const bool generic = !is_apophysis(model.source_version);
+    for (std::size_t i = 0; i < sources.transforms.size(); ++i) {
+        if (!final && i == transform_index) continue;
+        const auto& source = sources.transforms[i];
+        AttributeChanges changes;
+        if (!final && transform_index < model.transforms[i].chaos.size()) {
+            auto row = model.transforms[i].chaos;
+            row.erase(row.begin() + static_cast<std::ptrdiff_t>(transform_index));
+            changes["chaos"] = row.empty() ? std::nullopt : std::optional<std::string>(numeric_list(row));
+        }
+        if (generic && source.range.begin > removed.range.begin && !source.attributes.contains("color"))
+            changes["color"] = shortest(model.transforms[i].color);
+        attribute_patches(source.range, source.attributes, std::move(changes), patches);
+    }
+    if (!final && generic && sources.final_transform &&
+            sources.final_transform->range.begin > removed.range.begin &&
+            !sources.final_transform->attributes.contains("color")) {
+        attribute_patches(sources.final_transform->range, sources.final_transform->attributes,
+                          {{"color", shortest(model.final_transform->color)}}, patches);
+    }
+    commit(std::move(patches), index);
+}
+
+void LegacyDocument::move_transform(std::size_t index, std::size_t from, std::size_t to) {
+    const auto model = render_model(index);
+    const auto& sources = sources_.at(index);
+    const auto count = sources.transforms.size();
+    if (from >= count || to >= count) throw std::out_of_range("Transform move index is out of range");
+    if (from == to) return;
+    std::vector<std::size_t> order(count);
+    std::iota(order.begin(), order.end(), 0);
+    order.erase(order.begin() + static_cast<std::ptrdiff_t>(from));
+    order.insert(order.begin() + static_cast<std::ptrdiff_t>(to), from);
+    std::vector<Patch> patches;
+    for (std::size_t slot = 0; slot < count; ++slot) {
+        const auto original_index = order[slot];
+        const auto& source = sources.transforms[original_index];
+        const auto& destination = sources.transforms[slot];
+        const auto& transform = model.transforms[original_index];
+        AttributeChanges changes;
+        auto old_row = transform.chaos;
+        old_row.resize(count, 1);
+        std::vector<double> new_row;
+        for (const auto previous_index : order) new_row.push_back(old_row[previous_index]);
+        if (new_row != old_row) changes["chaos"] = numeric_list(new_row);
+        const double expected_color = (slot + static_cast<std::size_t>(sources.final_transform &&
+            sources.final_transform->range.begin < destination.range.begin)) % 2;
+        if (!is_apophysis(model.source_version) && !source.attributes.contains("color") &&
+                transform.color != expected_color)
+            changes["color"] = shortest(transform.color);
+        patches.push_back({destination.range.begin, destination.range.end, edited_element(source, changes)});
+    }
+    commit(std::move(patches), index);
 }
 }

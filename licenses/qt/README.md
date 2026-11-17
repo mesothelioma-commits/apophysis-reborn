@@ -1,0 +1,11 @@
+# Qt editor runtime notices
+
+The Windows desktop editor dynamically links Qt Core, Gui and Widgets 6.8.2. The accompanying test executables also use Qt Test. Qt is copyright The Qt Company and its contributors and is used under GNU LGPL version 3, with the third-party notices included in this directory. The original binary is the MSYS2 clang64 package `mingw-w64-clang-x86_64-qt6-base-6.8.2-1`. The library source, MSYS2 patches and build recipe accompany the release in `third-party-sources/mingw-w64-qt6-base-6.8.2-1.src.tar.zst`.
+
+The runtime DLLs can be replaced with ABI-compatible rebuilt versions. The full application source and build scripts are supplied, and recipients may modify and rebuild the application to use a modified library. These materials grant the permissions in the library licenses, including the reverse engineering needed to debug modifications to the covered libraries. The Qt project name and trademarks remain the property of their owners.
+
+The GUI DLL dependency closure also uses ICU, FreeType, HarfBuzz, Graphite2, libb2, double-conversion, libjpeg-turbo, libpng, md4c, PCRE2, zlib, zstd, Brotli, bzip2, GLib, gettext's libintl, libiconv and libc++. Their publisher-supplied copyright and licensing files are retained in the named subdirectories. Graphite2 is used under its offered MIT license and FreeType under its FreeType License. GLib, libintl and libiconv use their LGPL terms and their full source packages accompany this release in `third-party-sources/`. Additional LLVM-MinGW and Expat notices are in `../windows/`.
+
+`PACKAGES.sha256` identifies the downloaded binary packages used to assemble the dependencies. Packages that only supplied headers or unused tools can appear in that list. The deployed executables' `runtime-dependencies.json` records the precise shipped DLL closure and resolved non-system symbol count. `SOURCES.sha256` identifies the full corresponding source packages. These source tarballs include the publisher's build recipes and patches and are extracted with `tar --zstd -xf FILE`.
+
+[Qt source and licensing](https://doc.qt.io/qt-6.8/licensing.html) · [MSYS2 package source archive](https://repo.msys2.org/mingw/sources/) · [MSYS2 clang64 binary packages](https://repo.msys2.org/mingw/clang64/)

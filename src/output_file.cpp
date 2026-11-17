@@ -12,7 +12,8 @@
 
 namespace apo {
 namespace fs = std::filesystem;
-void write_atomic(const fs::path& output, const std::function<void(std::ostream&)>& write) {
+void write_atomic(const fs::path& output, const std::function<void(std::ostream&)>& write,
+                  const std::function<void()>& before_commit) {
     // Reserve a private directory beside the destination, even for concurrent writers.
     const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
     fs::path temp;
@@ -30,6 +31,7 @@ void write_atomic(const fs::path& output, const std::function<void(std::ostream&
     out.exceptions(std::ios::badbit | std::ios::failbit);
     write(out);
     out.close();
+    if (before_commit) before_commit();
 #ifdef _WIN32
     if (!MoveFileExW(staged.c_str(), output.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         throw fs::filesystem_error("Cannot replace output", output,

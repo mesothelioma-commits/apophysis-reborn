@@ -15,3 +15,8 @@
 **Size and memory.** A dense subpixel histogram costs 32 × width × height × oversample² bytes, plus filter gutters, output/worker storage and kernel weights. The default buffer budget is 512 MiB. A 16,384² image at oversample 1 alone would need 8 GiB for these histogram bins. Genuine 16K acceptance requires the separate high-resolution milestone and its decode, memory, responsiveness, cancellation and seam checks.
 
 **Output.** P6 PPM stores top-down RGB. RGB24 BMP stores padded bottom-up BGR rows. The output is staged beside its destination and renamed after writing finishes. The bundled PNG preview is a lossless conversion of the engine's BMP. GPU rendering, high-bit-depth output and transparent export remain future work.
+
+
+**Editor preview.** The primary editor fits a model copy to its viewport and uses oversample one for interaction. It renders successive deterministic passes at increasing sample budgets. The largest pass replaces the earlier image. A stop token cancels obsolete jobs, including spatial reconstruction. The full-resolution file render uses the saved output dimensions and oversample value with a separately chosen sample and memory budget.
+
+**Cancellation and progress.** Existing synchronous render callers retain their behavior. Optional cancellation throws `RenderCancelled`; optional progress reports completed requested samples after merged work batches. File output checks cancellation while encoding rows and before the staged file replaces its destination.

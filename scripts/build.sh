@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Native rebuild with a C++20 compiler, CMake, and Expat development files.
+# Native rebuild with C++20, CMake, Expat and Qt 6 Widgets/Test development files.
+# Pass -DAPO_BUILD_EDITOR=OFF to build only the core and CLI.
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"

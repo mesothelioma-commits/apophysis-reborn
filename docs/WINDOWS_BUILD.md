@@ -1,5 +1,7 @@
 # Windows x64 CPU build
 
+The desktop editor build is documented in [QT_BUILD.md](QT_BUILD.md). These commands reproduce the core CLI and tests with the editor disabled.
+
 Unzip the whole package. Open Git Bash in the extracted project directory and run the Windows checks.
 
 ```bash
@@ -15,9 +17,9 @@ For a single render, use the executable with the included flame.
 
 ## What was verified
 
-The CLI and all four C++ test programs compiled and linked for 64-bit Windows. Each executable has a PE32+ x86-64 console header. Inspection of the import tables found Windows Kernel32 and Universal CRT interfaces in all five programs, and Shell32 in the CLI. Expat and the C++ and threading runtimes are linked statically. The host executed the corresponding native Linux tests. Running the distributed binaries on Windows 11 is a separate pending check. Wine 10.0 could not start its local IPC server on the test host because the host denies Unix-domain sockets.
+The 0.3.0 core checkpoint compiled and linked the CLI and four C++ test programs for 64-bit Windows with static Expat, C++ and threading runtimes. The 0.4.0 desktop package builds these targets alongside the Qt editor with a shared C++ runtime. Preserve the complete `bin/windows-x64` folder so its DLLs remain available. The core executables have PE32+ x86-64 console headers. The editor uses the Windows GUI subsystem. The host executes the corresponding native Linux tests. Running the distributed binaries on Windows 11 is a separate pending check. Wine 10.0 could not start its local IPC server on the test host because the host denies Unix-domain sockets.
 
-## Reproduce the Windows cross-build on Linux
+## Reproduce a standalone core cross-build on Linux
 
 Use GNU Make, CMake (4.4.5 for the packaged build), the llvm-mingw 20261104 UCRT Ubuntu x86-64 host toolchain (Clang 23.1.5), and tag R_2_10_0 of libexpat. The commands assume Bash is open in the project source directory. Set the first two paths to your unpacked dependency locations.
 
@@ -48,7 +50,7 @@ cmake -S "$APO_EXPAT/expat" -B "$APO_BUILD/expat" \
 cmake --build "$APO_BUILD/expat" --parallel
 cmake --install "$APO_BUILD/expat"
 cmake -S . -B "$APO_BUILD/app" -DCMAKE_TOOLCHAIN_FILE="$APO_BUILD/win64.cmake" \
-  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DAPO_BUILD_EDITOR=OFF
 cmake --build "$APO_BUILD/app" --parallel
 "$APO_TOOLCHAIN/bin/x86_64-w64-mingw32-objdump" -p "$APO_BUILD/app/flame-cpu.exe"
 ```

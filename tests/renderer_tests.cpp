@@ -1,8 +1,13 @@
 #include "render.hpp"
+#include "output_file.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <stop_token>
 #include <stdexcept>
 
 namespace {
@@ -149,6 +154,57 @@ void test_legacy_reconstruction() {
     try { render(f,opt); throw std::runtime_error("Unrepresentable filter footprint"); }
     catch (const std::invalid_argument&) {}
 }
+void test_cancellation_and_progress() {
+    auto f = point_flame();
+    std::stop_source source;
+    RenderOptions opt{100000, 13, 3};
+    opt.stop_token = source.get_token();
+    std::uint64_t last = 0;
+    opt.progress = [&](std::uint64_t completed, std::uint64_t total) {
+        require(total == opt.samples && completed >= last && completed <= total,
+                "progress must report monotonic committed sample counts");
+        last = completed;
+    };
+    auto completed = render(f, opt);
+    require(last == opt.samples && completed.plotted == opt.samples, "complete render progress");
+    source.request_stop();
+    try { render(f, opt); throw std::runtime_error("pre-cancelled render ran"); }
+    catch (const RenderCancelled&) {}
+
+    source = std::stop_source();
+    opt.stop_token = source.get_token();
+    opt.progress = [&](std::uint64_t completed, std::uint64_t) {
+        if (completed >= 8192) source.request_stop();
+    };
+    try { render(f, opt); throw std::runtime_error("render did not cancel between batches"); }
+    catch (const RenderCancelled&) {}
+
+    const auto folder = std::filesystem::temp_directory_path() /
+        ("apophysis-cancel-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(folder);
+    const auto output = folder / "existing.ppm";
+    {
+        std::ofstream out(output);
+        out << "original";
+    }
+    try { write_image(output, completed.image, false, source.get_token());
+          throw std::runtime_error("cancelled output overwrote file"); }
+    catch (const RenderCancelled&) {}
+    try {
+        write_atomic(output, [](std::ostream& out) { out << "replacement"; },
+                     [] { throw RenderCancelled(); });
+        throw std::runtime_error("cancelled commit overwrote file");
+    } catch (const RenderCancelled&) {}
+    std::ifstream in(output);
+    std::string contents;
+    in >> contents;
+    require(contents == "original", "failed/cancelled output changed the destination");
+    in.close();
+    require(std::distance(std::filesystem::directory_iterator(folder),
+                          std::filesystem::directory_iterator()) == 1,
+            "cancelled output left a staged file");
+    std::filesystem::remove_all(folder);
+}
 void test_limits() {
     auto f = point_flame();
     f.width = f.height = 16384;
@@ -169,6 +225,7 @@ int main() {
         test_final_feedback_and_worker_order();
         test_limits();
         test_legacy_reconstruction();
+        test_cancellation_and_progress();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

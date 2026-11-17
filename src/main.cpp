@@ -21,7 +21,7 @@ namespace {
 namespace fs = std::filesystem;
 
 void usage(std::ostream& out) {
-    out << "Apophysis Reborn 0.3.0 | Legacy flame files and CPU renderer\n"
+    out << "Apophysis Reborn 0.4.0 | Legacy flame files and CPU renderer\n"
         << "  flame-cpu --flame input.flame --output image.bmp [options]\n"
         << "  flame-cpu inspect input.flame [--json]\n"
         << "  flame-cpu save input.flame --output copy.flame [--index N] [--name TEXT]\n"
