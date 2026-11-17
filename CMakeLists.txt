@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20)
+project(apophysis_reborn LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_executable(flame-cpu src/main.cpp)
+enable_testing()
+add_test(NAME smoke COMMAND flame-cpu 64 64 100000 ${CMAKE_CURRENT_BINARY_DIR}/smoke.ppm)
