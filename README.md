@@ -1,4 +1,8 @@
-# Apophysis Reborn 0.12.0
+# Apophysis Reborn 0.12.1
+
+Drag the vertical divider beside **Flame library** or **Flame and transform** to resize Live Preview from either side. In **Fit**, the flame keeps its proportions. If there is empty space on both sides of the image, drag the horizontal divider above **Transform editor** down to give the image more height.
+
+## Density estimation in 0.12.0
 
 Milestone 12 adds FLAM3 density estimation and automatic Windows upgrades. Open “Tidal filaments” in `examples/density-study.flame` to try the renderer. In Adjust → Rendering, use Enable density estimation, Maximum radius, Minimum radius and Estimator curve to compare the result with the same seed. Low-density areas spread color over a wider area, while denser parts of the flame retain finer detail. The [density estimation notes](docs/DENSITY_ESTIMATION.md) describe the historical profiles and numerical checks.
 
@@ -8,10 +12,10 @@ Milestone 12 adds FLAM3 density estimation and automatic Windows upgrades. Open 
 
 | Edition | Entry point and contents |
 | --- | --- |
-| Lean portable | Extract `apophysis-reborn-0.12.0-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.12.0-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
-| Per-user installer | Run `apophysis-reborn-0.12.0-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.12.0`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
-| Complete source/history and SDK | Extract `apophysis-reborn-0.12.0-legacy-density-estimation.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
-| Git source | Extract `apophysis-reborn-0.12.0-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
+| Lean portable | Extract `apophysis-reborn-0.12.1-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.12.1-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
+| Per-user installer | Run `apophysis-reborn-0.12.1-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.12.1`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
+| Complete source/history and SDK | Extract `apophysis-reborn-0.12.1-preview-resize.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
+| Git source | Extract `apophysis-reborn-0.12.1-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
 
 Setup installs the new release in an empty version folder, then removes the most recent older release registered to the same Windows account. If the old editor is running, Setup explains how to finish cleanup after closing it. Uninstall removes unchanged installed payload files and retains modified/extra files; external projects, settings and recovery data remain. An interrupted install can leave a partial folder; automatic repair or replacement is not provided. Portable and installed applications normally share per-user settings/data, so separate program directories are not isolated user profiles. Keep artwork outside the program folder and retain the original executable/plugins for in-progress checkpoints. [Getting started and recovery](docs/USER_MANUAL.md)
 

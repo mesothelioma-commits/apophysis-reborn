@@ -8,6 +8,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QDockWidget>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -17,11 +18,13 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QWindow>
 #include <QElapsedTimer>
 #include <atomic>
 #include <chrono>
@@ -95,6 +98,117 @@ class EditorTests : public QObject {
         QCoreApplication::setOrganizationName("ApophysisRebornTests");
         QCoreApplication::setApplicationName("EditorWorkflow");
         applyDarkTheme();
+    }
+    void resizeLivePreviewFromEitherSide() {
+        // This state comes from 0.12.0's 1420 x 900 workspace with narrow side panels.
+        const QByteArray oldState = QByteArray::fromBase64(
+            "AAAA/wAAAAH9AAAAAwAAAAAAAABuAAADKPwCAAAAAfsAAAAWAGwAaQBiAHIAYQByAHkARABvAGMAawEAAABGAAAD"
+            "KAAAAJQA////AAAAAQAAATcAAAMo/AIAAAAB+wAAABwAcAByAG8AcABlAHIAdABpAGUAcwBEAG8AYwBrAQAAAEYA"
+            "AAMoAAABtAD///8AAAADAAAD2wAAAUr8AQAAAAH8AAAAdAAAA9sAAAH9AP////oAAAAAAQAAAAL7AAAAGgB0AHIA"
+            "YQBuAHMAZgBvAHIAbQBEAG8AYwBrAQAAAAD/////AAAB/QD////7AAAAGABhAGMAdABpAHYAaQB0AHkARABvAGMA"
+            "awEAAAAA/////wAAAPoA////AAAD2wAAAdgAAAAEAAAABAAAAAEAAAAC/AAAAAEAAAACAAAAAgAAABYAbQBhAGkA"
+            "bgBUAG8AbwBsAGIAYQByAQAAAAD/////AAAAAAAAAAAAAAAeAGMAcgBlAGEAdABpAHYAZQBUAG8AbwBsAGIAYQBy"
+            "AQAAA5L/////AAAAAAAAAAA=");
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        window.openExample();
+        const auto originalFlame = window.session().document().bytes();
+        window.resize(1420, 900);
+        window.show();
+        QVERIFY(window.restoreState(oldState, 1));
+        QCoreApplication::processEvents();
+        auto *library = widget<QDockWidget>(window, "libraryDock");
+        auto *inspector = widget<QDockWidget>(window, "propertiesDock");
+        auto *transform = widget<QDockWidget>(window, "transformDock");
+        auto *activity = widget<QDockWidget>(window, "activityDock");
+        auto *canvas = widget<PreviewCanvas>(window, "previewCanvas");
+        auto *center = window.centralWidget();
+        QVERIFY(window.tabifiedDockWidgets(transform).contains(activity));
+        QVERIFY(transform->isVisible());
+        QCOMPARE(window.dockWidgetArea(library), Qt::LeftDockWidgetArea);
+        QCOMPARE(window.dockWidgetArea(inspector), Qt::RightDockWidgetArea);
+
+        // Deliver pointer events to the top-level window so Qt performs the hit test.
+        // Eight logical pixels from the preview used to miss the 6-pixel separator.
+        auto drag = [&](Qt::DockWidgetArea side, int delta) {
+            const auto rect = center->geometry();
+            const bool bottom = side == Qt::BottomDockWidgetArea;
+            const QPoint start = bottom ? QPoint(rect.center().x(), rect.bottom() + 4)
+                                        : QPoint(side == Qt::LeftDockWidgetArea ? rect.left() - 8 : rect.right() + 8,
+                                                 rect.center().y());
+            const QPoint move = bottom ? QPoint(0, delta) : QPoint(delta, 0);
+            auto *handle = window.windowHandle();
+            QTest::mouseMove(handle, start);
+            QTest::mousePress(handle, Qt::LeftButton, Qt::NoModifier, start);
+            for (int step = 1; step <= 4; ++step) {
+                QTest::mouseMove(handle, start + move * step / 4);
+                QTest::qWait(10);
+            }
+            QTest::mouseRelease(handle, Qt::LeftButton, Qt::NoModifier, start + move);
+            QCoreApplication::processEvents();
+        };
+        const auto original = center->geometry();
+        // The original height-limited flame grows when the bottom divider moves down.
+        auto settings = window.previewController().settings();
+        settings.backend = RenderBackend::cpu;
+        settings.sample_limit = 20000;
+        settings.threads = 2;
+        window.previewController().setSettings(settings);
+        window.previewController().setPaused(false);
+        auto fittedSize = [&] { return QSize(768, 576).scaled(canvas->size(), Qt::KeepAspectRatio); };
+        QTRY_COMPARE_WITH_TIMEOUT(canvas->image().size(), fittedSize(), 10000);
+        const auto originalImage = canvas->image().size();
+        QCOMPARE(originalImage.height(), canvas->height());
+        QVERIFY(originalImage.width() < canvas->width());
+        drag(Qt::BottomDockWidgetArea, 65);
+        QTRY_COMPARE(center->height(), original.height() + 65);
+        QTRY_COMPARE_WITH_TIMEOUT(canvas->image().size(), fittedSize(), 10000);
+        QCOMPARE(canvas->image().height(), originalImage.height() + 65);
+        QVERIFY(canvas->image().width() > originalImage.width());
+
+        drag(Qt::LeftDockWidgetArea, 135);
+        QTRY_COMPARE(center->geometry().left(), original.left() + 135);
+        QCOMPARE(center->geometry().right(), original.right());
+        drag(Qt::LeftDockWidgetArea, -60);
+        QTRY_COMPARE(center->geometry().left(), original.left() + 75);
+        QCOMPARE(center->geometry().right(), original.right());
+        drag(Qt::RightDockWidgetArea, -100);
+        QTRY_COMPARE(center->geometry().right(), original.right() - 100);
+        QCOMPARE(center->geometry().left(), original.left() + 75);
+
+        // Both the inspector form and the bottom Transform tools used to impose
+        // width floors on the center. The opposite boundary must stay in place.
+        const int leftEdge = center->geometry().left();
+        drag(Qt::RightDockWidgetArea, inspector->width() - 260);
+        QTRY_COMPARE(inspector->width(), 260);
+        QCOMPARE(center->geometry().left(), leftEdge);
+        auto *scroll = qobject_cast<QScrollArea *>(inspector->widget());
+        QVERIFY(scroll);
+        auto *height = widget<QSpinBox>(window, "outputHeight");
+        scroll->ensureWidgetVisible(height);
+        const auto fieldPoint = height->mapTo(&window, height->rect().center());
+        QTest::mouseClick(window.windowHandle(), Qt::LeftButton, Qt::NoModifier, fieldPoint);
+        QVERIFY(height->hasFocus() || height->isAncestorOf(QApplication::focusWidget()));
+        const int rightEdge = center->geometry().right();
+        drag(Qt::LeftDockWidgetArea, center->width() - 450);
+        QTRY_COMPARE(center->width(), 450);
+        QCOMPARE(center->geometry().right(), rightEdge);
+        QCOMPARE(canvas->width(), center->width());
+        QVERIFY(transform->isVisible());
+
+        // Fit still uses the complete 4:3 composition at the new viewport size.
+        QTRY_COMPARE_WITH_TIMEOUT(canvas->image().size(), fittedSize(), 10000);
+        QCOMPARE(window.session().document().bytes(), originalFlame);
+
+        MainWindow reopened(false);
+        reopened.previewController().setPaused(true);
+        reopened.resize(window.size());
+        reopened.show();
+        QVERIFY(reopened.restoreState(window.saveState(1), 1));
+        QCoreApplication::processEvents();
+        QCOMPARE(widget<QDockWidget>(reopened, "libraryDock")->width(), library->width());
+        QCOMPARE(widget<QDockWidget>(reopened, "propertiesDock")->width(), inspector->width());
+        QCOMPARE(reopened.centralWidget()->size(), center->size());
     }
     void editNewVariationParameters() {
         MainWindow window(false);

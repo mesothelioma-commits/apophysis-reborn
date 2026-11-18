@@ -306,3 +306,7 @@ The desktop and file checks cover parameter edits, Save and reopen, 2.09 numeric
 ## 0.12.0 density estimation and upgrades
 
 The `density_estimation` test consumes frozen vectors generated from the original FLAM3 density code. See [Density estimation](DENSITY_ESTIMATION.md) and the complete release’s verification logs for the tested conditions and results. On Windows 11, supply the 0.11.0 installer as `--previous-installer` to the [installer verifier](../packaging/README.md#verification-and-acceptance-boundary) to cover a real upgrade and a locked predecessor.
+
+## 0.12.1 — Live Preview resizing
+
+Exercise mouse drags on both vertical dock dividers with the Transform editor visible. Check the opposite boundary, narrow-panel control access and restoration after reopening a saved workspace. From a height-limited fit, drag the lower divider down by 65 logical pixels and compare the fitted dimensions before and after. Check that an unchanged fitted render size reuses the current preview and that a changed target size renders again. The release verification directory records the executed checks.

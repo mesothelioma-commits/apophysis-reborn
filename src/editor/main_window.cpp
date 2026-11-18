@@ -112,6 +112,18 @@ QWidget *scrollPanel(QWidget *content) {
   area->setWidget(content);
   return area;
 }
+// Both docked tool rows share the preview column's width. A form can wrap the
+// two groups intact when that column narrows, while retaining normal tab order.
+QHBoxLayout *dockControlRow(QVBoxLayout *layout, QHBoxLayout *leading) {
+  auto trailing = new QHBoxLayout;
+  auto row = new QFormLayout;
+  row->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+  row->setRowWrapPolicy(QFormLayout::WrapLongRows);
+  row->setLayout(0, QFormLayout::LabelRole, leading);
+  row->setLayout(0, QFormLayout::FieldRole, trailing);
+  layout->addLayout(row);
+  return trailing;
+}
 Affine compose(const Affine &left, const Affine &right) {
   return {left.a * right.a + left.c * right.b,
           left.b * right.a + left.d * right.b,
@@ -344,6 +356,8 @@ void applyDarkTheme() {
   font.setPointSize(10);
   qApp->setFont(font);
   qApp->setStyleSheet(
+      "QMainWindow::separator { width: 12px; height: 8px; background: #394553; }"
+      "QMainWindow::separator:hover { background: #568b99; }"
       "QToolBar { spacing: 5px; padding: 5px; border: 0; border-bottom: 1px "
       "solid #39434e; }"
       "QToolButton { padding: 5px 7px; }"
@@ -422,7 +436,6 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   for (const auto &warning : pluginWarnings)
     record(warning);
   resizeDocks({libraryDock_, propertiesDock_}, {220, 370}, Qt::Horizontal);
-  resizeDocks({transformDock_}, {260}, Qt::Vertical);
   defaultLayout_ = saveState(1);
   auto view = menuBar()->addMenu("&View");
   for (auto dock : {libraryDock_, transformDock_, propertiesDock_, logDock_})
@@ -518,6 +531,7 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
                             .arg(elapsed)
                             .arg(complete ? "  ·  Refined" : ""));
         stats_->setToolTip(
+            stats_->text() + "\n" +
             QString("%1 plotted samples\n%2 invalid orbit steps\nDevice: %3%4")
                 .arg(plotted)
                 .arg(invalid)
@@ -577,8 +591,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
             exportStatus_->setToolTip(job->device + "\n" + job->fallback +
                                       "\n" + job->error);
           });
-  connect(previewCanvas_, &PreviewCanvas::viewportChanged, this,
-          [this] { requestPreview(); });
+  connect(previewCanvas_, &PreviewCanvas::viewportChanged, &preview_,
+          &PreviewController::setViewport);
   auto timer = new QTimer(this);
   timer->setObjectName("recoveryTimer");
   timer->setInterval(45000);
@@ -1011,6 +1025,7 @@ void MainWindow::makePreview() {
   footer->setContentsMargins(12, 6, 12, 6);
   stats_ = new QLabel("CPU preview");
   stats_->setObjectName("previewStatistics");
+  stats_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   footer->addWidget(stats_, 1);
   progress_ = new QProgressBar;
   progress_->setRange(0, 100);
@@ -1043,10 +1058,11 @@ void MainWindow::makeTransformEditor() {
   auto add = new QPushButton("Add");
   auto duplicate = new QPushButton("Duplicate");
   auto remove = new QPushButton("Delete");
-  tools->addWidget(add);
-  tools->addWidget(duplicate);
-  tools->addWidget(remove);
-  tools->addStretch();
+  auto buttons = dockControlRow(layout, tools);
+  buttons->addWidget(add);
+  buttons->addWidget(duplicate);
+  buttons->addWidget(remove);
+  buttons->addStretch();
   connect(add, &QPushButton::clicked, add_, &QAction::trigger);
   connect(duplicate, &QPushButton::clicked, duplicate_, &QAction::trigger);
   connect(remove, &QPushButton::clicked, remove_, &QAction::trigger);
@@ -1059,8 +1075,7 @@ void MainWindow::makeTransformEditor() {
           [this, remove] { remove->setEnabled(remove_->isEnabled()); });
   lock_ = new QCheckBox("Lock");
   lock_->setToolTip("Lock the selected transform while inspecting it");
-  tools->addWidget(lock_);
-  layout->addLayout(tools);
+  buttons->addWidget(lock_);
   triangles_ = new TriangleCanvas;
   layout->addWidget(triangles_, 1);
   auto footer = new QHBoxLayout;
@@ -1078,11 +1093,11 @@ void MainWindow::makeTransformEditor() {
   spacing->setPrefix("Grid ");
   footer->addWidget(spacing);
   auto fit = new QPushButton("Fit triangles");
-  footer->addWidget(fit);
-  footer->addStretch();
+  auto viewTools = dockControlRow(layout, footer);
+  viewTools->addWidget(fit);
+  viewTools->addStretch();
   coordinatesLabel_ = new QLabel("x 0.0000    y 0.0000");
-  footer->addWidget(coordinatesLabel_);
-  layout->addLayout(footer);
+  viewTools->addWidget(coordinatesLabel_);
   connect(fit, &QPushButton::clicked, triangles_, &TriangleCanvas::fit);
   connect(grid_, &QCheckBox::toggled, triangles_, &TriangleCanvas::setGrid);
   connect(snap_, &QCheckBox::toggled, triangles_, &TriangleCanvas::setSnap);
@@ -1131,7 +1146,9 @@ void MainWindow::makeTransformEditor() {
     refreshTransform();
     requestPreview();
   });
-  transformDock_->setWidget(body);
+  // If the tools wrap in a short dock, keep the canvas and controls reachable
+  // without forcing the whole main window to grow taller.
+  transformDock_->setWidget(scrollPanel(body));
   addDockWidget(Qt::BottomDockWidgetArea, transformDock_);
 }
 
@@ -1475,7 +1492,7 @@ void MainWindow::makeProperties() {
       editTransform("Change transition weights", e);
     });
   });
-  propertiesDock_->setWidget(body);
+  propertiesDock_->setWidget(scrollPanel(body));
   addDockWidget(Qt::RightDockWidgetArea, propertiesDock_);
 }
 
@@ -1486,6 +1503,7 @@ void MainWindow::makeLogs() {
   auto layout = new QVBoxLayout(body);
   auto row = new QHBoxLayout;
   exportStatus_ = new QLabel("Render to disk is idle");
+  exportStatus_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
   row->addWidget(exportStatus_, 1);
   exportProgress_ = new QProgressBar;
   exportProgress_->setRange(0, 100);

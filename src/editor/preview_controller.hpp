@@ -39,6 +39,7 @@ class PreviewController : public QObject {
         return settings_;
     }
     void request(const Flame &flame, QSize viewport);
+    void setViewport(QSize viewport);
     void requestFileRender(const Flame &flame, const QString &path, RenderOptions options);
     void setPaused(bool paused);
     bool isPaused() const {

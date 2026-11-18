@@ -37,6 +37,43 @@ PreviewSettings quickSettings() {
 class PreviewTests : public QObject {
     Q_OBJECT
   private slots:
+    void viewportResizeUsesFittedImageSize() {
+        PreviewController controller;
+        auto settings = quickSettings();
+        settings.backend = RenderBackend::cpu;
+        settings.sample_limit = 5000;
+        controller.setSettings(settings);
+        QSignalSpy images(&controller, &PreviewController::imageReady);
+
+        // The 2:1 image is height-limited. Wider side margins should leave its
+        // pending render alone, and also keep the finished image available.
+        controller.request(coloredPoint({1, 0, 0}), QSize(100, 40));
+        QSignalSpy progress(&controller, &PreviewController::progressChanged);
+        controller.setViewport(QSize(150, 40));
+        QCOMPARE(progress.count(), 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!controller.isBusy() && !images.isEmpty(), 5000);
+        QCOMPARE(qvariant_cast<QImage>(images.last().front()).size(), QSize(80, 40));
+        progress.clear();
+        images.clear();
+        controller.setViewport(QSize(90, 40));
+        QCOMPARE(progress.count(), 0);
+        QVERIFY(!controller.isBusy());
+
+        // Once the width limits the fit, request an image at the new resolution.
+        controller.setViewport(QSize(60, 40));
+        QVERIFY(controller.isBusy());
+        QTRY_VERIFY_WITH_TIMEOUT(!controller.isBusy() && !images.isEmpty(), 5000);
+        QCOMPARE(qvariant_cast<QImage>(images.last().front()).size(), QSize(60, 30));
+
+        controller.setPaused(true);
+        controller.setViewport(QSize(40, 40));
+        QVERIFY(!controller.isBusy());
+        images.clear();
+        controller.setPaused(false);
+        QTRY_VERIFY_WITH_TIMEOUT(!controller.isBusy() && !images.isEmpty(), 5000);
+        QCOMPARE(qvariant_cast<QImage>(images.last().front()).size(), QSize(40, 20));
+    }
+
     void reentrantStopDoesNotLeaveBusyState() {
         PreviewController controller;
         controller.setSettings(quickSettings());

@@ -181,3 +181,7 @@ The user reported that 0.10.2 completed their render and remained responsive dur
 Supported FLAM3 flames can render their adaptive density estimator. The [reference notes](DENSITY_ESTIMATION.md) describe the behavior by producer and the executable comparisons. Setup now registers the new version before uninstalling its immediate predecessor for the current Windows account. If an older program is locked, the new version stays installed and Setup gives cleanup instructions. The Windows verifier accepts the original 0.11.0 installer to exercise both paths on a disposable test account.
 
 Saved 0.11 render-queue jobs keep density estimation disabled when opened in 0.12. New jobs store their estimator settings alongside the flame.
+
+## 0.12.1 — Live Preview resizing
+
+Both vertical dock dividers have a wider grab area and a visible hover state. The Transform editor wraps its controls when the center column narrows. The inspector can scroll horizontally when the right panel is narrow. The lower divider gives more height to the preview, and the Transform editor can scroll if its controls exceed the available height. Resizing the preview reuses its current render when the fitted dimensions stay the same.

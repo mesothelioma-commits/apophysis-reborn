@@ -35,11 +35,15 @@ std::filesystem::path nativePath(const QString &value) {
 #endif
 }
 
-Flame fittedPreview(Flame flame, QSize viewport) {
+QSize fittedSize(const Flame &flame, QSize viewport) {
     const QSize original(flame.width, flame.height);
     const QSize fitted = original.scaled(viewport.expandedTo(QSize(1, 1)), Qt::KeepAspectRatio);
-    const int width = std::max(1, fitted.width());
-    const int height = std::max(1, fitted.height());
+    return fitted.expandedTo(QSize(1, 1));
+}
+
+Flame fittedPreview(Flame flame, QSize viewport) {
+    const auto size = fittedSize(flame, viewport);
+    const int width = size.width(), height = size.height();
     flame.scale *= double(width) / flame.width;
     flame.width = width;
     flame.height = height;
@@ -302,6 +306,13 @@ void PreviewController::request(const Flame &flame, QSize viewport) {
     latest_ = std::make_shared<const Flame>(flame);
     viewport_ = viewport;
     schedulePreview();
+}
+
+void PreviewController::setViewport(QSize viewport) {
+    const auto previous = viewport_;
+    viewport_ = viewport;
+    if (latest_ && !paused_ && fittedSize(*latest_, previous) != fittedSize(*latest_, viewport))
+        schedulePreview();
 }
 
 void PreviewController::schedulePreview() {
