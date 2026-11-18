@@ -1,6 +1,8 @@
 #include "creative_widgets.hpp"
 #include "extensions_smoke.hpp"
 #include "animation_smoke.hpp"
+#include "support_smoke.hpp"
+#include "build_info.hpp"
 #include "flame_io.hpp"
 #include "main_window.hpp"
 #include "output_file.hpp"
@@ -421,12 +423,15 @@ int main(int argc, char **argv) {
   QApplication application(argc, argv);
   application.setOrganizationName("ApophysisReborn");
   application.setApplicationName("Apophysis Reborn");
-  application.setApplicationVersion("0.9.0");
+  application.setApplicationVersion(apo::application_version());
   QCommandLineParser parser;
   parser.setApplicationDescription("Native flame library and transform editor");
   parser.addHelpOption();
   parser.addVersionOption();
-  parser.addPositionalArgument("flame", "Optional .flame library to open");
+  parser.addPositionalArgument("flame", "Optional native project or flame library to open");
+  QCommandLineOption buildInfoOption("build-info", "Print build identity and exit.");
+  QCommandLineOption jsonOption("json", "Print --build-info as JSON.");
+  parser.addOptions({buildInfoOption, jsonOption});
   QCommandLineOption smoke(
       "smoke-test",
       "Open the editor, render the example, save a screenshot and exit.",
@@ -460,6 +465,8 @@ int main(int argc, char **argv) {
   parser.addOptions({extensionsSmokeOption,pluginManifestOption});
   QCommandLineOption animationSmokeOption("animation-smoke-test", "Run timeline, color-curve, native-project and queued image-sequence acceptance.", "directory");
   parser.addOption(animationSmokeOption);
+  QCommandLineOption supportSmokeOption("support-smoke-test", "Verify the embedded manual and save system information and screenshots.", "directory");
+  parser.addOption(supportSmokeOption);
   QCommandLineOption backendOption("backend", "Renderer: cpu, auto or vulkan.",
                                    "mode");
   QCommandLineOption deviceOption(
@@ -474,27 +481,53 @@ int main(int argc, char **argv) {
   parser.process(application);
   apo::editor::applyDarkTheme();
   try {
+    if (parser.isSet(buildInfoOption)) {
+      const auto names = parser.optionNames();
+      for (const auto &name : names)
+        if (name != "build-info" && name != "json")
+          throw std::invalid_argument("--build-info cannot be combined with editor or renderer options");
+      if (!parser.positionalArguments().isEmpty())
+        throw std::invalid_argument("--build-info cannot open a document");
+      std::cout << (parser.isSet(jsonOption) ? apo::build_info_json() + '\n'
+                                           : apo::build_info_text());
+      return 0;
+    }
+    if (parser.isSet(jsonOption))
+      throw std::invalid_argument("--json requires --build-info");
+    if (parser.positionalArguments().size() > 1)
+      throw std::invalid_argument("Open one project or flame library at a time");
     const bool creative = parser.isSet(creativeSmokeOption);
     const bool gpu = parser.isSet(gpuSmokeOption);
     const bool queue = parser.isSet(queueSmokeOption);
     const bool large = parser.isSet(largeSmokeOption);
     const bool extensions = parser.isSet(extensionsSmokeOption);
     const bool animation = parser.isSet(animationSmokeOption);
+    const bool support = parser.isSet(supportSmokeOption);
     const auto manifest = parser.value(pluginManifestOption);
     if (parser.isSet(pluginManifestOption) && !extensions) throw std::invalid_argument("--plugin-manifest is restricted to extension smoke verification");
     const bool testing =
-        parser.isSet(smoke) || creative || gpu || queue || large || extensions || animation;
+        parser.isSet(smoke) || creative || gpu || queue || large || extensions || animation || support;
     if (int(parser.isSet(smoke)) + int(creative) + int(gpu) + int(queue) +
-            int(large) + int(extensions) + int(animation) >
+            int(large) + int(extensions) + int(animation) + int(support) >
         1)
       throw std::invalid_argument("Choose only one smoke-test mode");
-    const auto smokePath = parser.value(animation ? animationSmokeOption
+    if (testing && !parser.positionalArguments().isEmpty())
+      throw std::invalid_argument("Smoke verification cannot also open a user document");
+    const auto smokePath = parser.value(support ? supportSmokeOption : animation ? animationSmokeOption
                                          : extensions ? extensionsSmokeOption
                                          : large ? largeSmokeOption
                                         : queue    ? queueSmokeOption
                                         : gpu      ? gpuSmokeOption
                                         : creative ? creativeSmokeOption
                                                    : smoke);
+    if (testing) {
+      const QFileInfo destination(smokePath);
+      if (smokePath.trimmed().isEmpty() || destination.isSymLink() ||
+          (destination.exists() && (!destination.isDir() ||
+           !QDir(smokePath).entryList(QDir::AllEntries | QDir::NoDotAndDotDot |
+                                     QDir::Hidden | QDir::System).isEmpty())))
+        throw std::invalid_argument("Smoke verification requires a new or empty output directory");
+    }
     apo::editor::MainWindow window(
         !testing, nullptr, large ? smokePath + "/queue-data" : QString{});
     auto configuration = window.previewController().settings();
@@ -554,7 +587,7 @@ int main(int argc, char **argv) {
       QObject::connect(
           &window.previewController(),
           &apo::editor::PreviewController::imageReady, &window,
-          [&window, path, creative, gpu, queue, large, extensions, animation, manifest, started,
+          [&window, path, creative, gpu, queue, large, extensions, animation, support, manifest, started,
            renderer](const QImage &image, quint64, quint64, quint64, unsigned,
                      qint64, bool final) {
             if (!final || *started)
@@ -562,7 +595,7 @@ int main(int argc, char **argv) {
             *started = true;
             QTimer::singleShot(
                 100, &window,
-                [&window, path, image, creative, gpu, queue, large, extensions, animation, manifest, renderer] {
+                [&window, path, image, creative, gpu, queue, large, extensions, animation, support, manifest, renderer] {
                   bool ok = image.save(path + "/preview.png") &&
                             window.grab().save(path + "/editor.png");
                   try {
@@ -583,7 +616,11 @@ int main(int argc, char **argv) {
                   } catch (const std::exception &) {
                     ok = false;
                   }
-                  if (ok && animation) {
+                  if (ok && support) {
+                    window.previewController().setPaused(true);
+                    try { apo::editor::supportSmoke(window, path); }
+                    catch(const std::exception &e) { std::cerr << e.what() << '\n'; QCoreApplication::exit(1); }
+                  } else if (ok && animation) {
                     window.previewController().setPaused(true);
                     try { apo::editor::animationSmoke(window, path); }
                     catch(const std::exception &e) { std::cerr << e.what() << '\n'; QCoreApplication::exit(1); }
@@ -649,7 +686,9 @@ int main(int argc, char **argv) {
   } catch (const std::exception &error) {
     if (parser.isSet(smoke) || parser.isSet(creativeSmokeOption) ||
         parser.isSet(gpuSmokeOption) || parser.isSet(queueSmokeOption) ||
-        parser.isSet(largeSmokeOption) || parser.isSet(extensionsSmokeOption)) {
+        parser.isSet(largeSmokeOption) || parser.isSet(extensionsSmokeOption) ||
+        parser.isSet(animationSmokeOption) || parser.isSet(supportSmokeOption) || parser.isSet(buildInfoOption) ||
+        parser.isSet(jsonOption)) {
       std::cerr << error.what() << '\n';
       return 1;
     }

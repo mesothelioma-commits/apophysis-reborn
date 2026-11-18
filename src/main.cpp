@@ -1,6 +1,7 @@
 #include "document_cli.hpp"
 #include "extension_cli.hpp"
 #include "animation_cli.hpp"
+#include "build_info.hpp"
 #include "gpu.hpp"
 #include "legacy_document.hpp"
 #include "plugin.hpp"
@@ -34,7 +35,7 @@ namespace {
 namespace fs = std::filesystem;
 
 void usage(std::ostream &out) {
-  out << "Apophysis Reborn 0.9.0 | Animation and color\n"
+  out << "Apophysis Reborn " << apo::application_version() << " | Release hardening\n"
       << "  flame-cpu --flame input.flame --output image.png [options]\n"
       << "  flame-cpu inspect input.flame [--json]\n"
       << "  flame-cpu save input.flame --output copy.flame [--index N] [--name "
@@ -46,6 +47,8 @@ void usage(std::ostream &out) {
          "render model.\n"
       << "  flame-cpu --list-variations\n"
       << "  flame-cpu --list-devices [--json]\n"
+      << "  flame-cpu --version\n"
+      << "  flame-cpu --build-info [--json]\n"
       << "  flame-cpu width height samples output.ppm    (foundation demo)\n"
       << "Options:\n"
       << "  --index N        flame in a collection (1-based; project selection "
@@ -208,6 +211,19 @@ void listDevices(bool json) {
 }
 
 int run(const std::vector<fs::path> &args) {
+  if (!args.empty() && args.front() == "--version") {
+    if (args.size() != 1)
+      throw std::invalid_argument("Use --version without rendering or plugin arguments");
+    std::cout << "Apophysis Reborn " << apo::application_version() << '\n';
+    return 0;
+  }
+  if (!args.empty() && args.front() == "--build-info") {
+    if (args.size() > 2 || (args.size() == 2 && args[1] != "--json"))
+      throw std::invalid_argument("Use --build-info or --build-info --json");
+    std::cout << (args.size() == 2 ? apo::build_info_json() + '\n'
+                                 : apo::build_info_text());
+    return 0;
+  }
   if (!args.empty() && args.front() == "--plugin") {
     std::size_t used = 0;
     while (used < args.size() && args[used] == "--plugin") {

@@ -1,5 +1,75 @@
 # Verification record
 
+## 0.10.0 Release Hardening — gate definitions and evidence
+
+M10 retains the existing mathematical, historical-source, file, renderer, editor, extension and animation regressions and adds release/tooling coverage. This section is part of the source freeze: **registered tests, a compiled development build and a passed focused check are not substituted for a final release run.** Exact final outcomes, source/executable identities, pass/skip/failure counts, timings and audit totals are stored with the distributed binaries. This lets the source remain unchanged while those final measurements are collected.
+
+| Final evidence in the complete distribution | Purpose |
+| --- | --- |
+| [validation-summary.json](../verification/validation-summary.json) | Final configured native builds, CTest outcomes, available-device boundaries and references to individual logs |
+| [windows-runtime-record.json](../verification/windows-runtime-record.json) | Windows executable/module identities, recursive import/export audit and source/build provenance; static inspection is distinct from execution |
+| [extracted-source-verification.json](../verification/extracted-source-verification.json) | Rebuild/test of the packaged source using its delivered files and release identity |
+| [distribution-verification.json](../verification/distribution-verification.json) | Archive inventory, checksum/CRC, bundle/source and distribution consistency checks |
+| [benchmark-final/report.json](../verification/benchmark-final/report.json) | Actual final executable, workload, host/device identity, measured repetitions, timings, memory and output hashes |
+| [benchmark-16k/report.json](../verification/benchmark-16k/report.json), when the optional case is run | Separate one-observation large benchmark with its own settings/build and memory/timing scope |
+| [current-high-resolution/full-16k-independent-verification.json](../verification/current-high-resolution/full-16k-independent-verification.json) | New full-image decode, dimension/precision/alpha/EOF and actual render/output identity; distinct from historical M7 evidence |
+| `BUILD.txt`, individual smoke/desktop logs and installer build records | Commands, configuration and platform limits; screenshots, diagnostics, package helper inputs and signing/execution status |
+
+These links name files produced in the complete release distribution; they need not exist in a source-only Git checkout. A missing or failed final record cannot be represented as a passed gate. Older sections below preserve their own revisions, measured values and execution boundaries.
+
+### Configured inventory
+
+| Configuration | Registered CTest entries | Required interpretation |
+| --- | ---: | --- |
+| Editor enabled, Vulkan enabled | 48 | Native CPU/Qt and six Python release suites; actual Vulkan suites must run on an identified usable device or retain their explicit skip/failure state |
+| Editor disabled, Vulkan disabled | 36 | Core/release tooling remains available without Qt/Vulkan; `gpu`, `gpu_stream` and `gpu_kernel` are expected device-execution skips, not GPU passes |
+
+Each CTest entry can contain multiple assertions or Python/Qt cases. The complete Windows target inventory is **32 application/test executables**, including the new `support-editor-tests.exe`; this is a configured inventory, not a claim that those programs executed on Windows. The lean runtime selects the app/CLI and their dependency closure and excludes test-only executables/modules. Final file/module/import totals come from the actual runtime record rather than an extrapolation from M9.
+
+Python **3.10 or newer** is required by CMake when `BUILD_TESTING=ON`. Bash is needed for the wrapper fixtures; source/history tests use Git, and the build-identity fixture invokes CMake without a compiler through `LANGUAGES NONE`. Python is not an application runtime dependency. An application-only configuration with testing disabled does not execute these release gates.
+
+### Added and hardened checks
+
+| CTest entry / workflow | Contract exercised |
+| --- | --- |
+| `build_info_cli` | Consistent centralized version, source origin/revision/dirty type, compiler/architecture and compiled feature flags; unknown source has unknown cleanliness; informational commands reject render arguments without creating output |
+| `editor_startup` | Build information before ordinary startup; malformed/conflicting automation options fail without a modal hang, existing output folders and user files survive rejected startup, and informational/rejected runs do not save a user profile |
+| `support_editor` | Embedded manual from an unrelated current directory, search/missing-search behavior, blocked external/file navigation, separate requested/actual rendering fields, exact large integer reporting, clipboard copying and atomic text/JSON report saves |
+| `release_staging` | Relative destination admission, module/data roots and adjacent dependencies, reserved/ancestor conflicts and refusal of output symlink escapes |
+| `release_benchmark` | Actual backend/device selection, fallback rejection, resource-plan admission, warmup exclusion/aggregation, output verification, literal argument arrays, path boundaries, timeouts and independent child-memory observations |
+| `release_packaging` | Windows-safe paths/reparse points, actual runtime dependency closure, missing symbols, case collisions, source/payload/checksum completeness, reproducible ZIP inventory and installer generated inputs with literal paths and compiled hashes |
+| `release_source_package` | Clean complete Git history, tag/HEAD agreement, restored source/permissions/bundle, stable archive bytes, unsafe/existing output refusal, source-manifest tampering and tracked export transformations |
+| `release_build_identity` | Raw/label-only unknown state, hash-bound clean source, changed/missing/declared-dirty files, malformed stamp/manifest/traversal rejection, and Git revision/dirty refresh after source edits, commits or untracked shipped inputs |
+| `release_build_scripts` | Copied scripts with stubs: two-job default, 1–256 bounds/overrides, paths from another working directory, literal spaces/dollar substitutions/backticks/newlines, stage exit propagation, Qt-prefix forwarding and exact editor arguments |
+| `--support-smoke-test` | Real manual/diagnostics windows, embedded content checks, text/JSON saves and screenshots in a new isolated output directory; search interaction is checked separately by `support_editor` and desktop observation |
+| Existing creative/extension/animation smokes | Retained CPU workflows with isolated settings and separate new output subdirectories; smoke execution must not silently overwrite prior artifacts or user queue state |
+
+During M10 integration, the new `build_info_cli`, `editor_startup` and `support_editor` gates passed in the development build. The bounded source-identity and wrapper suites also passed 14 and 12 Python tests respectively, including rejection of a release stamp that claims `source_revision: "unknown"`. These focused observations establish their tested development scope; the final full builds and release identity must be read from the accompanying records.
+
+### Final execution method
+
+Build and test the final source revision in separate Release, sanitizer and core-only directories. Use bounded compiler concurrency so one configuration does not exhaust the host while another is measuring memory or performance. Run the full applicable CTest suite and preserve its exit status and log. Record sanitizer options explicitly; a run with leak detection disabled is not a leak-check result. A validation-enabled software Vulkan run must retain its software-driver classification, and unsupported hardware is not an implied pass.
+
+Run final editor smoke workflows in fresh directories and keep their input/build hashes, JSON and images. Inspect the native manual and diagnostics windows on the available desktop separately from offscreen Qt tests. The Windows desktop wrapper now writes creative outputs beneath `creative/` and new manual/diagnostics outputs beneath `support/`, alongside `queue/`, `extensions/` and `animation/`. The strict Windows GPU wrapper places its editor preview evidence under `preview/`, keeping it separate from queue exports. Each wrapper reports its actual output location and saves a `.txt` log.
+
+The source/history release must restore from `apophysis-reborn.bundle`, agree with `release-source.json` and `SOURCE_SHA256SUMS.txt`, and rebuild from the extracted source rather than rely on workspace-only files. Hash-bound source state is observed at configuration time, with configured dependencies triggering refresh; it is not a live runtime audit of files beside the executable. The ordinary distribution manifest and the tracked-source manifest have different inventories.
+
+Runtime packaging must re-audit the actual PE dependency closure, include all needed notices/corresponding sources, exclude test-only modules from the lean edition and verify every payload/ZIP inventory and checksum. Installer compilation must retain the generated payload inputs, private helper, compiler/NSIS identity, final installer hash and signing/execution state. A compiled installer is not proof of a Windows installation or uninstall.
+
+### Benchmarks and high-resolution evidence
+
+Use the final CLI after competing compiler/render jobs stop. The [benchmark guide](BENCHMARKS.md) defines the fixed source, sampling/thread-scaling, streamed PNG16 and three-frame animation cases. Ordinary cases use warmups and repeated fresh processes; the report distinguishes median total-process time from internal renderer stage time. The Vulkan path requires the selected actual backend with no fallback and rechecks device identity. Encoded output hashes establish repeatability only for the cases/settings actually repeated.
+
+Memory reports use the measured child process, with units and completeness stated. Linux per-child `wait4` maxima are not a cumulative maximum across previous children. Windows observations identify whether the complete child lifetime was captured. Process RSS/working set is neither the configured working-buffer limit nor measured GPU VRAM. No CPU/Vulkan speedup or untested physical-device prediction is inferred from software Vulkan.
+
+The optional benchmark `--large-16k` case is one observation per selected backend, not a repeated performance claim. It validates expected headers and encoded hashes but does not independently decode every pixel. Any new M10 full-image acceptance must retain its own exact source/executable/settings, genuine 16384×16384 render, complete independent decoding/EOF/CRC and precision/alpha evidence, and relevant memory/UI/restart observations. Those results belong to their new records. The complete M7 image, two-decoder comparison, strip/queue equality and measured memory remain explicitly **historical M7** in [HIGH_RES_ACCEPTANCE.md](HIGH_RES_ACCEPTANCE.md).
+
+### Still required on target systems
+
+Windows 11 portable launch, installer/shortcut/coexistence/uninstall behavior, high-DPI/multiple-monitor handling and physical NVIDIA/AMD/Intel driver/performance acceptance require actual target execution. The per-user installer must demonstrate its empty-destination rule and preservation of modified/extra payload files and external projects/settings. The Git Bash `verify-installer-windows.sh` wrapper launches the supplied Windows PowerShell lifecycle checks and retains JSON/text evidence; syntax checks alone do not run that lifecycle. Wine, a PE dependency audit, Linux Qt tests and software Vulkan cannot substitute for those outcomes. The exact commands and observation checklist are in [RELEASE_HANDOFF.md](RELEASE_HANDOFF.md) and [WINDOWS_GPU.md](WINDOWS_GPU.md).
+
+The final compatibility report remains explicit about the missing historical inventory and product features. A successful M10 release gate validates the delivered subset; it does not implement the remaining mathematics, encoders, preferences, scripting/animation behavior or fault isolation listed in [RELEASE_COMPATIBILITY.md](RELEASE_COMPATIBILITY.md).
+
 ## 0.9.0 Animation and Color — 17 November 2026
 
 The final M9 builds execute the following suites. Counts describe CTest entries, each of which may contain multiple assertions or Qt test cases.

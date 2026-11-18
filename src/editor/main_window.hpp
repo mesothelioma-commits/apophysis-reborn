@@ -7,6 +7,7 @@
 #include "preview_controller.hpp"
 #include "render_queue.hpp"
 #include <QMainWindow>
+#include <QJsonObject>
 #include <QPointer>
 #include <QSettings>
 #include <array>
@@ -36,6 +37,7 @@ public:
   DocumentSession &session() { return session_; }
   PreviewController &previewController() { return preview_; }
   RenderQueue &renderQueue() { return *queue_; }
+  QJsonObject systemInformation() const;
   void showRenderQueue();
   bool openFile(const QString &path);
   void openExample();

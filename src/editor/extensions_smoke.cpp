@@ -1,4 +1,5 @@
 #include "extensions_smoke.hpp"
+#include "build_info.hpp"
 #include "../legacy_formats.hpp"
 #include "../output_file.hpp"
 #include "../plugin.hpp"
@@ -89,7 +90,7 @@ print('Prepared', apo.transform_count(), 'transforms with sample_wave')
                       filesystemPath(path + "/legacy-translated.lua"),
                       [&](std::ostream &out) { out << old.translated_source; });
                   auto report = std::make_shared<QJsonObject>(QJsonObject{
-                      {"version", "0.9.0"},
+                      {"version", QString::fromLatin1(application_version())},
                       {"qt_platform", QGuiApplication::platformName()},
                       {"plugin", QString::fromStdString(plugin.name)},
                       {"plugin_sha256",

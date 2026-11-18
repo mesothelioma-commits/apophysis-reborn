@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M7 strict selected-device Vulkan, bounded streaming and render queue verification.
+# M10 cumulative selected-device Vulkan, bounded streaming and queue verification.
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
@@ -30,7 +30,8 @@ for file in flame-cpu.exe gpu-tests.exe gpu-kernel-tests.exe gpu-stream-tests.ex
     Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll platforms/qwindows.dll; do
     [[ -f "$bin/$file" ]] || { echo "Missing $bin/$file. Extract the complete milestone ZIP."; exit 1; }
 done
-echo "Apophysis Reborn 0.7.0 strict Vulkan streaming verification / $(date -Iseconds)"
+echo "$("$bin/flame-cpu.exe" --version) strict Vulkan streaming verification / $(date -Iseconds)"
+"$bin/flame-cpu.exe" --build-info --json | tee "$run_dir/build-info.json"
 cmd.exe //c ver
 "$bin/flame-cpu.exe" --list-devices --json | tee "$run_dir/devices.json"
 "$bin/flame-cpu.exe" --list-devices
@@ -66,22 +67,22 @@ require_gpu "$bin/file-render-tests.exe" --require-vulkan "${device_args[@]}"
 "$bin/flame-cpu.exe" --flame examples/ember-spiral.flame --samples 262145 --seed 123456 \
     --backend vulkan --no-fallback "${device_args[@]}" --gpu-memory-mib "$gpu_memory" \
     --output "$run_dir/vulkan-ember.bmp"
-"$bin/apophysis-reborn.exe" --gpu-smoke-test "$run_dir" --backend vulkan --no-fallback \
+"$bin/apophysis-reborn.exe" --gpu-smoke-test "$run_dir/preview" --backend vulkan --no-fallback \
     "${device_args[@]}" --gpu-memory-mib "$gpu_memory"
 "$bin/flame-cpu.exe" --flame examples/ember-spiral.flame --samples 65539 --size 192 144 \
     --backend vulkan --no-fallback "${device_args[@]}" --gpu-memory-mib "$gpu_memory" \
     --format png16 --alpha --strip-rows 7 --output "$run_dir/vulkan-rgba16.png"
 "$bin/apophysis-reborn.exe" --queue-smoke-test "$run_dir/queue" --backend vulkan --no-fallback \
     "${device_args[@]}" --gpu-memory-mib "$gpu_memory"
-for file in devices.json vulkan-ember.bmp editor.png preview.png saved-example.flame \
-    render-device.json render-settings.png vulkan-rgba16.png queue/render-queue.png \
+for file in devices.json vulkan-ember.bmp preview/editor.png preview/preview.png preview/saved-example.flame \
+    preview/render-device.json preview/render-settings.png vulkan-rgba16.png queue/render-queue.png \
     queue/queue-report.json queue/queue-render-16.png queue/queue-render-16.tif; do
     [[ -s "$run_dir/$file" ]] || { echo "Strict Vulkan check did not produce $file"; exit 1; }
 done
-cat "$run_dir/render-device.json"
+cat "$run_dir/preview/render-device.json"
 cat "$run_dir/queue/queue-report.json"
-"$bin/flame-cpu.exe" inspect "$run_dir/saved-example.flame" --json
-sha256sum "$bin/"*.exe "$run_dir/vulkan-ember.bmp" "$run_dir/render-device.json"
+"$bin/flame-cpu.exe" inspect "$run_dir/preview/saved-example.flame" --json
+sha256sum "$bin/"*.exe "$run_dir/vulkan-ember.bmp" "$run_dir/preview/render-device.json"
 echo "Strict Vulkan formulas, bounded hit streaming, exact file reconstruction, checkpoint identity and queued 16-bit exports completed on the selected device."
 echo "The device report identifies software Vulkan implementations; those do not establish physical GPU performance."
 echo "Output: $run_dir"

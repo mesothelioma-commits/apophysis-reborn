@@ -1,0 +1,28 @@
+{
+  "component": "NSIS",
+  "upstream_version": "3.13",
+  "distribution_version": "3.13-1",
+  "upstream_release": "https://sourceforge.net/projects/nsis/files/NSIS%203/3.13/",
+  "upstream_changelog": "https://nsis.sourceforge.io/Docs/AppendixF.html",
+  "distribution": "Debian official package mirror",
+  "compiler_target": "x86 Unicode NSIS launcher; embedded private helper and application payload are Windows x64",
+  "compressor": "zlib",
+  "notices_source": "nsis-3.13/COPYING, copied unchanged to NSIS-LICENSE.txt",
+  "downloads": [
+    {
+      "url": "https://deb.debian.org/debian/pool/main/n/nsis/nsis_3.13-1_amd64.deb",
+      "bytes": 616256,
+      "sha256": "12a93aea3d2ee7f54c6c6449cc0b72ed7fbf7de8f53b639974a0a983175c5f06"
+    },
+    {
+      "url": "https://deb.debian.org/debian/pool/main/n/nsis/nsis-common_3.13-1_all.deb",
+      "bytes": 1177400,
+      "sha256": "5d66cf54a09214dd7874a038a94af42894066d1fb136d662619528b0c7ed1c8c"
+    },
+    {
+      "url": "https://deb.debian.org/debian/pool/main/n/nsis/nsis_3.13.orig.tar.xz",
+      "bytes": 1581536,
+      "sha256": "830556b24178635f9f85a35d81ba356acd9e569d9e5bc3660e06f9e66f895636"
+    }
+  ]
+}

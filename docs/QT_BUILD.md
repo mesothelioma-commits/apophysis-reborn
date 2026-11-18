@@ -1,19 +1,31 @@
-# Native Qt desktop build
+# Native Qt desktop build — 0.10.0
 
-The 0.9.0 editor adds the animation timeline, morphing, queued image sequences and extended color curves to the existing creative tools, persistent render queue, native projects, scripting, trusted native variations and historical exchange. It uses Qt 6 Widgets and the same C++20 document, animation, scripting and CPU/Vulkan rendering libraries as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ and zlib runtimes. Keep the complete executable directory and its plugin subdirectories together. [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md), [ANIMATION_CLI.md](ANIMATION_CLI.md) and [COLOR_TOOLS.md](COLOR_TOOLS.md) describe the M9 workflows; image sequences do not require a bundled video encoder.
+The 0.10.0 editor adds embedded offline help/search and system diagnostics to the native editing, creative, queue, extension and animation workflows. It uses Qt 6 Widgets and the same C++20 libraries as the CLI. The packaged Qt kit is 6.8.2; the Windows editor and Qt test programs dynamically link their GUI runtime, while the CLI shares the packaged C++/zlib runtime. Keep the executable directory and its plugin subdirectories together. The [user manual](USER_MANUAL.md) describes normal use; [RELEASE_HANDOFF.md](RELEASE_HANDOFF.md) defines source/runtime/installer packaging and final evidence.
+
+The complete source/history edition keeps applications and all test executables under `bin/windows-x64`. The lean portable and per-user installer editions place the application/CLI at the runtime root and exclude test-only executables/modules. The Windows desktop verification scripts below require the complete edition. They are not a substitute for actual Windows 11 or physical-GPU execution. [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md), [ANIMATION_CLI.md](ANIMATION_CLI.md) and [COLOR_TOOLS.md](COLOR_TOOLS.md) retain the M9 feature contracts.
 
 Lua 5.5.1 is built from the vendored sources as the static `apo-lua` library and linked into the core. End users need no separate Lua installation or Lua DLL. The selected upstream sources are compiled as C++ so Lua's protected errors unwind C++ host callbacks correctly; do not change that build to C/`longjmp` without revising the integration. The complete MIT notice ships in [licenses/lua/LICENSE.txt](../licenses/lua/LICENSE.txt) and beside the source in [third_party/lua/LICENSE](../third_party/lua/LICENSE), with version, source hashes and build details in [third_party/lua/README.md](../third_party/lua/README.md).
 
 ## Build with an installed Qt development kit
 
-Install a Qt 6 desktop development kit, a matching C++20 compiler, CMake 3.20 or newer, and Expat and zlib development files. Qt Core, Gui, Widgets and Test are required for a build with tests enabled. PNG export uses zlib directly; both editor and core-only builds require its headers and library, independently of Qt's own PNG support. On Windows, use the compiler shipped or supported by that Qt kit. Open Git Bash in the source directory and supply the kit prefix if CMake cannot discover it automatically.
+Install a Qt 6.5 or newer desktop development kit, a matching C++20 compiler, CMake 3.20 or newer, and Expat and zlib development files. Qt Core, Gui, Widgets and Test, plus **Python 3.10 or newer**, are required when `BUILD_TESTING=ON`. The six Python release suites also exercise Git history and Bash wrappers. Python is not an application runtime dependency; an application-only CMake configuration can disable testing. PNG export uses zlib directly, so both editor and core-only builds need its headers/library independently of Qt's own PNG support. On Windows, use the compiler supported by the selected Qt kit. Open Git Bash and supply the kit prefix if discovery needs it.
 
 ```bash
 export APO_QT_PREFIX=/path/to/Qt/6.8.2/your-desktop-kit
-bash scripts/build-editor.sh
+bash scripts/check-deps.sh --no-open
+bash scripts/build-editor.sh --build-dir build-release --jobs 2 --no-open
+bash scripts/run-editor.sh --build-dir build-release --no-open
 ```
 
-The script invokes the normal source build with `APO_BUILD_EDITOR=ON`, builds the editor and tests, and runs CTest. The Qt directory can also be supplied as `-DCMAKE_PREFIX_PATH=...`. Expat and zlib installed through vcpkg can use the existing `VCPKG_ROOT` handling in `scripts/build.sh`; install both for the selected target triplet. CMake links the core to `ZLIB::ZLIB`. A core-only build uses `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF` and still requires Expat and zlib. Both configurations build the `sample_wave` SDK example in `build/plugins/reborn-wave`; tests additionally build the valid and incompatible-ABI fixture modules. Lua is built from the included source in either configuration.
+The dependency wrapper makes a disposable configuration, retains its diagnostics and downloads nothing. The editor wrapper invokes the normal source build with `APO_BUILD_EDITOR=ON`, builds the editor/tests and runs CTest. `--build-dir` selects an explicit build location; `--jobs` accepts 1–256 and defaults to two. `APO_BUILD_DIR`, `APO_BUILD_JOBS` and the existing CMake parallel setting can supply defaults. Each wrapper retains a `.txt` log; omitting `--no-open` selects it in Explorer on Windows. To launch a specific executable and project, use `bash scripts/run-editor.sh --exe PATH --no-open -- PROJECT`.
+
+The Qt directory can also be supplied as `-DCMAKE_PREFIX_PATH=...`. Expat/zlib installed through vcpkg can use `VCPKG_ROOT`; install both for the selected triplet. CMake links the core to `ZLIB::ZLIB`. A core-only build uses `bash scripts/build.sh --build-dir build-core --jobs 2 -DAPO_BUILD_EDITOR=OFF`; it still requires Expat/zlib and Python when tests are enabled. Both configurations build the `sample_wave` SDK example under the selected build's `plugins/reborn-wave`; tests add the valid/incompatible-ABI fixture modules. Lua is built from the included source in either configuration.
+
+### Build/source identity and embedded help
+
+`CMakeLists.txt` supplies the central version. `cmake/BuildIdentity.cmake` derives source state from the actual Git checkout or the extracted release's `release-source.json` and hash-bound `SOURCE_SHA256SUMS.txt`. A raw export reports unknown source state, and a revision stamp alone cannot establish clean extracted source. Changed/missing tracked files are marked dirty; invalid stamps and path/manifest tampering fail configuration. Source state is scoped to configuration, with declared dependencies triggering reconfiguration after tracked/shipped input changes. Keep the matching release metadata when building an archive.
+
+The CLI/editor `--version` and `--build-info --json` expose this identity and configured compiler/target/features. They do not claim a GPU driver is usable. `docs/USER_MANUAL.html` is compiled into the Qt resources, so **Help → User manual** works without a current-directory file lookup or network assets. **Help → System information…** reports runtime Qt/OS/CPU information, requested preview settings and the last actual backend/device; it does not probe drivers when opened. Both dialogs have native regression coverage.
 
 ## Vulkan build and runtime
 
@@ -69,7 +81,7 @@ CMAKE
 cmake -S . -B "$APO_EDITOR_BUILD/app" \
   -DCMAKE_TOOLCHAIN_FILE="$APO_EDITOR_BUILD/win64.cmake" \
   -DCMAKE_BUILD_TYPE=Release -DAPO_BUILD_EDITOR=ON -DBUILD_TESTING=ON
-cmake --build "$APO_EDITOR_BUILD/app" --parallel
+cmake --build "$APO_EDITOR_BUILD/app" --parallel 2
 python3 scripts/stage_editor_runtime.py \
   --qt-prefix "$APO_TARGET_QT" \
   --compiler-runtime "$APO_TOOLCHAIN/x86_64-w64-mingw32/bin" \
@@ -102,9 +114,9 @@ export QT_QPA_PLATFORM_PLUGIN_PATH=/path/to/native-qt/usr/lib/x86_64-linux-gnu/q
 ctest --test-dir build --output-on-failure
 ```
 
-The Linux editor uses Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. M9 adds animation-model and sequence-export tests, animation CLI workflows, the original 7X curve oracle, and the Qt `animation-editor-tests` and `color-editor-tests`. These extend the existing project-envelope, scripting, plugin, producer, renderer and queue checks. The new Qt coverage includes private timeline edits, exact keyframe/source retention, curve controls, cancellation, undo, queued snapshots and destination conflict handling. [TEST_PLAN.md](TEST_PLAN.md) and the packaged verification records contain the current executed results and audit totals; no current count is inferred from the historical measurements below.
+The Linux editor kit uses Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. M10 adds `support_editor`, `editor_startup`, `build_info_cli` and six `release_*` Python CTest entries to the earlier animation, source, scripting/plugin, numerical/rendering and queue gates. The configured inventory is 48 full entries or 36 core-only entries; a Vulkan-disabled core run expects three device-execution skips. The complete Windows configuration adds `support-editor-tests.exe` for 32 application/test executables. These counts describe registered targets, not executed passes or final runtime file totals. [TEST_PLAN.md](TEST_PLAN.md), `BUILD.txt` and the packaged verification records contain the actual final outcomes and identities.
 
-The Windows programs are cross-compiled and statically audited in this environment, with no Windows runtime execution claimed. Available Vulkan execution uses software Vulkan and does not establish physical-GPU performance or target-driver acceptance. Use the target-system checks below to collect that separate evidence.
+Windows cross-compilation and static dependency auditing are distinct from Windows runtime execution. Available Vulkan execution on the development host uses software Vulkan and does not establish physical-GPU performance or target-driver acceptance. Use the target-system checks below to collect that separate evidence. The current benchmark runner and installer lifecycle checks are described in [BENCHMARKS.md](BENCHMARKS.md) and [RELEASE_HANDOFF.md](RELEASE_HANDOFF.md).
 
 ### Historical M8 measurements
 
@@ -124,17 +136,26 @@ For historical comparison, the M6 Release build passed its 20 entries in 3.42 se
 
 The historical compute executions used llvmpipe software Vulkan on this host. M7 compared dense and streamed GPU histograms and final pixels, tested partial GPU checkpoint resume and rejected an incompatible shader identity. Its native acceptance also rendered an actual 16384×16384 PNG RGBA16 through the queue, paused with a committed checkpoint, resumed and recorded responsive event-loop heartbeats. Those results verify the earlier algorithms, compute/API path and bounded rendering workflow; they do not establish physical GPU performance or Windows driver acceptance. The M6 native desktop interaction and `examples/gpu-palette-study.flame` remain part of that earlier verification history.
 
-The historical M7 Windows stage contained **19 executables**, **52 files** and **50 PE modules**. Its dependency audit resolved **14,948 non-system imported symbols** against its copied libraries with zero missing. The prior M6 stage contained 15 executables, 48 files and 46 PE modules, with 13,232 resolved non-system symbols. These are historical stage measurements, not the current M9 audit totals. Neither stage established Windows runtime execution. Retained M7 full-16K long runs are historical acceptance evidence; they are not newly executed M9 measurements.
+The historical M7 Windows stage contained **19 executables**, **52 files** and **50 PE modules**. Its dependency audit resolved **14,948 non-system imported symbols** against its copied libraries with zero missing. The prior M6 stage contained 15 executables, 48 files and 46 PE modules, with 13,232 resolved non-system symbols. These are historical stage measurements, not the current release's audit totals. Neither stage established Windows runtime execution. Retained M7 full-16K long runs remain historical evidence; a new measurement needs its own build and result records.
 
 ### Run the current Windows checks
 
-When ready to run that check on Windows 11, extract the complete milestone ZIP and run from Git Bash.
+When ready to run the check on Windows 11, extract the complete source/history ZIP and run from Git Bash. The lean runtime edition does not include all verification executables/fixtures.
 
 ```bash
 bash scripts/verify-editor-windows.sh
 ```
 
-The script records the OS version and Vulkan discovery, runs the CPU/core and Qt tests, checks CPU fallback and checkpoint resume, then launches the creative, queue and M8 extension smoke workflows explicitly with the CPU backend. It explicitly enables the bundled SDK and test modules for the corresponding plugin checks. The core workflow exercises native projects, modern and legacy scripts, UGR/MAP/UPR exchange and scripted native-plugin rendering, alongside BMP/PPM/PNG/TIFF, true 16-bit output and transparent PNG/TIFF. The queue smoke writes PNG RGBA16 and TIFF RGB16 and checks UI heartbeats. Required outputs are checked and the saved documents are inspected through the CLI. Logs and artifacts stay under the project's `logs` and `out` directories. A GPU is not required, and this CPU script does not claim Vulkan execution. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+The script records build/OS identity and Vulkan discovery, runs the CPU/core and Qt tests, checks CPU fallback/checkpoint resume, then launches creative, queue, extension, animation and support smoke workflows explicitly with the CPU backend. It enables only the supplied SDK/test modules for their plugin checks. Core workflows exercise native projects, modern/legacy scripts, UGR/MAP/UPR exchange, animation and streamed image formats/depth/alpha. The queue checks UI heartbeats; the support smoke checks embedded manual content and saved diagnostics, while `support-editor-tests.exe` exercises search. Required outputs are checked and saved documents are inspected through the CLI. Logs stay under `logs`, with a unique run directory under `out` and separate `creative/`, `queue/`, `extensions/`, `animation/` and `support/` subdirectories. A GPU is not required and CPU fallback is not represented as Vulkan execution. Add `--no-open` to suppress Explorer. The full edition's desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+
+Run the M10 support workflow directly into a new or empty output directory with:
+
+```bash
+./bin/windows-x64/apophysis-reborn.exe \
+  --support-smoke-test out/support-smoke --backend cpu
+```
+
+It writes `user-manual.png`, `system-information.png`, `system-information.json`, `system-information.txt` and `support-report.json`. Smoke modes use isolated application state, reject a nonempty output directory and do not combine with a user document argument. Keep each run's output in its own directory.
 
 The current verification scripts also run the M9 core/CLI animation and curve checks, Qt timeline/color tests and the CPU animation smoke workflow. To run the M9 desktop workflow directly from the extracted project root:
 
@@ -174,7 +195,7 @@ bash scripts/verify-editor-windows.sh --large-render --no-open
 
 The large workflow renders 16384×16384 PNG RGBA16 with 8,388,611 samples and a 128 MiB working-buffer budget. It retains checkpoint chunks and uses an 8 GiB disk budget; the planner checks free space before rendering. The `16k-report.json` records pause/checkpoint preservation, resumed completion and event-loop measurements. Its screenshots show the paused and completed queue and the editor. Working-buffer limits do not represent a cap on the entire Qt process or driver memory.
 
-The creative workflow can also be invoked directly:
+The creative workflow can also be invoked directly into its own new or empty directory:
 
 ```bash
 ./bin/windows-x64/apophysis-reborn.exe --creative-smoke-test out/creative-smoke
@@ -199,7 +220,7 @@ bash scripts/verify-gpu-windows.sh
 
 This optional script selects a usable physical GPU by default and requires actual Vulkan execution from the formula tests, dense rendering comparisons, bounded hit-stream tests, exact file reconstruction and partial checkpoint resume. The same selected device ID is passed to every test, CLI export and desktop/queue smoke. It also writes PNG RGBA16 and queued PNG/TIFF 16-bit exports. `--device ID` or a zero-based index selects a specific device; an explicitly selected software implementation remains labeled as software. A skipped compute test, missing device or fallback fails the strict gate. The [Windows GPU guide](WINDOWS_GPU.md) lists its outputs, memory option and device-selection details.
 
-The native GPU smoke mode can also run directly:
+The strict wrapper keeps its preview artifacts under the run's `preview/` subdirectory, separately from queued outputs. The native GPU smoke mode can also run directly:
 
 ```bash
 ./bin/windows-x64/apophysis-reborn.exe --gpu-smoke-test out/gpu-smoke --device 0

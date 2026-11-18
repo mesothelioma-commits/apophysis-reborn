@@ -1,0 +1,12 @@
+#pragma once
+#define APO_VERSION_STRING "@PROJECT_VERSION@"
+#define APO_SOURCE_REVISION "@apo_source_revision@"
+#define APO_SOURCE_ORIGIN "@apo_source_origin@"
+#define APO_SOURCE_DIRTY_KNOWN @apo_source_dirty_known@
+#define APO_SOURCE_DIRTY @apo_source_dirty@
+#define APO_COMPILER_ID "@CMAKE_CXX_COMPILER_ID@"
+#define APO_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@"
+#define APO_TARGET_OS "@CMAKE_SYSTEM_NAME@"
+#define APO_TARGET_ARCH "@CMAKE_SYSTEM_PROCESSOR@"
+#define APO_EDITOR_COMPILED @apo_editor_compiled@
+#define APO_QT_VERSION "@apo_qt_version@"

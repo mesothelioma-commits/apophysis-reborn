@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(apophysis_reborn VERSION 0.9.0 LANGUAGES CXX)
+project(apophysis_reborn VERSION 0.10.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -30,10 +30,12 @@ add_library(flame-core src/flame.cpp src/flame_io.cpp src/render.cpp src/image.c
     src/render_file.cpp src/image_stream.cpp src/plugin.cpp src/project_io.cpp
     src/project_document.cpp src/legacy_formats.cpp src/script.cpp src/legacy_script.cpp
     src/script_document.cpp src/script_host.cpp src/color_curves.cpp
-    src/animation.cpp src/animation_io.cpp src/animation_export.cpp src/sha256.cpp)
+    src/animation.cpp src/animation_io.cpp src/animation_export.cpp src/sha256.cpp src/build_info.cpp)
 target_include_directories(flame-core PUBLIC src)
 target_include_directories(flame-core PRIVATE third_party/vulkan/include)
+target_include_directories(flame-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_definitions(flame-core PRIVATE APO_ENABLE_VULKAN=$<BOOL:${APO_ENABLE_VULKAN}>)
+target_compile_definitions(flame-core PRIVATE APO_BUILD_CONFIGURATION="$<CONFIG>")
 target_link_libraries(flame-core PRIVATE ${apophysis_expat_target} Threads::Threads ${CMAKE_DL_LIBS} ZLIB::ZLIB apo-lua)
 add_executable(flame-cpu src/main.cpp src/document_cli.cpp src/extension_cli.cpp src/animation_cli.cpp)
 target_link_libraries(flame-cpu PRIVATE flame-core)
@@ -48,16 +50,17 @@ if(APO_BUILD_EDITOR)
         src/editor/preview_controller.cpp src/editor/main_window.cpp src/editor/creative_widgets.cpp
         src/editor/render_queue.cpp src/editor/script_dialog.cpp src/editor/plugin_dialog.cpp src/editor/main_window_extensions.cpp
         src/editor/color_curve_dialog.cpp src/editor/color_curve_dialog.hpp
-        src/editor/animation_dialog.cpp src/editor/animation_dialog.hpp src/editor/main_window_animation.cpp)
-    set_target_properties(flame-editor PROPERTIES AUTOMOC ON)
+        src/editor/animation_dialog.cpp src/editor/animation_dialog.hpp src/editor/main_window_animation.cpp
+        src/editor/support_dialogs.cpp src/editor/support_resources.qrc)
+    set_target_properties(flame-editor PROPERTIES AUTOMOC ON AUTORCC ON)
     target_include_directories(flame-editor PUBLIC src)
     target_link_libraries(flame-editor PUBLIC flame-core Qt6::Widgets)
-    add_executable(apophysis-reborn WIN32 src/editor/main.cpp src/editor/extensions_smoke.cpp src/editor/animation_smoke.cpp src/editor/editor_resources.qrc)
+    add_executable(apophysis-reborn WIN32 src/editor/main.cpp src/editor/extensions_smoke.cpp src/editor/animation_smoke.cpp src/editor/support_smoke.cpp src/editor/editor_resources.qrc)
     set_target_properties(apophysis-reborn PROPERTIES AUTORCC ON)
     target_link_libraries(apophysis-reborn PRIVATE flame-editor)
     if(BUILD_TESTING)
         find_package(Qt6 REQUIRED COMPONENTS Test)
-        foreach(test_name IN ITEMS preview document_session canvas creative_editor render_queue extensions_editor color_editor animation_editor)
+        foreach(test_name IN ITEMS preview document_session canvas creative_editor render_queue extensions_editor color_editor animation_editor support_editor)
             string(REPLACE "_" "-" target_name "${test_name}-tests")
             add_executable(${target_name} tests/${test_name}_tests.cpp)
             set_target_properties(${target_name} PROPERTIES AUTOMOC ON)
@@ -77,6 +80,9 @@ if(APO_BUILD_EDITOR)
         target_link_libraries(editor-tests PRIVATE flame-editor Qt6::Test)
         add_test(NAME editor_workflow COMMAND editor-tests)
         set_tests_properties(editor_workflow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        add_test(NAME editor_startup COMMAND ${CMAKE_COMMAND}
+            -DEXE=$<TARGET_FILE:apophysis-reborn> -DVERSION=${PROJECT_VERSION}
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/editor-startup -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/editor_startup.cmake)
     endif()
 endif()
 # A complete loadable SDK sample is shipped with each desktop checkpoint.
@@ -90,6 +96,21 @@ set(APO_PLUGIN_LIBRARY "reborn_wave${CMAKE_SHARED_LIBRARY_SUFFIX}")
 configure_file(examples/plugins/reborn-wave/reborn_wave.apoplugin.in
     "${CMAKE_CURRENT_BINARY_DIR}/plugins/reborn-wave/reborn_wave.apoplugin" @ONLY)
 if(BUILD_TESTING)
+    # Python is a build/release verification dependency; the installed application
+    # and its portable runtime do not depend on Python.
+    find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+    foreach(apo_release_suite IN ITEMS staging benchmark packaging source_package build_identity build_scripts)
+        add_test(NAME release_${apo_release_suite}
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/${apo_release_suite}_tests.py")
+        set_tests_properties(release_${apo_release_suite} PROPERTIES
+            ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1;APO_TEST_CMAKE=${CMAKE_COMMAND}"
+            LABELS "release" TIMEOUT 180)
+    endforeach()
+    math(EXPR apo_pointer_bits "${CMAKE_SIZEOF_VOID_P} * 8")
+    add_test(NAME build_info_cli COMMAND ${CMAKE_COMMAND}
+        -DEXE=$<TARGET_FILE:flame-cpu> -DVERSION=${PROJECT_VERSION} -DVULKAN=${APO_ENABLE_VULKAN}
+        -DEDITOR=${APO_BUILD_EDITOR} -DPOINTER_BITS=${apo_pointer_bits}
+        -DWORK=${CMAKE_CURRENT_BINARY_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_info_cli.cmake)
     add_executable(animation-tests tests/animation_tests.cpp)
     target_link_libraries(animation-tests PRIVATE flame-core)
     add_dependencies(animation-tests reborn-wave plugin-fixture)
@@ -192,4 +213,19 @@ if(BUILD_TESTING)
     add_test(NAME foundation_cli COMMAND flame-cpu 64 64 100000 ${CMAKE_CURRENT_BINARY_DIR}/smoke.ppm)
     add_test(NAME flame_file_cli COMMAND flame-cpu --flame ${CMAKE_CURRENT_SOURCE_DIR}/examples/ember-spiral.flame
         --samples 100000 --threads 3 --output ${CMAKE_CURRENT_BINARY_DIR}/ember.bmp)
+endif()
+include(cmake/BuildIdentity.cmake)
+if(WIN32)
+    enable_language(RC)
+    foreach(apo_resource_name IN ITEMS flame-cpu apophysis-reborn)
+        if(TARGET ${apo_resource_name})
+            if(apo_resource_name STREQUAL "flame-cpu")
+                set(apo_resource_description "Apophysis Reborn command-line renderer")
+            else()
+                set(apo_resource_description "Apophysis Reborn fractal flame editor")
+            endif()
+            configure_file(src/app_version.rc.in "generated/${apo_resource_name}-version.rc" @ONLY)
+            target_sources(${apo_resource_name} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/${apo_resource_name}-version.rc")
+        endif()
+    endforeach()
 endif()

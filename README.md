@@ -1,8 +1,43 @@
-# Apophysis Reborn 0.9.0 — Animation and Color
+# Apophysis Reborn 0.10.0 — Release Hardening
 
-Milestone 9 adds a native keyframe timeline, explicit flame morphing, playback, resumable image-sequence export and extended color tools. Original 7X weighted color curves are now interpreted with their verified historical behavior. The existing source-preserving editor, scripting/plugin system, CPU/Vulkan renderer, persistent queue and large-image exports remain available.
+Milestone 10 adds a lean Windows portable edition, a per-user installer, embedded offline help, build/system diagnostics, reproducible release tooling and measured benchmark workflows. The native source-preserving editor, CPU/Vulkan renderer, creative tools, persistent queue, scripting/plugins, timeline, morphing and high-resolution output remain available.
+
+**0.10.0 is a release-hardening checkpoint, not a claim of complete original Apophysis 2.x/7X/AV parity.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
+
+## Choose a distribution
+
+| Edition | Entry point and contents |
+| --- | --- |
+| Lean portable | Extract `apophysis-reborn-0.10.0-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.10.0-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
+| Per-user installer | Run `apophysis-reborn-0.10.0-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.0`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
+| Complete source/history and SDK | Extract `apophysis-reborn-0.10.0-release-hardening.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
+
+Setup requires an empty destination and keeps different versions side by side. Uninstall removes unchanged installed payload files and retains modified/extra files; external projects, settings and recovery data remain. An interrupted install can leave a partial folder; automatic repair or replacement is not provided. Portable and installed applications normally share per-user settings/data, so separate program directories are not isolated user profiles. Keep artwork outside the program folder and retain the original executable/plugins for in-progress checkpoints. [Getting started and recovery](docs/USER_MANUAL.md)
 
 ## New in this checkpoint
+
+| Area | Implemented behavior |
+| --- | --- |
+| Offline manual | **Help → User manual** (`F1`), embedded in the executable with section links and **Find in manual** (`Ctrl+F`, Next/Previous). Markdown and self-contained HTML are also shipped. |
+| Diagnostics | **Help → System information…**, with Copy report and Save report; version/source/compiler/target and runtime Qt/OS information, requested preview settings and last actual renderer/device. The dialog does not probe GPU drivers or upload reports. |
+| Build identity | `--version` and `--build-info --json`; configure-time Git state or hash-bound packaged source identity. Unknown source stays unknown; edited or missing tracked source is not labeled clean. |
+| Git Bash tools | Dependency configuration checks, bounded build/test concurrency, explicit build/executable paths, launch logging, portable/source packaging and installer building. |
+| Benchmarks | Repeated fresh-process CPU/Vulkan workloads, output hashes, actual backend/device identity, timing boundaries and per-child memory observations; optional separate 16K observation. |
+| Release gates | Added build/startup/help regressions and six Python tooling suites; source/bundle manifests, runtime import audit, extracted-source rebuilding and distribution verification. Exact final results accompany the binaries. |
+
+Inspect build identity and explicitly discover devices from the complete package:
+
+```bash
+./bin/windows-x64/flame-cpu.exe --version
+./bin/windows-x64/flame-cpu.exe --build-info --json
+./bin/windows-x64/flame-cpu.exe --list-devices --json
+```
+
+The build report describes configured capabilities; device discovery describes what the current machine can use. Requested Vulkan settings and a last-preview CPU fallback remain separate fields. The [user manual](docs/USER_MANUAL.md), [release handoff](docs/RELEASE_HANDOFF.md) and [benchmark guide](docs/BENCHMARKS.md) explain the complete workflow.
+
+## Animation and color workflows
+
+The timeline and extended color tools introduced in M9 remain part of this release. Original 7X weighted color curves retain their verified historical evaluation; the explicit continuous curve mode has separate semantics.
 
 | Area | Delivered behavior |
 | --- | --- |
@@ -16,7 +51,7 @@ Milestone 9 adds a native keyframe timeline, explicit flame morphing, playback, 
 
 ![Native animation timeline](preview/timeline-0.9.0.png)
 
-This is the actual Qt timeline. Final verification distinguishes automated offscreen workflows, native Linux desktop interaction, the audited Windows cross-build and the still-pending Windows/physical-GPU execution.
+This actual Qt timeline screenshot is retained from M9. Release records distinguish automated offscreen workflows, native desktop interaction, the audited Windows cross-build and still-pending Windows/physical-GPU acceptance.
 
 ## Start with the timeline
 
@@ -64,7 +99,7 @@ Open **File → Render image** (`Ctrl+R`). Select a preset or enter dimensions, 
 | PPM | 8 or 16 bits | RGB |
 | BMP | 8 bits | RGB |
 
-Sixteen-bit values come directly from reconstruction, without expansion from RGB8. The formats are tone-mapped integer images; JPEG, OpenEXR, ICC color management and dithering remain open output work. The [high-resolution guide](docs/HIGH_RES_RENDERING.md), [queue guide](docs/RENDER_QUEUE.md) and [format contract](docs/IMAGE_FORMATS.md) explain budgets, alpha, restart identity and storage behavior.
+Sixteen-bit values come directly from reconstruction, without expansion from RGB8. The formats are tone-mapped integer images; JPEG, WebP, OpenEXR/HDR, ICC color management and dithering remain open output work. The [high-resolution guide](docs/HIGH_RES_RENDERING.md), [queue guide](docs/RENDER_QUEUE.md) and [format contract](docs/IMAGE_FORMATS.md) explain budgets, alpha, restart identity and storage behavior.
 
 ## Open the editor
 
@@ -78,7 +113,7 @@ Open **Edit → Preferences** to select **CPU (reference)**, **Automatic**, or *
 
 | Setting | Behavior |
 | --- | --- |
-| CPU | Retains the existing double-precision renderer and its original random stream |
+| CPU | Uses the existing double-precision renderer and Reborn CPU random stream |
 | Automatic | Uses an explicitly preferred device, or chooses usable hardware Vulkan when device selection is automatic |
 | Vulkan | Requests Vulkan compute explicitly; software implementations are identified in discovery and output |
 | GPU working budget | Limits Vulkan allocations alongside the separate host budget and device storage-buffer limits |
@@ -97,19 +132,19 @@ Use **Flame → Gradient editor**, **Adjustment editor**, **Mutation explorer**,
 | Gradient | Individual RGB/HSV/HSL colors, indexed stops, RGB/linear-light RGB/shortest-hue HSV/HSL interpolation, presets, GPL/UGR/MAP exchange and local palette library, rotation/reversal/smoothing, seeded random palettes, hue/saturation/value, weighted palette curves, gamma and contrast |
 | Adjustment | Dimensions and aspect ratio, camera center/scale/zoom/rotation, orbit framing, background, gamma/threshold/brightness/vibrancy, sample density, oversampling, master/R/G/B tone curves and the supported Gaussian filter |
 | Random generation | 1–24 candidates, a 64-bit seed, variation allowlist, transform counts, contraction and translation limits, explicit rotation/reflection symmetry and palette choice |
-| Mutation | Candidate grid, strength/trend, independent geometry/variation/color/parameter/palette controls, parent comparison, branching history and selected/batch/branch saving |
+| Mutation | Candidate grid, strength/trend, independent geometry/variation/color/parameter/palette controls, parent comparison, saved ancestry and selected/batch/branch saving |
 
 Read the [creative tools guide](docs/CREATIVE_TOOLS.md) for exact controls, save behavior and limits.
 
 ## Verify the Windows package
 
-When ready, open Git Bash in the extracted `apophysis-reborn` directory and run the desktop verification.
+When ready, open Git Bash in the complete source/history edition's extracted `apophysis-reborn` directory and run the desktop verification. The lean runtime does not contain the full test suite.
 
 ```bash
 bash scripts/verify-editor-windows.sh
 ```
 
-It runs the CPU/core and Qt tests, records device discovery and fallback, exercises the creative dialogs and render queue, and verifies the M8 scripting/plugin/project workflow and M9 timeline/color/sequence workflow with the bundled sample module. It saves screenshots, image exports, native projects, example flames and palette files with a log. Add `--large-render` for the separate full 16K queue acceptance and `--no-open` to suppress Explorer. A GPU is not required.
+It runs the CPU/core and Qt tests, records build/device identity and fallback, exercises offline help/search and diagnostics, creative dialogs, the render queue, scripting/plugin/project workflow and timeline/color/sequence workflow. It saves screenshots, images, projects and reports in separate `creative`, `support`, `queue`, `extensions` and `animation` subdirectories with a log. Add `--large-render` for the separate full 16K queue acceptance and `--no-open` to suppress Explorer. A GPU is not required.
 
 The separate strict GPU check can be run later when a suitable Windows GPU and driver are available:
 
@@ -168,18 +203,33 @@ Append `--estimate` to inspect the plan without creating files. For a controlled
 
 ## Build from source
 
-CMake 3.20+, a C++20 compiler, Qt 6.5+ Widgets/Test development files, and Expat and zlib development files are required. The packaged GUI uses Qt 6.8.2. Supply the installed Qt kit prefix when needed.
+CMake 3.20+, a matching C++20 compiler and Qt 6.5+ desktop kit, and Expat and zlib development files are required. The packaged GUI uses Qt 6.8.2. With `BUILD_TESTING=ON`, Qt Test and **Python 3.10+** are required for the full test/release gates; Python is not needed to run the application. Supply the installed Qt kit prefix when needed.
 
 ```bash
 export APO_QT_PREFIX=/path/to/Qt/6.8.2/your-kit
-bash scripts/build-editor.sh
+bash scripts/check-deps.sh --no-open
+bash scripts/build-editor.sh --build-dir build-release --jobs 2 --no-open
+bash scripts/run-editor.sh --build-dir build-release --no-open
 ```
 
-A core-only build can use `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF`. To disable the Vulkan runtime entirely, add `-DAPO_ENABLE_VULKAN=OFF`. Ordinary builds use the bundled headers and embedded SPIR-V; shader regeneration is documented in the [Qt build guide](docs/QT_BUILD.md), alongside the exact Windows toolchain, runtime staging and corresponding dependency sources.
+The dependency script checks configuration without compiling or downloading tools. Build wrappers default to two compiler/test jobs, retain `.txt` logs and support paths with spaces. Omit `--no-open` to select their completed logs in Explorer. `run-editor.sh --exe PATH -- PROJECT` selects an explicit executable and forwards project arguments.
+
+A core-only build uses `bash scripts/build.sh --build-dir build-cpu --jobs 2 -DAPO_BUILD_EDITOR=OFF`; it still needs Expat/zlib and Python when tests are enabled. Add `-DAPO_ENABLE_VULKAN=OFF` to exclude Vulkan. An application-only CMake configuration can use `-DBUILD_TESTING=OFF` without Python; it does not execute release gates. Ordinary builds use the bundled Vulkan headers and embedded SPIR-V. The [Qt build guide](docs/QT_BUILD.md) records the Windows toolchain/staging workflow, and [RELEASE_HANDOFF.md](docs/RELEASE_HANDOFF.md) gives source, portable and installer packaging commands.
+
+## Measure the renderer
+
+From the complete package, choose the actual executable to measure:
+
+```bash
+bash scripts/benchmark.sh --exe ./bin/windows-x64/flame-cpu.exe \
+  --backend cpu --threads 1,2,4 --repeats 3 --warmups 1 --no-open
+```
+
+`--backend both --device ID` adds strict Vulkan measurements on a discovered device. Software Vulkan must be explicitly selected and remains identified as software. Reports retain `report.txt`, `report.json`, exact commands, process logs and input/output hashes. Timings include process startup, rendering, encoding and disk publication; RSS is distinct from renderer-buffer budgets and VRAM. `--large-16k` adds one separate large observation, while `--keep-images` retains outputs. [Case definitions, timing/memory methods and limits](docs/BENCHMARKS.md)
 
 ## Verification in this checkpoint
 
-The M9 verification suite contains **39 CTest entries**, covering the animation model, independent original 7X curves, sequence crash/resume and CLI behavior, native timeline/color editing and all earlier gates. The final executed results, sanitizer settings, platform boundaries and package checks are recorded in [TEST_PLAN.md](docs/TEST_PLAN.md) and the included `verification` directory. Earlier CPU images, original-producer checks, 1,560 transform probes, streaming output and checkpoint gates remain covered.
+The M10 configuration registers **48 CTest entries** with the editor and **36 core-only entries**. A Vulkan-disabled core build expects three explicitly skipped device-execution checks. These are inventory counts, not a claim that an unexecuted configuration passed. Exact final source/executable identities, pass/skip/failure results, sanitizer settings, measurements and audit totals are recorded in `BUILD.txt` and the packaged `verification` records, with methods in [TEST_PLAN.md](docs/TEST_PLAN.md). The source suites retain original-producer/curve references, animation and sequence recovery, 1,560 transform probes, streaming output and checkpoint gates.
 
 The retained M7 acceptance record documents an actual 16K RGBA16 render that used 8,388,611 samples and peaked at **39.2 MiB process RSS** with a 128 MiB working-buffer budget. Two independent decoders agreed on every one of its 2,147,483,648 decoded channel bytes. A matching-camera comparison produced identical complete files using 63-row and 247-row strips, including queue pause/resume. The queue's whole Qt process peaked at 182.8 MiB; the 128 MiB setting limits rendering buffers, not all Qt/library/process memory. The [16K acceptance report](docs/HIGH_RES_ACCEPTANCE.md) distinguishes these measurements and documents the sparse sample density of the acceptance image.
 
@@ -187,6 +237,11 @@ The retained M7 acceptance record documents an actual 16K RGBA16 render that use
 
 | File | What it covers |
 | --- | --- |
+| [User manual](docs/USER_MANUAL.md) | Getting started, editing/recovery, rendering, queues, animation, extensions and troubleshooting; embedded offline HTML is available with F1 |
+| [Release compatibility](docs/RELEASE_COMPATIBILITY.md) | Traceability to all 25 brief sections and explicit partial/missing/platform-unverified requirements |
+| [Requirements register](docs/requirements-status.json) | Stable requirement IDs, bounded status, source-brief fingerprint and evidence paths |
+| [Release handoff](docs/RELEASE_HANDOFF.md) | Exact build/package commands, source identity, target acceptance and next engineering work |
+| [Benchmarks](docs/BENCHMARKS.md) | Repeatable workloads, total-process timing, memory observations and hardware boundaries |
 | [Animation timeline](docs/ANIMATION_EDITOR.md) | Native keyframes, morphing, playback, queue and project workflows |
 | [Animation model](docs/ANIMATION_MODEL.md) | Versioned payload, interpolation, correspondence and exact endpoints |
 | [Animation CLI](docs/ANIMATION_CLI.md) | Frame creation/export, bounded sequence planning and verified resume |
@@ -222,6 +277,10 @@ The retained M7 acceptance record documents an actual 16K RGBA16 render that use
 | [Development log](docs/DEVELOPMENT_LOG.md) | Changes since the foundation and next milestone handoff |
 | [Third-party notices](docs/LICENSES.md) | Dependency and reference provenance |
 
-The ZIP also includes `apophysis-reborn.bundle` and `BUILD.txt`. For a checkout with the complete checkpoint history, run `git clone apophysis-reborn.bundle ../apophysis-reborn-git` from the extracted folder. The checkout holds source, example flames, tests and documentation. The precompiled Windows executables and their runtime DLLs are distribution outputs. Corresponding third-party sources accompany the distribution. No remote repository is required.
+The complete source/history ZIP also includes `apophysis-reborn.bundle`, `BUILD.txt`, `release-source.json`, `SOURCE_SHA256SUMS.txt` and `SHA256SUMS.txt`. For a checkout with the complete checkpoint history, run `git clone apophysis-reborn.bundle ../apophysis-reborn-git` from the extracted folder. The checkout holds source, examples, tests and documentation. Windows applications and runtime files are distribution outputs; corresponding third-party sources accompany the package. No remote repository is required.
 
-**Next: Milestone 10 — release hardening, packaging and remaining platform acceptance.** Physical NVIDIA/AMD/Intel execution, Windows 11 behavior and hardware performance measurement remain open. CUDA is optional and not implemented. The compatibility inventory in [FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) tracks additional variations, active 3D/direct-color behavior, density estimation, broader historical animation support and remaining editor controls.
+## Remaining work
+
+The original brief names 40 starting variations; **28 of those are implemented and 12 are missing**, alongside three additional built-ins for 31 total. That list is not the complete historical inventory. Active density estimation, broader filters/3D/direct-color behavior, JPEG/WebP/OpenEXR/HDR, ICC/embedded metadata, the full legacy script/animation surface, light theme and more workspace/preferences controls remain open. Native plugins are trusted in-process CPU code; local crash reporting and stronger isolation remain incomplete. CUDA is optional and not implemented.
+
+Continue with targeted compatibility work and Windows/physical-GPU acceptance using [RELEASE_COMPATIBILITY.md](docs/RELEASE_COMPATIBILITY.md), [FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) and [RELEASE_HANDOFF.md](docs/RELEASE_HANDOFF.md). M10 packaging does not turn those outstanding requirements into completed product functionality.

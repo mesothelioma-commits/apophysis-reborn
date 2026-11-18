@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M9 desktop timeline, color curves and cumulative render-queue verification.
+# M10 offline help, diagnostics and cumulative desktop verification.
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
@@ -22,12 +22,13 @@ bin=./bin/windows-x64
 for file in apophysis-reborn.exe editor-tests.exe creative-editor-tests.exe preview-tests.exe \
     document-session-tests.exe canvas-tests.exe render-queue-tests.exe Qt6Core.dll Qt6Gui.dll \
     Qt6Widgets.dll Qt6Test.dll platforms/qwindows.dll extensions-editor-tests.exe \
-    plugin-dialog-tests.exe animation-editor-tests.exe color-editor-tests.exe \
+    plugin-dialog-tests.exe animation-editor-tests.exe color-editor-tests.exe support-editor-tests.exe \
     plugins/reborn-wave/reborn_wave.dll plugins/reborn-wave/reborn_wave.apoplugin; do
     [[ -f "$bin/$file" ]] || { echo "Missing $bin/$file. Extract the complete milestone ZIP."; exit 1; }
 done
 plugin_manifest="$bin/plugins/reborn-wave/reborn_wave.apoplugin"
-echo "Apophysis Reborn 0.9.0 desktop timeline, color and render queue verification / $(date -Iseconds)"
+echo "Apophysis Reborn 0.10.0 desktop release verification / $(date -Iseconds)"
+"$bin/apophysis-reborn.exe" --build-info --json | tee "$run_dir/editor-build-info.json"
 cmd.exe //c ver
 bash scripts/verify-windows.sh --no-open
 "$bin/document-session-tests.exe"
@@ -40,16 +41,23 @@ bash scripts/verify-windows.sh --no-open
 "$bin/plugin-dialog-tests.exe" "$plugin_manifest"
 "$bin/animation-editor-tests.exe"
 "$bin/color-editor-tests.exe"
-"$bin/apophysis-reborn.exe" --creative-smoke-test "$run_dir" --backend cpu
+"$bin/support-editor-tests.exe"
+creative_dir="$run_dir/creative"
+"$bin/apophysis-reborn.exe" --creative-smoke-test "$creative_dir" --backend cpu
 "$bin/apophysis-reborn.exe" --queue-smoke-test "$run_dir/queue" --backend cpu
 "$bin/apophysis-reborn.exe" --extensions-smoke-test "$run_dir/extensions" \
     --plugin-manifest "$plugin_manifest" --backend cpu
 "$bin/apophysis-reborn.exe" --animation-smoke-test "$run_dir/animation" --backend cpu
+"$bin/apophysis-reborn.exe" --support-smoke-test "$run_dir/support" --backend cpu
 for file in editor.png preview.png saved-example.flame \
     gradient-editor.png adjustment-editor.png mutation-explorer.png random-explorer.png \
     gradient-example.flame adjustment-example.flame mutation-example.flame random-batch.flame palette.gpl; do
-    [[ -s "$run_dir/$file" ]] || { echo "Smoke test did not produce $file"; exit 1; }
+    [[ -s "$creative_dir/$file" ]] || { echo "Smoke test did not produce $file"; exit 1; }
 done
+for file in user-manual.png system-information.png system-information.json system-information.txt support-report.json; do
+    [[ -s "$run_dir/support/$file" ]] || { echo "Support smoke test did not produce $file"; exit 1; }
+done
+cat "$run_dir/support/support-report.json"
 for file in render-queue.png render-queue.json queue-report.json high-resolution-settings.png \
     queue-render-16.png queue-render-16.tif; do
     [[ -s "$run_dir/queue/$file" ]] || { echo "Queue smoke test did not produce $file"; exit 1; }
@@ -83,11 +91,11 @@ if "$large_render"; then
 else
     echo "Actual 16K queue acceptance was not requested; enable it with --large-render."
 fi
-"$bin/flame-cpu.exe" inspect "$run_dir/saved-example.flame" --json
-"$bin/flame-cpu.exe" inspect "$run_dir/random-batch.flame" --json
-"$bin/flame-cpu.exe" inspect "$run_dir/mutation-example.flame" --json
+"$bin/flame-cpu.exe" inspect "$creative_dir/saved-example.flame" --json
+"$bin/flame-cpu.exe" inspect "$creative_dir/random-batch.flame" --json
+"$bin/flame-cpu.exe" inspect "$creative_dir/mutation-example.flame" --json
 sha256sum "$bin/apophysis-reborn.exe" "$bin/Qt6Core.dll" "$bin/Qt6Gui.dll" "$bin/Qt6Widgets.dll"
-echo "Desktop checks completed: timeline editing/undo, native animation persistence, color curves, globally numbered queued sequences, private Lua/legacy editing, trusted plugins and PNG RGBA16/TIFF RGB16 rendering."
+echo "Desktop checks completed: offline help/search, copy/save diagnostics, timeline editing/undo, native animation persistence, color curves, globally numbered queued sequences, private Lua/legacy editing, trusted plugins and PNG RGBA16/TIFF RGB16 rendering."
 echo "Smoke-test output: $run_dir"
 echo "Vulkan execution is a separate optional gate: bash scripts/verify-gpu-windows.sh"
 if "$open_output"; then

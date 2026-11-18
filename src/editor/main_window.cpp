@@ -1,4 +1,6 @@
 #include "main_window.hpp"
+#include "build_info.hpp"
+#include "support_dialogs.hpp"
 #include "creative_widgets.hpp"
 #include "flame_io.hpp"
 #include "gpu.hpp"
@@ -396,6 +398,17 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   });
   full->setShortcut(Qt::Key_F11);
   auto help = menuBar()->addMenu("&Help");
+  auto manual = help->addAction("User manual", this, [this] {
+    run([this] { UserManualDialog dialog(this); dialog.exec(); });
+  });
+  manual->setObjectName("actionUserManual");
+  manual->setShortcut(QKeySequence::HelpContents);
+  auto information = help->addAction("System information…", this, [this] {
+    SystemInformationDialog dialog(systemInformation(), this);
+    dialog.exec();
+  });
+  information->setObjectName("actionSystemInformation");
+  help->addSeparator();
   help->addAction("Editor controls", this, [this] {
     QMessageBox::information(
         this, "Editor controls",
@@ -414,8 +427,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   });
   help->addAction("About Apophysis Reborn", this, [this] {
     QMessageBox::about(
-        this, "Apophysis Reborn 0.9.0",
-        "Animation and Color development checkpoint\nC++20 / Qt 6 / CPU "
+        this, "Apophysis Reborn " + text(application_version()),
+        "Release hardening checkpoint\nC++20 / Qt 6 / CPU "
         "and Vulkan compute\n\n"
         "31 registered variations, gradient and adjustment editors, seeded "
         "generation and "
@@ -1797,6 +1810,12 @@ void MainWindow::updateTitle() {
                    : QFileInfo(session_.path()).fileName();
   setWindowModified(session_.isModified());
   setWindowTitle(title + "[*] — Apophysis Reborn");
+}
+QJsonObject MainWindow::systemInformation() const {
+  return system_information(preview_.settings(),
+      lastBackendReport_.isEmpty() ? QString("Not yet reported") : previewBackend_,
+      lastBackendReport_.isEmpty() ? QString("Not yet reported") : previewDevice_,
+      previewFallback_);
 }
 void MainWindow::record(const QString &message) {
   if (!log_)

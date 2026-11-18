@@ -5,6 +5,7 @@
 #include "../plugin.hpp"
 #include "../script_host.hpp"
 #include "main_window.hpp"
+#include "build_info.hpp"
 #include "plugin_dialog.hpp"
 #include "script_dialog.hpp"
 #include <QBuffer>
@@ -421,7 +422,7 @@ void MainWindow::captureProjectState() {
   project.render_settings = renderSettings_;
   project.render_presets = renderPresets_;
   project.metadata["application"] = "Apophysis Reborn";
-  project.metadata["application-version"] = "0.9.0";
+  project.metadata["application-version"] = application_version();
   auto remember = [&](const Transform &transform) {
     for (const auto &term : transform.variations)
       if (term.plugin) {

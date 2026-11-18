@@ -1,4 +1,5 @@
 #include "animation_smoke.hpp"
+#include "build_info.hpp"
 #include "animation_dialog.hpp"
 #include "color_curve_dialog.hpp"
 #include "main_window.hpp"
@@ -113,7 +114,7 @@ void animationSmoke(MainWindow &window, const QString &path) {
                                              {"sha256", QString::fromStdString(detail::sha256_file(filesystemPath(job->destination)))}});
                 }
                 window.renderQueue().saveTo(path + "/animation-queue.json");
-                const QJsonObject report{{"version", "0.9.0"},
+                const QJsonObject report{{"version", QString::fromLatin1(application_version())},
                                          {"qt_platform", QGuiApplication::platformName()},
                                          {"frame_count", int(clip.frame_count)}, {"fps", 24},
                                          {"queued_frames", int(ids.size())},

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M9 animation, morphing, color curves and cumulative CPU/export verification.
+# M10 release identity and cumulative CPU/export verification.
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
@@ -22,7 +22,10 @@ plugin_bad_abi="$bin/tests/plugins/libplugin-bad-abi.dll"
 for file in "$plugin_manifest" "$bin/plugins/reborn-wave/reborn_wave.dll" "$plugin_fixture" "$plugin_bad_abi"; do
     [[ -f "$file" ]] || { echo "Missing $file. Extract the full milestone ZIP before running this check."; exit 1; }
 done
-echo "Apophysis Reborn 0.9.0 animation, color and CPU verification / $(date -Iseconds)"
+version="$("$bin/flame-cpu.exe" --version | tr -d '\r')"
+[[ "$version" == "Apophysis Reborn 0.10.0" ]] || { echo "Unexpected release executable: $version"; exit 1; }
+echo "$version release and CPU verification / $(date -Iseconds)"
+"$bin/flame-cpu.exe" --build-info --json | tee "$run_dir/build-info.json"
 echo "This check explicitly enables the bundled sample_wave and test fixture DLLs, which are native code."
 cmd.exe //c ver
 "$bin/flame-cpu.exe" --list-devices --json | tee "$run_dir/devices.json"

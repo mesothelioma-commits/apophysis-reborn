@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apophysis Reborn 0.10.0 — User manual</title>
+<style>
+body { font-family: sans-serif; line-height: 1.45; margin: 20px; }
+h1 { font-size: 24pt; margin-top: 8px; margin-bottom: 16px; }
+h2 { font-size: 17pt; margin-top: 26px; margin-bottom: 10px; }
+h3 { font-size: 13pt; margin-top: 18px; }
+p, li { margin-top: 6px; margin-bottom: 8px; }
+table { border-collapse: collapse; margin-top: 12px; margin-bottom: 16px; }
+td, th { border: 1px solid #73808c; padding: 7px; text-align: left; vertical-align: top; }
+code, pre { font-family: monospace; }
+pre { white-space: pre-wrap; margin-top: 12px; margin-bottom: 16px; }
+a { text-decoration: underline; }
+</style>
+</head>
+<body>
+<!-- Derived from USER_MANUAL.md. Text/background colors inherit the viewer palette. -->
+<a name="apophysis-reborn-0-10-0-user-manual"></a><h1>Apophysis Reborn 0.10.0 — User manual</h1>
+<p>Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and release-hardening checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The release compatibility report (<code>RELEASE_COMPATIBILITY.md</code>) lists the implemented subset and the remaining requirements.</p>
+<a name="contents"></a><h2>Contents</h2>
+<ul>
+<li><a href="#getting-started">Getting started</a></li>
+<li><a href="#your-first-image">Your first image</a></li>
+<li><a href="#workspace-and-preview">Workspace and preview</a></li>
+<li><a href="#saving-and-recovery">Saving and recovery</a></li>
+<li><a href="#transform-editing">Transform editing</a></li>
+<li><a href="#gradients-adjustments-and-creative-tools">Gradients, adjustments and creative tools</a></li>
+<li><a href="#rendering-an-image">Rendering an image</a></li>
+<li><a href="#cpu-and-vulkan">CPU and Vulkan</a></li>
+<li><a href="#queue-and-checkpoint-recovery">Queue and checkpoint recovery</a></li>
+<li><a href="#animation-and-morphing">Animation and morphing</a></li>
+<li><a href="#scripts-and-native-plugins">Scripts and native plugins</a></li>
+<li><a href="#command-line-workflows">Command-line workflows</a></li>
+<li><a href="#diagnostics-benchmarks-and-verification">Diagnostics, benchmarks and verification</a></li>
+<li><a href="#shortcuts-and-troubleshooting">Shortcuts and troubleshooting</a></li>
+</ul>
+<a name="getting-started"></a><h2>Getting started</h2>
+<p>The primary target is Windows 11 x64. Choose one of these distributions:</p>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Package</th><th>What to open</th><th>Intended use</th></tr>
+<tr><td>Windows portable ZIP</td><td>Extract the complete ZIP, then open <code>apophysis-reborn.exe</code> in its top-level application folder.</td><td>Run without an installer. Keep the DLLs, Qt plugin folders, documents and examples together.</td></tr>
+<tr><td>Windows setup EXE</td><td>Run the supplied setup EXE.</td><td>Install for the current Windows user with versioned shortcuts and an uninstall entry.</td></tr>
+<tr><td>Complete source/history ZIP</td><td>Open <code>bin/windows-x64/apophysis-reborn.exe</code> after extraction, or build the source.</td><td>Development, complete verification tools, source history and release evidence.</td></tr>
+</table>
+<p>The installer is <code>apophysis-reborn-0.10.0-windows-x64-setup.exe</code>. It defaults to <code>%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.0</code>. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Its destination must be empty; a different release uses a separate version directory and does not automatically remove older releases. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.</p>
+<p>Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application&#x27;s per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.</p>
+<p>No separate Lua installation, video encoder or Vulkan SDK is needed to run the application. Vulkan requires a suitable installed system loader/driver; the CPU path works without it. The actual Windows runtime, installer lifecycle and physical GPU acceptance status are recorded in TEST_PLAN.md, separately from cross-compilation and dependency audits.</p>
+<a name="your-first-image"></a><h2>Your first image</h2>
+<ol>
+<li>Start the application. With no filename supplied, it opens the Ember Spiral example.</li>
+<li>Use <strong>File → Open project or library…</strong> (<code>Ctrl+O</code>) to open your own file or an example from the <code>examples</code> folder. Select an entry in <strong>Flame library</strong> and wait for its preview.</li>
+<li>Open <strong>Gradient editor</strong> (<code>Ctrl+G</code>), select a preset and choose <strong>Use preset</strong>. Choose <strong>Apply gradient</strong> to keep the change, or <strong>Cancel</strong> to leave the flame unchanged.</li>
+<li>Use <strong>File → Save as…</strong> to save your work as <code>.apoproject</code>. This retains the flame collection and native project settings.</li>
+<li>Choose <strong>File → Render image</strong> (<code>Ctrl+R</code>). Select a destination, dimensions, sample budget and format, then choose <strong>Add and start queue</strong>. The preview and final image have separate sampling settings.</li>
+<li>Read the finished job&#x27;s actual backend, samples and destination in <strong>Render queue</strong>. The final file appears only after encoding completes successfully.</li>
+</ol>
+<p>Useful starting files include <code>examples/ember-spiral.flame</code>, <code>examples/variation-studies.flame</code>, <code>examples/color-curve-studies.flame</code>, and the four <code>examples/animation-*.apoproject</code> studies. An original file with unsupported operations may be preserved without being renderable; its diagnostic identifies a blocker instead of silently replacing the mathematics.</p>
+<a name="workspace-and-preview"></a><h2>Workspace and preview</h2>
+<p>The <strong>Flame library</strong> panel searches entry names. The central preview displays the selected flame. Transform controls, output/camera fields and the Activity log occupy resizable docks. Drag dock titles to arrange them; <strong>View</strong> toggles panels and <strong>Reset workspace</strong> restores the default arrangement. <strong>F11</strong> toggles full screen. Window geometry and panel layout are saved in normal sessions. The current theme is dark; a light-theme selector and named/classic workspace profiles are not supplied.</p>
+<p>The preview runs in the background. A quick pass refines toward the selected final sample limit. <strong>Draft</strong>, <strong>Standard</strong> and <strong>Fine</strong> presets trade speed for sample quality; a custom limit can be set in <strong>Edit → Preferences</strong>. Editing replaces stale work, so an older selection cannot overwrite the latest preview.</p>
+<p>Use the mouse wheel to magnify the displayed preview and drag to pan. <strong>Fit</strong> shows the full image; <strong>1:1</strong> shows each preview pixel at one screen pixel. These are display controls. Change <strong>Output and camera</strong> or <strong>Adjustment editor → Camera</strong> to change the saved composition. Interactive preview uses viewport-sized output and oversampling one; it does not establish the quality of a large export. The preview is composited against the flame background; there is no transparency-checkerboard mode.</p>
+<p><strong>Pause preview</strong> stops preview work. Release it to render the latest state, or use <strong>Restart</strong>. The status text reports samples, elapsed time and the actual CPU/Vulkan path. Its tooltip and the Activity panel include device and fallback details. A requested Vulkan renderer may have resolved to CPU when fallback is permitted.</p>
+<a name="saving-and-recovery"></a><h2>Saving and recovery</h2>
+<a name="choose-the-right-file-operation"></a><h3>Choose the right file operation</h3>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Operation</th><th>Retained data</th></tr>
+<tr><td><strong>Save</strong> a legacy library</td><td>Original collection bytes when unchanged; targeted edits preserve unrelated entries, metadata, comments and encoding.</td></tr>
+<tr><td><strong>Save as <code>.apoproject</code></strong></td><td>The exact collection plus supported native project metadata, selection, preview/workspace/render settings, presets, plugin references and animation.</td></tr>
+<tr><td><strong>Export selected flame</strong></td><td>A canonical single supported flame and embedded palette. It omits collection comments, history and unrelated source data.</td></tr>
+<tr><td><strong>Export flame library</strong></td><td>A separate exact legacy collection copy; the native project and timeline remain open. The exported collection has no timeline.</td></tr>
+<tr><td><strong>Export Apophysis UPR</strong></td><td>Only models representable by the documented Apophysis UPR profile; incompatible features produce a diagnostic.</td></tr>
+</table>
+<p>A timeline must be saved in <code>.apoproject</code>. Normal Save prompts for a native filename when needed, and a plain-library Save cannot silently discard an animation payload. Unknown project sections and future animation data are retained; unsupported animation data are not silently converted by the timeline editor.</p>
+<p>When the current file changes outside the editor after opening, Save offers <strong>Save a copy</strong>, <strong>Replace disk version</strong>, or <strong>Cancel</strong>. An atomic save stages the new file and replaces its destination only after writing succeeds. Choose a new filename when retaining both versions of an artwork.</p>
+<p><strong>Undo</strong> and <strong>Redo</strong> restore document snapshots, including source bytes and selection. Creative dialogs and Timeline work privately until Apply. Their Cancel buttons discard pending edits. Document Undo does not delete already exported images or jobs already admitted to the render queue. Project preferences can be captured separately from ordinary flame-content undo; save the project after changing settings you wish to retain.</p>
+<a name="recover-an-interrupted-editing-session"></a><h3>Recover an interrupted editing session</h3>
+<p>Unsaved documents receive a recovery copy every 45 seconds. On a later launch, a stale recovery copy offers <strong>Recover edits</strong>, <strong>Discard recovery copy</strong>, or <strong>Later</strong>. Recovery opens an unsaved document so you can inspect it and choose where to save. Copies owned by another live editor are skipped. Native recovery retains the project envelope and timeline.</p>
+<p>Recovery, the automatic queue and the rotating Activity log use the application&#x27;s per-user local data directory. Recovery is not a replacement for a backup of your artwork folder. Its interval is currently fixed, and uninstalling a version does not intentionally clear those user-data locations. Queue checkpoints are separate from editing recovery files.</p>
+<a name="transform-editing"></a><h2>Transform editing</h2>
+<p>Select a transform from the selector or its triangle. Ordinary triangles are color-coded; a final transform has a dashed gold outline. The origin handle is the translation, and X/Y handles are the transformed basis vectors.</p>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Action</th><th>Control</th></tr>
+<tr><td>Move a triangle</td><td>Drag its origin handle or interior.</td></tr>
+<tr><td>Change its basis</td><td>Drag X or Y; this permits rotation, scale and shear.</td></tr>
+<tr><td>Pan / zoom the grid</td><td>Middle-button drag / mouse wheel.</td></tr>
+<tr><td>Cancel the current drag</td><td>Press <code>Esc</code>.</td></tr>
+<tr><td>Snap coordinates</td><td>Enable <strong>Snap</strong> and choose grid spacing.</td></tr>
+<tr><td>Inspect without changing the selected triangle</td><td>Enable the temporary <strong>Lock</strong>. Selection changes clear that lock.</td></tr>
+</table>
+<p>The <strong>Pre-affine / Post-affine</strong> selector controls both the triangle and numeric matrix fields. In stored coefficient order, the transform is <code>x′ = a·x + c·y + e</code> and <code>y′ = b·x + d·y + f</code>. Numeric edits and geometry changes update the same matrix. Enter a finite number and press Enter or leave the field to commit it. <strong>Rotate</strong>, <strong>Scale</strong>, <strong>Move</strong>, <strong>Flip X/Y</strong>, world/local coordinates and pivot fields provide precise geometry operations.</p>
+<p>Use <strong>Transform</strong> to add, duplicate, delete, reorder, copy/paste or add a final transform. Structural changes preserve valid Xaos destination mapping. At least one ordinary transform remains. The final transform applies to the plotting copy and has no ordinary selection weight or Xaos row.</p>
+<p><strong>Variations</strong> supports the 31 implemented built-ins. Search by name and edit signed weights; zero disables that contribution. JuliaN exposes its power and distance parameters. <strong>Plugin variations…</strong> supplies fields declared by an explicitly enabled module. Unknown variations remain blockers rather than being replaced with linear or another formula.</p>
+<p><strong>Color</strong> changes palette coordinate, color speed and opacity. <strong>Xaos</strong> edits transition multipliers from the selected transform to its destinations. A positive-weight branch needs a positive reachable destination. Producer-specific field interpretation remains attached to the flame. Copying a transform between producer families can change how its values are interpreted.</p>
+<p>Multi-selection, persistent per-transform lock profiles and general transform-synchronization utilities remain open. EDITOR.md and COMPATIBILITY.md define the complete current control and source-preservation rules.</p>
+<a name="gradients-adjustments-and-creative-tools"></a><h2>Gradients, adjustments and creative tools</h2>
+<p><strong>Gradient editor</strong> changes the selected flame&#x27;s 256 stored palette colors. Edit an individual slot through RGB, HSV/HSL or the color picker; build a gradient from stops; rotate, reverse, smooth or randomize the palette. Stop-building supports RGB, linear-light RGB and shortest-hue HSV/HSL choices. <strong>Render interpolation</strong> separately chooses step/indexed or interpolation between stored palette entries.</p>
+<p>The palette library includes built-in presets and personal GPL palettes saved with <strong>Save to library…</strong>. Import/export supports GPL, supported UGR/MAP and palettes from supported flame files. An imported palette does not import that flame&#x27;s geometry. Broader original palette catalogs and a full library folder/tag manager are not implemented.</p>
+<p><strong>Adjustment editor</strong> groups Camera, Tone/color and Rendering settings. It controls output size/aspect, camera center/scale/zoom/rotation, orbit framing, gamma/threshold/brightness/vibrancy, background, density, oversampling and the supported filter radius. Increasing zoom by one doubles camera scale. <strong>Frame visible orbit</strong> estimates composition from a finite orbit sample; refine it numerically if distant structures should be included.</p>
+<a name="tone-curves-and-palette-curves"></a><h3>Tone curves and palette curves</h3>
+<p><strong>Adjustment editor → Tone / color → Tone curves…</strong> edits master/R/G/B reconstruction curves. <strong>Gradient editor → Color adjustments → Palette curves…</strong> applies curves to the working palette colors. These affect different stages and can produce different images even with the same control points.</p>
+<p>Drag control points or enter exact X/Y/weight values. <strong>Original 7X lookup</strong> preserves the documented historical parameter-Y evaluation, point-only identity bypass and integer lookup. <strong>Continuous transfer</strong> uses ordered X and a composed transfer table. Changing modes deliberately changes the meaning of the curve; it is not a visual-equivalence conversion. A master curve is applied before each RGB curve. Defaults bypass curve math and retain previous image output.</p>
+<p>Apply in the curve dialog returns to its containing editor; the outer <strong>Apply adjustments</strong> or <strong>Apply gradient</strong> commits the document change. Cancelling the outer dialog also discards accepted inner-dialog changes. See COLOR_TOOLS.md for exact modes, presets, bounds and the original-source comparison.</p>
+<a name="generate-and-mutate"></a><h3>Generate and mutate</h3>
+<p><strong>Random flame generator</strong> produces 1–24 candidates with a seed, transform/geometry constraints, allowed variations, symmetry and optional random palettes. Select a tile to refine its preview. <strong>Add selected</strong> or <strong>Add batch</strong> appends the results to the library as an undoable change.</p>
+<p><strong>Mutation explorer</strong> starts from the selected parent. Choose strength, trend, mutation groups and seed behavior, then regenerate. Zero strength retains the parent parameters. Parent comparison and saved ancestry help keep a useful branch. The algorithms are reproducible Reborn workflows; they do not reproduce historical Apophysis random sequences. Save resulting flame definitions when preserving an exact creative checkpoint. CREATIVE_TOOLS.md describes each control.</p>
+<a name="rendering-an-image"></a><h2>Rendering an image</h2>
+<p>Open <strong>File → Render image</strong>. The dialog makes an export copy; changing its size does not alter the open flame. Its camera is fitted using the smaller width/height scale ratio. Choose a standard preset or custom dimensions from 1 to 16,384 per side, and use aspect lock when appropriate.</p>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Setting</th><th>Practical meaning</th></tr>
+<tr><td>Sample density / automatic samples</td><td>Derives the sample target from density, dimensions and zoom. Clear automatic samples to enter an exact positive count.</td></tr>
+<tr><td>Oversampling / filter</td><td>Increase reconstruction detail and the working-buffer requirement. Box/source-default and supported Gaussian filtering have documented producer behavior.</td></tr>
+<tr><td>System buffer budget</td><td>A limit on planned rendering buffers, not total application, operating-system or driver memory.</td></tr>
+<tr><td>GPU budget</td><td>A separate limit on charged Vulkan allocations. Reported device heap size is not measured free VRAM.</td></tr>
+<tr><td>Working disk budget</td><td>A conservative bound for sampled-hit chunks, indexes, output and metadata. Check actual free space too.</td></tr>
+<tr><td>Seed</td><td>An unsigned 64-bit value retained exactly in saved jobs.</td></tr>
+<tr><td>Project preset</td><td>Saves/restores render settings in a native project; it does not itself add or start a job.</td></tr>
+</table>
+<p>The estimate reports geometry, sample count, buffer/storage allowances and reconstruction strips. It does not invent a finish time before performance has been observed. A 16K image with few samples can be sparse or noisy; larger dimensions do not automatically increase artistic quality. High oversampling or wide filters may require more memory even when the output itself streams.</p>
+<a name="export-capabilities"></a><h3>Export capabilities</h3>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Format</th><th>Channels and depth</th></tr>
+<tr><td>PNG</td><td>RGB or straight RGBA, 8 or 16 bits per channel.</td></tr>
+<tr><td>TIFF</td><td>RGB or straight RGBA, 8 or 16 bits per channel; uncompressed classic TIFF.</td></tr>
+<tr><td>PPM</td><td>RGB, 8 or 16 bits per channel.</td></tr>
+<tr><td>BMP</td><td>RGB, 8 bits per channel.</td></tr>
+</table>
+<p>Sixteen-bit output is quantized directly from reconstructed values, not expanded RGB8. Alpha is straight/unassociated; transparent pixels have zero RGB. The output is tone-mapped integer color, with no invented ICC/HDR profile. JPEG, WebP, OpenEXR, floating-point HDR, configurable compression and embedded-flame metadata are not implemented. Save an <code>.apoproject</code> or flame file separately to retain editable parameters. IMAGE_FORMATS.md gives the exact encoder contract.</p>
+<p><strong>Add to queue</strong> leaves a stopped queue stopped. <strong>Add and start queue</strong> starts work in queue order. A completed output replaces its destination only after encoding succeeds; cancellation or failure retains the previous destination. Ordinary image exports, scripts and animation frames have their documented conflict rules, so review the destination before starting.</p>
+<a name="cpu-and-vulkan"></a><h2>CPU and Vulkan</h2>
+<p><strong>Edit → Preferences</strong> sets preview workers, final sample limit, seed, host budget, requested renderer, device, GPU budget and fallback policy. Render dialogs retain separate export choices. Creative previews inherit the renderer settings with smaller preview budgets.</p>
+<p>The CPU path uses double-precision orbit calculations and the established CPU random stream. Vulkan samples with FP32 and a separate portable random stream, then uses CPU reconstruction. The same seed does not promise identical pixels between CPU and Vulkan, different drivers or different builds. Numerical tests describe the admitted comparison envelope; unsupported FP32 inputs may still be valid on CPU.</p>
+<p><strong>Automatic</strong> prefers a suitable physical Vulkan device and can fall back to CPU. Software Vulkan is labeled and is not automatically chosen as a physical GPU. Strict Vulkan disables fallback and reports unsupported models or unavailable devices. Native variation plugins have CPU implementations only.</p>
+<p>Read the <strong>actual</strong> backend/device and fallback reason after rendering. A successful image from Automatic is not proof that a GPU ran. Device discovery is available through the CLI, and the optional strict Windows GPU verification uses one selected device consistently. GPU_RENDERING.md and WINDOWS_GPU.md explain selection and acceptance.</p>
+<a name="queue-and-checkpoint-recovery"></a><h2>Queue and checkpoint recovery</h2>
+<p>One background worker runs one queued job at a time; CPU workers operate within that job. Each entry keeps an immutable flame snapshot, settings and plugin ownership, so later edits do not change already admitted work.</p>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Queue action</th><th>Effect</th></tr>
+<tr><td><strong>Start / resume</strong></td><td>Processes queued/paused jobs in order and resumes valid committed samples.</td></tr>
+<tr><td><strong>Pause queue</strong></td><td>Requests a safe stop. Wait for the final paused/checkpoint state.</td></tr>
+<tr><td><strong>Cancel job</strong></td><td>Stops that job; other jobs may continue while the queue remains running.</td></tr>
+<tr><td><strong>Retry / resume job</strong></td><td>Requeues a stopped/failed job, using a valid checkpoint when available.</td></tr>
+<tr><td><strong>Start selected job over</strong></td><td>Uses a new checkpoint and samples from the beginning.</td></tr>
+<tr><td><strong>Move up/down</strong></td><td>Reorders jobs that are not running.</td></tr>
+<tr><td><strong>Remove</strong></td><td>Removes the list entry; it does not delete images or checkpoint directories.</td></tr>
+<tr><td><strong>Save / Restore queue</strong></td><td>Saves or validates/restores the job list. Restore requires stopped work and never starts it automatically.</td></tr>
+</table>
+<p>The progress bar allocates work to sampling and reconstruction; it is not a guaranteed wall-clock percentage. <strong>Phase ETA</strong> uses measured progress within the current phase and restarts after a phase change or resume. Elapsed time excludes pauses.</p>
+<p>Normal sessions save the automatic queue in the per-user data directory. A lock prevents two sessions from silently overwriting the same list. On startup, interrupted running jobs become paused. A corrupt/incompatible automatic queue is retained and reported rather than overwritten with an empty list.</p>
+<p>Committed checkpoint chunks are checksummed and identity-bound. Only referenced complete chunks resume. Stopping during reconstruction can require rebuilding the image from strip one while retaining the expensive sampling work. A queue JSON references its checkpoint folders; it does not contain their sampled data. Keep those folders and the original compatible renderer/plugin binaries when retaining an unfinished job.</p>
+<p>Checkpoint compatibility is stricter than project-file compatibility. A different build, device/driver/shader identity after GPU sampling, changed plugin binary or changed model/settings may require a fresh job. Do not edit manifests to bypass those checks. Completed, removed and superseded Qt queue checkpoint directories are retained for deliberate cleanup. No automatic operating-system shutdown is implemented. RENDER_QUEUE.md describes the recovery states and storage policy.</p>
+<a name="animation-and-morphing"></a><h2>Animation and morphing</h2>
+<p>Open <strong>Tools → Animation timeline</strong> (<code>Ctrl+T</code>). Timeline owns a private working clip. <strong>Apply timeline</strong> stores it as an undoable project change; Cancel discards it. Local Undo/Redo navigates its bounded edit history.</p>
+<p>Frame numbers are zero-based. A 121-frame clip contains frames 0 through 120; its exported duration at 30 fps is 121/30 seconds. The final frame begins at 120/30 seconds. The timing tab accepts rational rates such as 30000/1001. Duration changes the frame count; it does not silently retime keyframes outside a shortened clip.</p>
+<ol>
+<li>Set the total frames and frame rate, or choose Still, Camera orbit, Zoom or Palette cycle and <strong>Apply preset</strong>.</li>
+<li>Move the playhead. <strong>Capture editor flame</strong> stores the current selected editor flame there; <strong>Replace selected</strong> replaces a selected keyframe. <strong>Add at frame</strong> captures a library entry, and Import reads another collection/project.</li>
+<li>Edit keyframe frame/name/outgoing transition in the table. Frame zero must exist; positions must be unique and within the clip. Hold makes an explicit cut; Linear, Smooth and Smoother interpolate.</li>
+<li>Use <strong>Gradient</strong> or <strong>Adjustments</strong> for private keyframe changes. <strong>Use frame in editor</strong> loads the evaluated playhead for normal editing and can be undone.</li>
+<li>Scrub or play to review intermediate frames, then Apply and save <code>.apoproject</code>.</li>
+</ol>
+<p>Playback advances after the current preview finishes; expensive frames can play slower than the chosen rate. Stored frame timing governs exported sequences, not the interactive preview&#x27;s speed.</p>
+<p><strong>Morph to library selection</strong> makes an explicit positional pairing. <strong>Correspondence</strong> lets you assign stable transform IDs. Strict matching rejects different ID sets; <strong>Fade unmatched transforms</strong> fades branches through zero selection weight and remaps their Xaos edges. This policy does not guarantee an attractive or stable morph between arbitrary flames. Review the middle of a segment as well as its endpoints.</p>
+<p>Continuous camera, affine, real-parameter, palette and curve values interpolate under the chosen policies. Integer/discrete values hold until the next exact keyframe. Use compatible curve modes and native modules across a continuous segment, or an explicit Hold cut where appropriate. <strong>Import timed library</strong> asks whether legacy <code>time</code> means frames or seconds; an omitted <code>time</code> retains the legacy zero default, and conflicting positions are rejected.</p>
+<p>On <strong>Image sequence</strong>, choose an existing output folder, prefix, inclusive first/last frames, step, fixed canvas, format, samples and budgets. <strong>Apply &amp; queue frames</strong> validates the whole selected batch. A stopped queue waits for Start; an already running queue continues into new jobs. Filenames retain original global frame numbers. A batch and the queue are bounded to 1,000 selected/jobs respectively; use explicit subranges for longer clips.</p>
+<p>Frame destinations that appear or change after admission are refused immediately before publication. Queue batches budget retained checkpoints for all jobs. The separate CLI sequence workflow removes completed frame checkpoints and keeps its own manifest; do not use a CLI manifest as a Qt queue file. Image sequences are supported; video/audio encoding, temporal motion blur, per-property tracks and automatic transform matching are not included. ANIMATION_EDITOR.md, ANIMATION_CLI.md and MORPHING.md give the exact contracts.</p>
+<a name="scripts-and-native-plugins"></a><h2>Scripts and native plugins</h2>
+<a name="script-workflow"></a><h3>Script workflow</h3>
+<p>Open <strong>Tools → Script editor…</strong> (<code>Ctrl+E</code>), choose Lua or the supported legacy Apophysis subset, and load a bundled example. <strong>Run</strong> (<code>Ctrl+Return</code>) evaluates a private document. Review console messages and deferred outputs, then use <strong>Apply result</strong>. A failed or stopped result cannot be applied. The editor includes highlighting, <code>Ctrl+Space</code> API completion, reference text, examples and source open/save.</p>
+<p>Exports and queued renders begin disabled. Enable the required capability, choose an existing output folder and add explicitly supplied input files. Scripts cannot directly access the filesystem, network, processes or native module loader. The host preflights protected inputs/state and output collisions. Lua allocation, instruction and time limits bound script execution, not total application/render memory.</p>
+<p>Applying a successful script creates one document undo step and submits approved outputs. Document Undo does not remove exported files or admitted jobs. Exports are individually atomic; an I/O failure later in a group can leave earlier completed outputs. Modern Lua indices are generally one-based; the historical subset uses original zero-based indices. Do not assume every old <code>.asc</code> script is supported. Dedicated timeline/curve-editing script APIs are not supplied; the animation CLI is a separate interface. See SCRIPTING.md and LEGACY_SCRIPTING.md.</p>
+<a name="native-plugin-workflow"></a><h3>Native plugin workflow</h3>
+<p>Open <strong>Tools → Plugins…</strong>. Add a search folder and refresh to inspect manifests without executing the libraries. <strong>Install…</strong> copies a manifest and adjacent native library; it does not enable them. <strong>Enable… → Trust and enable</strong> explicitly approves the displayed binary fingerprint.</p>
+<p>An enabled native plugin runs code inside the application with the process&#x27;s operating-system permissions. Descriptor/callback validation does not isolate a crash or hang. Use trusted, compatible x64 modules; old 32-bit Apophysis DLLs cannot load directly. The source SDK and migration example are included.</p>
+<p>Startup approvals bind the principal library&#x27;s SHA-256. Replacing that binary requires fresh approval. Disable prevents new parsing/startup loading, but existing immutable jobs retain their module owners. The manager refuses file removal while a document or job still owns the module. Project references and restored queues never enable code by themselves. A changed module can require new animation captures and render checkpoints. PLUGINS.md records the precise ABI and trust boundary.</p>
+<a name="command-line-workflows"></a><h2>Command-line workflows</h2>
+<p>The examples below run in Git Bash from the extracted <strong>complete source/history</strong> package. For the lean portable application folder, set <code>cli=&quot;./flame-cpu.exe&quot;</code> instead. Native builds normally use <code>./build/flame-cpu</code>.</p>
+<pre>cli=&quot;./bin/windows-x64/flame-cpu.exe&quot;
+&quot;$cli&quot; --version
+&quot;$cli&quot; --build-info --json
+&quot;$cli&quot; inspect examples/ember-spiral.flame --json
+&quot;$cli&quot; --list-devices --json</pre>
+<p>Create a working output directory and render a modest first image:</p>
+<pre>mkdir -p out/manual-study
+&quot;$cli&quot; --flame examples/ember-spiral.flame \
+  --output out/manual-study/ember.png --size 2048 1536 \
+  --samples 2000000 --seed 48 --threads 2 \
+  --memory-mib 256 --disk-mib 1024 --bit-depth 16</pre>
+<p>Add <code>--estimate</code> to validate resource planning without writing an output. Ordinary image commands use <code>--size W H</code>; animation commands use <code>--width W --height H</code>.</p>
+<pre>&quot;$cli&quot; animation create examples/ember-spiral.flame \
+  --preset camera-orbit --frames 61 --fps 30 \
+  --output out/manual-study/orbit.apoproject
+mkdir -p out/manual-study/orbit-frames
+&quot;$cli&quot; animation render out/manual-study/orbit.apoproject \
+  --output-dir out/manual-study/orbit-frames \
+  --first 0 --last 60 --step 15 --width 640 --height 480 \
+  --samples 250000 --format png16 --memory-mib 128 --disk-mib 512</pre>
+<p>After an interrupted CLI sequence, repeat the same render command with <code>--resume</code>. Completed frames are reused only when their stored size and SHA-256 match. Preserve its source clip, renderer binary, settings, state directory and required plugin binaries. A new renderer build requires new sequence state. The full CLI guide (<code>ANIMATION_CLI.md</code>) explains controlled pauses, single-frame exports, morphs, timing import and conflict rules.</p>
+<a name="diagnostics-benchmarks-and-verification"></a><h2>Diagnostics, benchmarks and verification</h2>
+<p><strong>Help → User manual</strong> (<code>F1</code>) opens this guide offline. Inside the manual, use <code>Ctrl+F</code> to focus <strong>Find in manual…</strong>, then <strong>Next</strong> or <strong>Previous</strong> to move between matches. The contents links jump to sections without opening another page.</p>
+<p><strong>Help → System information…</strong> shows build/source identity, compiler/target, Qt/runtime platform and logical CPU information, requested preview settings, and the last preview&#x27;s actual backend/device/fallback. <strong>Copy report</strong> copies the text; <strong>Save report…</strong> writes a local report you choose. Opening this dialog does not probe or load GPU drivers and does not include source flame contents or environment-variable dumps.</p>
+<p>Use <code>flame-cpu --list-devices --json</code> for active Vulkan discovery. It is separate from the static build report (<code>--build-info --json</code>). No diagnostic report is sent automatically. When reporting an issue, retain the exact version/source identity, error text, operation and relevant reproduction file; inspect a file before choosing to share it.</p>
+<p>From the complete package, the Windows verification scripts write logs/artifacts and can open Explorer. <code>--no-open</code> suppresses that final convenience action:</p>
+<pre>bash scripts/verify-windows.sh --no-open
+bash scripts/verify-editor-windows.sh --no-open</pre>
+<p>The CPU/editor checks do not establish GPU execution. Choose an actual device from discovery before running the separate strict GPU gate:</p>
+<pre>bash scripts/verify-gpu-windows.sh --device 0 --no-open</pre>
+<p>Replace <code>0</code> with your intended device ID/index. Missing devices, skipped computation or CPU fallback fail that strict gate. Actual full-resolution acceptance is optional because it requires substantial storage:</p>
+<pre>bash scripts/verify-editor-windows.sh --large-render --no-open</pre>
+<p>This large workflow tests full 16K queue rendering, pause/resume, output integrity and UI heartbeats; it is not a final-artwork sample-density recommendation. The release retains earlier M7 full-image measurements as historical evidence. Read the report generated by your current run for current hardware/build results.</p>
+<p>The benchmark runner records repeated fresh-process timings, warmups, output identities and actual backend/device information:</p>
+<pre>bash scripts/benchmark.sh --exe ./bin/windows-x64/flame-cpu.exe \
+  --backend cpu --threads 1,2,4 --repeats 3 --warmups 1 --no-open</pre>
+<p>Vulkan benchmarking uses <code>--backend vulkan</code> or <code>--backend both</code>; choose <code>--device</code> explicitly for a software device. <code>--large-16k</code> adds a separate large case. Reports measure the actual host and settings, not an advertised speedup for every GPU. BENCHMARKS.md defines the case sizes, timing/RSS scope and report fields. RELEASE_HANDOFF.md covers dependencies, building and acceptance evidence.</p>
+<a name="shortcuts-and-troubleshooting"></a><h2>Shortcuts and troubleshooting</h2>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Shortcut</th><th>Action</th></tr>
+<tr><td><code>Ctrl+O</code> / <code>Ctrl+S</code> / <code>Ctrl+Shift+S</code></td><td>Open / Save / Save as.</td></tr>
+<tr><td><code>Ctrl+Z</code> / <code>Ctrl+Y</code></td><td>Undo / Redo.</td></tr>
+<tr><td><code>Ctrl+D</code></td><td>Duplicate selected transform.</td></tr>
+<tr><td><code>Ctrl+G</code> / <code>Ctrl+J</code></td><td>Gradient / Adjustment editor.</td></tr>
+<tr><td><code>Ctrl+M</code> / <code>Ctrl+Shift+N</code></td><td>Mutation / Random generator.</td></tr>
+<tr><td><code>Ctrl+E</code> / <code>Ctrl+T</code></td><td>Script editor / Animation timeline.</td></tr>
+<tr><td><code>Ctrl+R</code></td><td>Render image.</td></tr>
+<tr><td><code>F1</code> / <code>F11</code></td><td>User manual / Full screen.</td></tr>
+</table>
+<table border="1" cellspacing="0" cellpadding="5" width="100%">
+<tr><th>Symptom</th><th>Next step</th></tr>
+<tr><td>A flame opens but will not preview</td><td>Read its render blocker. Preserve the original file; inspect unsupported variations, 3D/direct-color/density settings or missing plugins. GPU selection does not implement missing features.</td></tr>
+<tr><td>Automatic renders on CPU</td><td>Read the actual fallback reason. Check selected device/model capability and budgets; use a strict GPU check when confirming Vulkan execution.</td></tr>
+<tr><td>High-resolution plan is rejected</td><td>Inspect the host and disk estimate; reduce oversampling/filter radius, select a smaller range or increase the relevant budget/free space. Do not confuse the buffer budget with whole-process RSS.</td></tr>
+<tr><td>A completed large image looks noisy</td><td>Increase sampling density/count. The output dimensions and 16-bit depth do not supply missing samples.</td></tr>
+<tr><td>A restored queue does not start</td><td>Restoration is intentionally stopped. Enable the exact required trusted plugin, retain checkpoint folders and choose Start/resume after reviewing the list.</td></tr>
+<tr><td>Resume reports an incompatible identity</td><td>Use the original compatible build/device/plugin/settings or start a fresh job. Editing a manifest to force acceptance can invalidate its sampled data.</td></tr>
+<tr><td>An animation frame conflicts with an external file</td><td>Preserve/review that file, select another output location, or deliberately re-admit replacement. The old batch cannot silently accept changed destination bytes.</td></tr>
+<tr><td>An old script is rejected</td><td>Read the preflight message and supported-language/API guide. Use the tested subset or modern Lua; renaming the extension does not convert syntax.</td></tr>
+<tr><td>A plugin will not enable after replacement</td><td>Inspect its new version/fingerprint and explicitly approve it if trusted. Old queue/animation identities may require recapture or new renders.</td></tr>
+<tr><td>Setup rejects the destination</td><td>Choose a fresh empty version directory. Setup does not merge files into an unknown nonempty folder.</td></tr>
+<tr><td>A panel is missing</td><td>Enable it from View or use Reset workspace. Full Windows multi-monitor/DPI acceptance remains a separate test.</td></tr>
+</table>
+<p>For exact capabilities, use RELEASE_COMPATIBILITY.md. Advanced guides are ordinary files in <code>docs</code>; this embedded HTML guide is self-contained and does not fetch them or any internet assets.</p>
+</body>
+</html>

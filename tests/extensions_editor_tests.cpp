@@ -235,7 +235,7 @@ private slots:
     widget<QAction>(window, "actionSave")->trigger();
     const auto saved = load_project(filesystemPath(path));
     QCOMPARE(saved.metadata.at("foreign"), std::string("preserved"));
-    QCOMPARE(saved.metadata.at("application-version"), std::string("0.9.0"));
+    QCOMPARE(saved.metadata.at("application-version"), std::string("0.10.0"));
     QCOMPARE(saved.render_presets.size(), std::size_t(1));
     QVERIFY(saved.workspace.contains("qt-layout"));
     QCOMPARE(saved.preview_settings.at("seed"),
