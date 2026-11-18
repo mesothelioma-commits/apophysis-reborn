@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -212,6 +213,52 @@ class CreativeEditorTests : public QObject {
         writeFile(flamePath, QByteArray::fromStdString(serialize_flame(original)));
         importer.importPaletteFile(flamePath);
         QVERIFY(samePalette(importer.resultFlame().palette, original.palette, 1e-14));
+    }
+
+    void legacyPaletteFormatsAndReports() {
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        const auto original = sample();
+        GradientDialog exporter(original);
+        quickPreviews(exporter);
+        GradientDialog importer(original);
+        quickPreviews(importer);
+        auto quantized = original.palette;
+        for (auto &entry : quantized)
+            entry = {std::lround(entry.r * 255) / 255., std::lround(entry.g * 255) / 255.,
+                     std::lround(entry.b * 255) / 255.};
+        for (const auto &suffix : {QString("ugr"), QString("map")}) {
+            const auto path = folder.filePath("palette." + suffix);
+            exporter.exportPaletteFile(path);
+            importer.importPaletteFile(path);
+            QVERIFY(samePalette(importer.resultFlame().palette, quantized));
+        }
+        const auto invalid = folder.filePath("unsupported.ugr");
+        writeFile(invalid, "Unsupported { gradient: smooth=yes index=0 color=0 }\n");
+        QVERIFY_EXCEPTION_THROWN(importer.importPaletteFile(invalid), std::invalid_argument);
+        QVERIFY(samePalette(importer.resultFlame().palette, quantized));
+        const auto wrongSuffix = folder.filePath("palette.unknown");
+        QVERIFY_EXCEPTION_THROWN(exporter.exportPaletteFile(wrongSuffix), std::invalid_argument);
+        QVERIFY(!QFile::exists(wrongSuffix));
+        const auto multiple = folder.filePath("collection.ugr");
+        writeFile(multiple, "Red { gradient: title=\"Red\" index=0 color=255 }\n"
+                            "Green { gradient: title=\"Green\" index=0 color=65280 }\n"
+                            "Unsupported { gradient: smooth=yes index=0 color=0 }\n");
+        bool chose = false;
+        QTimer::singleShot(30, [&] {
+            if (auto dialog = qobject_cast<QInputDialog *>(QApplication::activeModalWidget())) {
+                dialog->setTextValue("2 · Green");
+                chose = true;
+                dialog->accept();
+            }
+        });
+        importer.importPaletteFile(multiple);
+        QVERIFY(chose);
+        for (const auto &entry : importer.resultFlame().palette) {
+            QCOMPARE(entry.r, 0.);
+            QCOMPARE(entry.g, 1.);
+            QCOMPARE(entry.b, 0.);
+        }
     }
 
     void adjustmentsValidateResetAndAccept() {

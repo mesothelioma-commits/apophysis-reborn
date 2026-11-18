@@ -1,4 +1,5 @@
 #include "render_queue.hpp"
+#include "../plugin.hpp"
 #include "document_session.hpp"
 #include "flame_io.hpp"
 #include <QDateTime>
@@ -151,6 +152,7 @@ QJsonObject jobJson(const RenderJob &j) {
       {"destination", j.destination},
       {"checkpoint", j.checkpoint},
       {"flame", text(serialize_flame(j.flame))},
+      {"plugin_identity", text(plugin_identity(j.flame))},
       {"transform_math", conventions},
       {"final_math", j.flame.final_transform
                          ? QJsonValue(flags(*j.flame.final_transform))
@@ -209,6 +211,14 @@ RenderJob readJob(const QJsonObject &o) {
     throw std::invalid_argument(
         "Each render queue job needs one flame snapshot");
   j.flame = std::move(flames.front());
+  const auto identity = text(plugin_identity(j.flame));
+  if ((!identity.isEmpty() && !o.value("plugin_identity").isString()) ||
+      (o.contains("plugin_identity") &&
+       (!o.value("plugin_identity").isString() ||
+        o.value("plugin_identity").toString() != identity)))
+    throw std::invalid_argument(
+        "A queued plugin module changed or is missing. Restore the approved "
+        "module before loading this queue");
   if (!o.value("transform_math").isArray() ||
       o.value("transform_math").toArray().size() !=
           qsizetype(j.flame.transforms.size()))
@@ -443,49 +453,99 @@ QString RenderQueue::activeId() const { return impl_->active; }
 bool RenderQueue::isBusy() const { return !impl_->active.isEmpty(); }
 bool RenderQueue::isRunning() const { return impl_->running; }
 QString RenderQueue::stateFile() const { return impl_->stateFile; }
+QStringList RenderQueue::protectedPaths() const {
+  QStringList paths{impl_->checkpointRoot};
+  if (!impl_->stateFile.isEmpty())
+    paths << impl_->stateFile << impl_->stateFile + ".lock";
+  for (const auto &job : impl_->jobs) {
+    paths << job.checkpoint;
+    auto pluginFiles = [&](const Transform &t) {
+      for (const auto &term : t.variations)
+        if (term.plugin) {
+          const auto &info = term.plugin->info();
+#ifdef _WIN32
+          paths << QString::fromStdWString(info.manifest_path.wstring())
+                << QString::fromStdWString(info.library_path.wstring());
+#else
+          paths << text(info.manifest_path.native())
+                << text(info.library_path.native());
+#endif
+        }
+    };
+    for (const auto &t : job.flame.transforms)
+      pluginFiles(t);
+    if (job.flame.final_transform)
+      pluginFiles(*job.flame.final_transform);
+  }
+  paths.removeAll(QString{});
+  paths.removeDuplicates();
+  return paths;
+}
 
 QString RenderQueue::add(const Flame &flame, const RenderOptions &render,
                          const FileRenderOptions &file,
                          const QString &destination, const QString &source) {
-  if (destination.isEmpty())
-    throw std::invalid_argument("Choose an output file");
-  if (impl_->jobs.size() >= 1000)
+  RenderJob request;
+  request.flame = flame;
+  request.render = render;
+  request.file = file;
+  request.destination = destination;
+  request.source = source;
+  return addBatch({request}).front();
+}
+std::vector<QString>
+RenderQueue::addBatch(const std::vector<RenderJob> &requests) {
+  if (requests.empty())
+    return {};
+  if (impl_->jobs.size() + requests.size() > 1000)
     throw std::invalid_argument("The render queue is limited to 1,000 jobs");
-  RenderJob j;
-  j.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-  j.name = text(flame.name);
-  j.source = source.isEmpty() ? QString{} : absolute(source);
-  j.destination = absolute(destination);
-  if (!j.source.isEmpty() &&
-      (j.destination == j.source ||
-       (QFileInfo(j.source).exists() && QFileInfo(j.destination).exists() &&
-        std::filesystem::equivalent(filesystemPath(j.source),
-                                    filesystemPath(j.destination)))))
-    throw std::invalid_argument(
-        "Choose a different file for the image and source flame");
-  j.checkpoint = QDir(impl_->checkpointRoot).filePath(j.id);
-  j.flame = flame;
-  j.render = render;
-  j.render.stop_token = {};
-  j.render.progress = {};
-  j.file = file;
-  j.file.status = {};
-  j.file.resume = false;
-  j.file.checkpoint_directory = filesystemPath(j.checkpoint);
-  if (image_format_for_path(filesystemPath(j.destination),
-                            image_format_bits(j.file.image.format)) !=
-      j.file.image.format)
-    throw std::invalid_argument(
-        "The filename extension must match the selected image format");
-  const auto plan = plan_file_render(j.flame, j.render, j.file);
-  j.total_strips = plan.strip_count;
   auto next = impl_->jobs;
-  next.push_back(j);
+  std::vector<QString> ids;
+  for (const auto &request : requests) {
+    const auto &flame = request.flame;
+    const auto &render = request.render;
+    const auto &file = request.file;
+    const auto &destination = request.destination;
+    const auto &source = request.source;
+    if (destination.isEmpty())
+      throw std::invalid_argument("Choose an output file");
+    RenderJob j;
+    j.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    j.name = text(flame.name);
+    j.source = source.isEmpty() ? QString{} : absolute(source);
+    j.destination = absolute(destination);
+    if (!j.source.isEmpty() &&
+        (j.destination == j.source ||
+         (QFileInfo(j.source).exists() && QFileInfo(j.destination).exists() &&
+          std::filesystem::equivalent(filesystemPath(j.source),
+                                      filesystemPath(j.destination)))))
+      throw std::invalid_argument(
+          "Choose a different file for the image and source flame");
+    j.checkpoint = QDir(impl_->checkpointRoot).filePath(j.id);
+    j.flame = flame;
+    j.render = render;
+    j.render.stop_token = {};
+    j.render.progress = {};
+    j.file = file;
+    j.file.status = {};
+    j.file.resume = false;
+    j.file.checkpoint_directory = filesystemPath(j.checkpoint);
+    if (image_format_for_path(filesystemPath(j.destination),
+                              image_format_bits(j.file.image.format)) !=
+        j.file.image.format)
+      throw std::invalid_argument(
+          "The filename extension must match the selected image format");
+    const auto plan = plan_file_render(j.flame, j.render, j.file);
+    j.total_strips = plan.strip_count;
+    next.push_back(j);
+    ids.push_back(j.id);
+  }
   impl_->commit(std::move(next));
   if (impl_->running && !isBusy())
     launchNext();
-  return j.id;
+  return ids;
 }
+
 void RenderQueue::remove(const QString &id) {
   if (id == impl_->active)
     throw std::invalid_argument("Pause or cancel this job before removing it");

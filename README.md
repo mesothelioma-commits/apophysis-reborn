@@ -1,14 +1,48 @@
-# Apophysis Reborn 0.7.0 — High-Resolution Rendering
+# Apophysis Reborn 0.8.0 — Extended Compatibility
 
-This checkpoint adds memory-aware file rendering through **16,384 × 16,384**, a persistent native render queue, durable checkpoints with pause/resume, and true 16-bit PNG/TIFF/PPM export. CPU and Vulkan sample the complete flame in bounded batches; disk-backed hit records feed reconstruction strips with the correct global filter overlap. Output is published only after the complete image has been written successfully.
+Milestone 8 adds a native script editor, a restricted modern **Lua 5.5.1** runtime, a documented subset of legacy Apophysis Pascal scripting, a versioned native variation-plugin SDK and manager, and more project and palette formats. The existing CPU/Vulkan renderer, creative tools, persistent render queue and 16K export remain available.
 
-The native Render image dialog now offers resolution presets, custom dimensions and aspect locking, density or exact samples, filtering/oversampling, RAM/disk/GPU budgets, bit depth and transparent PNG/TIFF. Queued jobs keep immutable flame snapshots. They can be paused, resumed, cancelled, reordered, retried and saved for another session. Restored queues wait for an explicit start.
+## New in this checkpoint
 
-![Native render queue after a full 16K export](preview/render-queue-16k-0.7.0.png)
+| Area | What you can do |
+| --- | --- |
+| Modern scripting | Edit flames, transforms, variations, parameters and palettes; generate/mutate reproducible studies; read explicitly supplied inputs; prepare batch renders and exports. Lua is bundled, so no scripting runtime needs installing. |
+| Legacy scripts | Run the documented `.asc` Pascal subset, with source-line diagnostics and original-source checks for affine operations, coordinate conventions and palette/parameter behavior. Unsupported syntax or APIs fail before the active document changes. |
+| Script editor | Open/save scripts, use highlighted examples and API completion, review console output, Run/Stop a private working copy, and Apply a successful result as one document undo step. Rendering/export capabilities start disabled. |
+| Variation plugins | Discover and inspect manifests without executing code; explicitly enable trusted modules; install/remove packages and manage search paths. ABI/version/range checks, saved binary approvals and snapshot lifetime rules make failures visible. |
+| Native projects | Save `.apoproject` files containing the exact legacy collection, preview/workspace/render settings, named render presets, a thumbnail, plugin references and retained metadata. Full-file conflict checks and interrupted-session recovery cover the envelope. |
+| Additional formats | Import/export UGR gradients and Fractint MAP palettes; import/export the supported historical Apophysis UPR dialect with explicit compatibility reports. |
 
-This screenshot comes from the actual Qt queue acceptance run using the offscreen platform. It completed a full 16K RGBA16 PNG, paused and resumed durable sampling, and kept processing UI events. A separate actual Linux desktop check added and completed a 512 × 512 transparent PNG16 job through the visible controls. Windows binaries compiled and passed dependency auditing; Windows execution and physical-GPU acceptance remain pending. [Detailed verification](docs/HIGH_RES_ACCEPTANCE.md)
+![Native script editor after preparing a plugin-based render](preview/script-editor-0.8.0.png)
 
-The source-preserving editor, all 31 variations, creative tools, CPU reference and Vulkan backend from earlier milestones remain available. Normal builds use the bundled Vulkan headers and compiled shader and do not require a Vulkan SDK.
+The screenshot is from the actual Qt application using the offscreen platform. A separate Linux desktop check exercised plugin enablement, Lua Run/Apply, Undo/Redo, plugin parameter editing and native project saving. Windows binaries are cross-compiled and dependency-audited; Windows execution and physical-GPU acceptance remain pending.
+
+## Start with the new tools
+
+Extract the complete ZIP and launch `bin/windows-x64/apophysis-reborn.exe`. Open **Tools → Script editor** (`Ctrl+E`), choose an example, press **Run**, review the console, then **Apply result**. Running alone does not alter the active document. Stop or failure discards private edits and all deferred requests. To use the batch example, explicitly allow queued renders and choose an output folder. Document Undo does not remove files already exported or jobs already handed to the queue.
+
+Open **Tools → Plugins** to inspect the bundled `sample_wave` module. It starts disabled. **Enable** presents the module identity and binary hash before executing native code. After enabling it, use **Variations → Plugin variations** to set its weight and parameters. Plugin variations run on the CPU; automatic/Vulkan requests either report CPU fallback or fail when fallback is disabled. Existing render snapshots keep their module alive after disabling it.
+
+Use **Save as → Native projects** to retain workspace and render settings. The Render image dialog now has named project presets. Saving as `.flame` or `.xml` writes the legacy collection without the native project envelope. The Gradient editor's Import/Export actions support `.gpl`, `.ugr` and `.map`; **Open project or library** also accepts supported `.upr` entries.
+
+The [extended compatibility guide](docs/EXTENDED_COMPATIBILITY.md) gives the complete workflow. See [modern scripting](docs/SCRIPTING.md), [legacy scripting scope](docs/LEGACY_SCRIPTING.md), [plugin SDK/lifecycle](docs/PLUGINS.md), [native project contract](docs/PROJECT_FORMAT.md) and [historical formats](docs/LEGACY_FORMATS.md) for exact behavior and limitations.
+
+**Compatibility boundaries:** legacy scripting is a tested subset, not the complete historical interpreter. Native modules execute trusted code inside the application and are not isolated from crashes or hangs. Original 32-bit Apophysis DLLs require source migration to the new 64-bit ABI. UPR support is limited to the identified Apophysis flame-coloring dialect; arbitrary Ultra Fractal formulas and renderer pixel equivalence are not claimed. Animation data can be preserved, but a timeline and animation evaluator are Milestone 9 work.
+
+## Command-line extensions
+
+These examples run from Git Bash in the extracted project directory:
+
+```bash
+./bin/windows-x64/flame-cpu.exe project create examples/ember-spiral.flame --output study.apoproject
+./bin/windows-x64/flame-cpu.exe script study.apoproject \
+  --script examples/scripts/palette-and-geometry.lua --output scripted.apoproject
+./bin/windows-x64/flame-cpu.exe project inspect scripted.apoproject
+./bin/windows-x64/flame-cpu.exe palette-export scripted.apoproject --output study.ugr
+./bin/windows-x64/flame-cpu.exe plugins info bin/windows-x64/plugins/reborn-wave/reborn_wave.apoplugin
+```
+
+The extension commands require `--overwrite` before replacing an existing output. Script renders/exports additionally require their capability flags and an explicit output folder. Paths are checked before publishing outputs; each output is atomic, while an I/O failure after earlier outputs completed does not roll those earlier files back. `script --api` prints the API reference. Prefix a command with `--plugin TRUSTED_MANIFEST` only when you intend to execute that native module.
 
 ## Render a large image
 
@@ -26,9 +60,9 @@ Sixteen-bit values come directly from reconstruction, without expansion from RGB
 
 ## Open the editor
 
-Extract the complete ZIP and open `bin/windows-x64/apophysis-reborn.exe`. Keep the accompanying DLLs and `platforms` folder beside it. The program starts with Ember Spiral and works offline. Use **Open library** to load a `.flame`, `.xml`, or historical `.temp` collection.
+Extract the complete ZIP and open `bin/windows-x64/apophysis-reborn.exe`. Keep the accompanying DLLs and `platforms` folder beside it. The program starts with Ember Spiral and works offline. Use **Open project or library** to load a native project, `.flame`, `.xml`, historical `.temp` collection or a supported Apophysis `.upr` entry.
 
-Select a transform in the lower canvas, then drag its origin or its X/Y handles. The **Pre-affine / Post-affine** selector and the coefficient fields edit the same matrix. The right-hand tabs expose geometry, all 31 supported variation weights, JuliaN parameters, color controls, and Xaos. **Save library** retains the original collection and unrelated XML. The [editor guide](docs/EDITOR.md) covers the controls and recovery behavior.
+Select a transform in the lower canvas, then drag its origin or its X/Y handles. The **Pre-affine / Post-affine** selector and the coefficient fields edit the same matrix. The right-hand tabs expose geometry, all 31 supported variation weights, JuliaN parameters, color controls, and Xaos. **Save** retains the original collection and unrelated XML. The [editor guide](docs/EDITOR.md) covers the controls and recovery behavior.
 
 ## Choose the rendering device
 
@@ -52,7 +86,7 @@ Use **Flame → Gradient editor**, **Adjustment editor**, **Mutation explorer**,
 
 | Tool | Available controls |
 | --- | --- |
-| Gradient | Individual RGB/HSV colors, indexed stops, RGB/HSV interpolation, presets, GPL exchange and local palette library, rotation/reversal/smoothing, seeded random palettes, hue/saturation/value, RGB gamma curves and contrast |
+| Gradient | Individual RGB/HSV colors, indexed stops, RGB/HSV interpolation, presets, GPL/UGR/MAP exchange and local palette library, rotation/reversal/smoothing, seeded random palettes, hue/saturation/value, RGB gamma curves and contrast |
 | Adjustment | Dimensions and aspect ratio, camera center/scale/zoom/rotation, orbit framing, background, gamma/threshold/brightness/vibrancy, sample density, oversampling and the supported Gaussian filter |
 | Random generation | 1–24 candidates, a 64-bit seed, variation allowlist, transform counts, contraction and translation limits, explicit rotation/reflection symmetry and palette choice |
 | Mutation | Candidate grid, strength/trend, independent geometry/variation/color/parameter/palette controls, parent comparison, branching history and selected/batch/branch saving |
@@ -67,7 +101,7 @@ When ready, open Git Bash in the extracted `apophysis-reborn` directory and run 
 bash scripts/verify-editor-windows.sh
 ```
 
-It runs the CPU/core and Qt tests, records device discovery and fallback, exercises the creative dialogs and render queue using CPU rendering, and saves screenshots, image exports, example flames and a GPL palette with a log. Add `--large-render` for the separate full 16K queue acceptance and `--no-open` to suppress Explorer. A GPU is not required.
+It runs the CPU/core and Qt tests, records device discovery and fallback, exercises the creative dialogs and render queue, and verifies the M8 scripting/plugin/project workflow with the bundled sample module. It saves screenshots, image exports, native projects, example flames and palette files with a log. Add `--large-render` for the separate full 16K queue acceptance and `--no-open` to suppress Explorer. A GPU is not required.
 
 The separate strict GPU check can be run later when a suitable Windows GPU and driver are available:
 
@@ -137,14 +171,20 @@ A core-only build can use `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF`. To dis
 
 ## Verification in this checkpoint
 
-The final native Release and ASan/UBSan builds each passed **25/25 CTest entries**. A separate Vulkan-disabled core build passed 16 checks and explicitly skipped its three device-execution entries. Existing CPU images, historical producer checks and all 1,560 transform probes remain covered. New tests compare dense and streamed pixels, corrupt and interrupted checkpoints, queue lifecycle, budget rejection and all supported image encodings.
+The M8 verification suite contains **33 CTest entries**, adding script runtime/host boundaries, plugin loading/lifetimes and editor controls, native project preservation, historical formats and extension CLI workflows. The final executed results, sanitizer settings, platform boundaries and package checks are recorded in [TEST_PLAN.md](docs/TEST_PLAN.md) and the included `verification` directory. Earlier CPU images, original-producer checks, 1,560 transform probes, streaming output and checkpoint gates remain covered.
 
-An actual 16K RGBA16 render used 8,388,611 samples and peaked at **39.2 MiB process RSS** with a 128 MiB working-buffer budget. Two independent decoders agreed on every one of its 2,147,483,648 decoded channel bytes. A matching-camera comparison produced identical complete files using 63-row and 247-row strips, including queue pause/resume. The queue's whole Qt process peaked at 182.8 MiB; the 128 MiB setting limits rendering buffers, not all Qt/library/process memory. The [16K acceptance report](docs/HIGH_RES_ACCEPTANCE.md) distinguishes these measurements and documents the sparse sample density of the acceptance image.
+The retained M7 acceptance record documents an actual 16K RGBA16 render that used 8,388,611 samples and peaked at **39.2 MiB process RSS** with a 128 MiB working-buffer budget. Two independent decoders agreed on every one of its 2,147,483,648 decoded channel bytes. A matching-camera comparison produced identical complete files using 63-row and 247-row strips, including queue pause/resume. The queue's whole Qt process peaked at 182.8 MiB; the 128 MiB setting limits rendering buffers, not all Qt/library/process memory. The [16K acceptance report](docs/HIGH_RES_ACCEPTANCE.md) distinguishes these measurements and documents the sparse sample density of the acceptance image.
 
 ## Included records
 
 | File | What it covers |
 | --- | --- |
+| [Extended compatibility](docs/EXTENDED_COMPATIBILITY.md) | M8 user workflow, scripting permissions, plugins, native projects and format conversion |
+| [Lua scripting](docs/SCRIPTING.md) | Modern API, examples, execution limits and deferred outputs |
+| [Legacy scripting](docs/LEGACY_SCRIPTING.md) | Audited Pascal subset, original conventions and unsupported APIs |
+| [Plugins](docs/PLUGINS.md) | C ABI, lifecycle, parameter serialization and historical source migration |
+| [Native projects](docs/PROJECT_FORMAT.md) | Versioned envelope, exact embedded sources and unknown-data retention |
+| [Legacy formats](docs/LEGACY_FORMATS.md) | UGR/MAP/UPR definitions, original-source fixtures and limits |
 | [High-resolution rendering](docs/HIGH_RES_RENDERING.md) | CLI options, memory/disk planning, checkpoints and resume |
 | [Render queue](docs/RENDER_QUEUE.md) | Native job settings, immutable snapshots, persistence and lifecycle |
 | [Image formats](docs/IMAGE_FORMATS.md) | PNG/TIFF/PPM/BMP precision, encoding, color and alpha contracts |
@@ -172,4 +212,4 @@ An actual 16K RGBA16 render used 8,388,611 samples and peaked at **39.2 MiB proc
 
 The ZIP also includes `apophysis-reborn.bundle` and `BUILD.txt`. For a checkout with the complete checkpoint history, run `git clone apophysis-reborn.bundle ../apophysis-reborn-git` from the extracted folder. The checkout holds source, example flames, tests and documentation. The precompiled Windows executables and their runtime DLLs are distribution outputs. Corresponding third-party sources accompany the distribution. No remote repository is required.
 
-**Next: Milestone 8 — extended compatibility**, including scripting, plugins and additional historical formats. Physical NVIDIA/AMD/Intel execution, Windows 11 behavior and hardware performance measurement remain separate acceptance work. CUDA is optional and not implemented. Advanced editor and creative compatibility gaps remain listed in [FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md), including additional variations, historical reconstruction curves, density estimation, palette catalogs and broader workspace controls.
+**Next: Milestone 9 — animation and extended features**, beginning with keyframes, interpolation, morphing and a native timeline. Physical NVIDIA/AMD/Intel execution, Windows 11 behavior and hardware performance measurement remain separate acceptance work. CUDA is optional and not implemented. Advanced editor and creative compatibility gaps remain listed in [FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md), including additional variations, historical reconstruction curves, density estimation, palette catalogs and broader workspace controls.

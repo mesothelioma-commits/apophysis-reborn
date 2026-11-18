@@ -1,4 +1,5 @@
 #include "render.hpp"
+#include "plugin.hpp"
 #include "render_internal.hpp"
 #include "gpu.hpp"
 #include "vulkan_runtime.hpp"
@@ -253,6 +254,8 @@ RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable
     std::string fallback;
     if (!portable && opt.backend != RenderBackend::cpu) {
         try {
+            if (has_plugin_variations(f))
+                throw gpu::Unavailable("Native plugin variations require the CPU renderer");
             if (width > UINT32_MAX || height > UINT32_MAX)
                 throw gpu::Unavailable("GPU histogram dimensions exceed the addressable range");
             const gpu::Geometry geometry{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),

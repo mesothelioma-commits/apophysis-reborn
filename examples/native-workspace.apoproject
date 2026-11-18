@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<apophysis-project version="1" selected="0">
+  <flame-library encoding="base64">PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPGZsYW1lIG5hbWU9IkVtYmVyIHNwaXJhbCIgc2l6ZT0iNzY4IDU3NiIgY2VudGVyPSIwIDAiIHNjYWxlPSIxOTIiCiAgICAgICBxdWFsaXR5PSIxOCIgZ2FtbWE9IjIuMiIgYnJpZ2h0bmVzcz0iNCIgdmlicmFuY3k9IjAuODUiCiAgICAgICBiYWNrZ3JvdW5kPSIwLjAwOCAwLjAxMiAwLjAyNSIgcGFsZXR0ZV9tb2RlPSJsaW5lYXIiPgogIDx4Zm9ybSB3ZWlnaHQ9IjIuNiIgY29sb3I9IjAuMTgiIGNvbG9yX3NwZWVkPSIwLjI3IiBsaW5lYXI9IjAuODciIHN3aXJsPSIwLjEzIgogICAgICAgICBjb2Vmcz0iMC42OSAwLjQ1IC0wLjQ1IDAuNjkgMC4zNSAwLjIxIi8+CiAgPHhmb3JtIHdlaWdodD0iMS4xIiBjb2xvcj0iMC43OCIgY29sb3Jfc3BlZWQ9IjAuNDkiIGp1bGlhPSIwLjk0IgogICAgICAgICBjb2Vmcz0iMC41MiAtMC4zNSAwLjM1IDAuNTIgLTAuMzMgMC40OSIgcG9zdD0iMSAwIDAgMSAtMC4xMiAtMC4yMSIvPgogIDx4Zm9ybSB3ZWlnaHQ9IjAuNiIgY29sb3I9IjAuOTciIGNvbG9yX3NwZWVkPSIwLjczIiBzaW51c29pZGFsPSIwLjgiIGxpbmVhcj0iMC4yNSIKICAgICAgICAgY29lZnM9Ii0wLjQ2IDAuNSAtMC41IC0wLjQ2IDAuMjcgLTAuNjEiLz4KICA8Y29sb3IgaW5kZXg9IjAiIHJnYj0iMjUgMTIgNzMiLz4KICA8Y29sb3IgaW5kZXg9IjQ2IiByZ2I9IjUxIDYwIDEzOCIvPgogIDxjb2xvciBpbmRleD0iOTYiIHJnYj0iNDAgMTgzIDE2OSIvPgogIDxjb2xvciBpbmRleD0iMTQ2IiByZ2I9IjI0OSAyMTUgMTM4Ii8+CiAgPGNvbG9yIGluZGV4PSIyMDkiIHJnYj0iMjU1IDEwMSA2MiIvPgogIDxjb2xvciBpbmRleD0iMjU1IiByZ2I9IjEzNCAyOSA4NSIvPgo8L2ZsYW1lPgo=</flame-library>
+  <preview>
+    <setting key="samples" value="400000"/>
+    <setting key="seed" value="123456"/>
+    <setting key="threads" value="2"/>
+    <setting key="memory-mib" value="512"/>
+    <setting key="gpu-memory-mib" value="256"/>
+    <setting key="backend" value="0"/>
+    <setting key="cpu-fallback" value="1"/>
+  </preview>
+  <render>
+    <setting key="outputWidth" value="1920"/>
+    <setting key="outputHeight" value="1080"/>
+    <setting key="outputQuality" value="10"/>
+    <setting key="deriveOutputSamples" value="1"/>
+    <setting key="outputSeed" value="123456"/>
+  </render>
+  <workspace>
+    <setting key="grid" value="1"/>
+    <setting key="snap" value="0"/>
+    <setting key="matrix-mode" value="0"/>
+    <setting key="coordinates" value="0"/>
+  </workspace>
+  <render-presets>
+    <preset name="HD draft">
+      <setting key="outputWidth" value="1920"/>
+      <setting key="outputHeight" value="1080"/>
+      <setting key="outputQuality" value="10"/>
+      <setting key="deriveOutputSamples" value="1"/>
+      <setting key="outputSeed" value="123456"/>
+    </preset>
+  </render-presets>
+  <metadata>
+    <setting key="application" value="Apophysis Reborn"/>
+    <setting key="application-version" value="0.8.0"/>
+    <setting key="note" value="The embedded collection retains the exact ember-spiral.flame bytes."/>
+  </metadata>
+</apophysis-project>

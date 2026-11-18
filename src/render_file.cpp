@@ -1,4 +1,5 @@
 #include "render_file.hpp"
+#include "plugin.hpp"
 #include "render_internal.hpp"
 #include "flame_io.hpp"
 #include "output_file.hpp"
@@ -157,9 +158,18 @@ Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOpti
     for (const auto& t : flame.transforms) {
         model = add(model, add(multiply(t.variations.size(), sizeof(Term) * 2), multiply(t.chaos.size(), 16)));
         metadata = add(metadata, add(1024, add(multiply(t.variations.size(), 128), multiply(t.chaos.size(), 64))));
+        for (const auto& term : t.variations) if (term.id == Variation::plugin) {
+            metadata = add(metadata, add(1024, multiply(term.plugin_parameters.size(), 256)));
+            model = add(model, multiply(term.plugin_parameters.size(), sizeof(double) * 2));
+        }
     }
-    if (flame.final_transform)
+    if (flame.final_transform) {
         metadata = add(metadata, add(1024, multiply(flame.final_transform->variations.size(), 128)));
+        for (const auto& term : flame.final_transform->variations) if (term.id == Variation::plugin) {
+            metadata = add(metadata, add(1024, multiply(term.plugin_parameters.size(), 256)));
+            model = add(model, multiply(term.plugin_parameters.size(), sizeof(double) * 2));
+        }
+    }
     if (metadata > 2 * MiB)
         throw std::invalid_argument("Flame metadata exceeds the checkpointed file-rendering limit");
     model = add(model, multiply(metadata, 8));
@@ -212,6 +222,7 @@ std::string identity(const Flame& f, const RenderOptions& o, const FileRenderOpt
     s << '\n' << o.samples << ' ' << o.seed << ' ' << int(o.backend) << ' ' << std::quoted(o.device)
       << ' ' << o.allow_cpu_fallback << ' ' << int(file.image.format) << ' ' << file.image.alpha
       << '\n' << serialize_flame(f);
+    if (const auto plugins = plugin_identity(f); !plugins.empty()) s << "\nplugins\n" << plugins;
     for (const auto& t : f.transforms)
         s << '\n' << t.parameters.apophysis_math << ' ' << t.parameters.separate_blur_angle;
     if (f.final_transform)
@@ -493,6 +504,8 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
         std::uint64_t invalid = 0;
         if (m.backend == RenderBackend::vulkan) {
             try {
+                if (has_plugin_variations(f))
+                    throw gpu::Unavailable("Native plugin variations require the CPU renderer");
                 auto inner = opt;
                 inner.progress = {};
                 inner.backend = original.backend;

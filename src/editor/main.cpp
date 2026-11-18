@@ -1,4 +1,5 @@
 #include "creative_widgets.hpp"
+#include "extensions_smoke.hpp"
 #include "flame_io.hpp"
 #include "main_window.hpp"
 #include "output_file.hpp"
@@ -419,7 +420,7 @@ int main(int argc, char **argv) {
   QApplication application(argc, argv);
   application.setOrganizationName("ApophysisReborn");
   application.setApplicationName("Apophysis Reborn");
-  application.setApplicationVersion("0.7.0");
+  application.setApplicationVersion("0.8.0");
   QCommandLineParser parser;
   parser.setApplicationDescription("Native flame library and transform editor");
   parser.addHelpOption();
@@ -453,6 +454,9 @@ int main(int argc, char **argv) {
       "heartbeat evidence. Requires several GiB of free storage.",
       "directory");
   parser.addOption(largeSmokeOption);
+  QCommandLineOption extensionsSmokeOption("extensions-smoke-test", "Run scripting, plugin, project and palette acceptance; requires an explicitly trusted SDK manifest.", "directory");
+  QCommandLineOption pluginManifestOption("plugin-manifest", "Trusted native SDK manifest for extension smoke only.", "manifest");
+  parser.addOptions({extensionsSmokeOption,pluginManifestOption});
   QCommandLineOption backendOption("backend", "Renderer: cpu, auto or vulkan.",
                                    "mode");
   QCommandLineOption deviceOption(
@@ -471,13 +475,17 @@ int main(int argc, char **argv) {
     const bool gpu = parser.isSet(gpuSmokeOption);
     const bool queue = parser.isSet(queueSmokeOption);
     const bool large = parser.isSet(largeSmokeOption);
+    const bool extensions = parser.isSet(extensionsSmokeOption);
+    const auto manifest = parser.value(pluginManifestOption);
+    if (parser.isSet(pluginManifestOption) && !extensions) throw std::invalid_argument("--plugin-manifest is restricted to extension smoke verification");
     const bool testing =
-        parser.isSet(smoke) || creative || gpu || queue || large;
+        parser.isSet(smoke) || creative || gpu || queue || large || extensions;
     if (int(parser.isSet(smoke)) + int(creative) + int(gpu) + int(queue) +
-            int(large) >
+            int(large) + int(extensions) >
         1)
       throw std::invalid_argument("Choose only one smoke-test mode");
-    const auto smokePath = parser.value(large      ? largeSmokeOption
+    const auto smokePath = parser.value(extensions ? extensionsSmokeOption
+                                         : large ? largeSmokeOption
                                         : queue    ? queueSmokeOption
                                         : gpu      ? gpuSmokeOption
                                         : creative ? creativeSmokeOption
@@ -541,7 +549,7 @@ int main(int argc, char **argv) {
       QObject::connect(
           &window.previewController(),
           &apo::editor::PreviewController::imageReady, &window,
-          [&window, path, creative, gpu, queue, large, started,
+          [&window, path, creative, gpu, queue, large, extensions, manifest, started,
            renderer](const QImage &image, quint64, quint64, quint64, unsigned,
                      qint64, bool final) {
             if (!final || *started)
@@ -549,7 +557,7 @@ int main(int argc, char **argv) {
             *started = true;
             QTimer::singleShot(
                 100, &window,
-                [&window, path, image, creative, gpu, queue, large, renderer] {
+                [&window, path, image, creative, gpu, queue, large, extensions, manifest, renderer] {
                   bool ok = image.save(path + "/preview.png") &&
                             window.grab().save(path + "/editor.png");
                   try {
@@ -570,7 +578,11 @@ int main(int argc, char **argv) {
                   } catch (const std::exception &) {
                     ok = false;
                   }
-                  if (ok && (queue || large)) {
+                  if (ok && extensions) {
+                    window.previewController().setPaused(true);
+                    try { apo::editor::extensionsSmoke(window,path,manifest); }
+                    catch(const std::exception& e) {std::cerr<<e.what()<<'\n';QCoreApplication::exit(1);}
+                  } else if (ok && (queue || large)) {
                     window.previewController().setPaused(true);
                     try {
                       if (large)
@@ -608,7 +620,7 @@ int main(int argc, char **argv) {
                 });
           });
       QTimer::singleShot(large                      ? 900000
-                         : creative || gpu || queue ? 120000
+                         : creative || gpu || queue || extensions ? 120000
                                                     : 30000,
                          &application, [] { QCoreApplication::exit(2); });
       window.openExample();
@@ -628,7 +640,7 @@ int main(int argc, char **argv) {
   } catch (const std::exception &error) {
     if (parser.isSet(smoke) || parser.isSet(creativeSmokeOption) ||
         parser.isSet(gpuSmokeOption) || parser.isSet(queueSmokeOption) ||
-        parser.isSet(largeSmokeOption)) {
+        parser.isSet(largeSmokeOption) || parser.isSet(extensionsSmokeOption)) {
       std::cerr << error.what() << '\n';
       return 1;
     }

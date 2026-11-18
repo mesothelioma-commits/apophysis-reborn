@@ -1,0 +1,6 @@
+<apophysis-plugin abi="1" id="org.apophysis.reborn.migration.gain" name="migrated_gain"
+  version="1.0.0" description="Illustrative source migration of a weighted 2D operation"
+  library="@APO_PLUGIN_LIBRARY@">
+  <parameter name="gain" default="1" min="0" max="4" type="real"/>
+  <parameter name="offset" default="0" min="-2" max="2" type="real"/>
+</apophysis-plugin>

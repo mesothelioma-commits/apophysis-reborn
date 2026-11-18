@@ -4,6 +4,7 @@
 #include <QDialog>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <memory>
 #include <vector>
 
@@ -55,8 +56,11 @@ public:
   bool isBusy() const;
   bool isRunning() const;
   QString stateFile() const;
+  QStringList protectedPaths() const;
   QString add(const Flame &, const RenderOptions &, const FileRenderOptions &,
               const QString &destination, const QString &source = {});
+  // Validates and persists the entire group before starting any new work.
+  std::vector<QString> addBatch(const std::vector<RenderJob> &requests);
   void remove(const QString &id);
   void move(const QString &id, int offset);
   void retry(const QString &id);

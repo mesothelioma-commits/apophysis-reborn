@@ -1,6 +1,6 @@
-# Render queue and high-resolution dialog
+# Render queue and high-resolution dialog — 0.8.0
 
-Apophysis Reborn 0.7 adds a persistent queue to the native editor. Each job owns an immutable flame snapshot and render settings, so you can keep editing the source while a background worker renders the queue in order.
+The native editor's persistent render queue was introduced in M7. M8 adds scripted render batches, native-project render presets and exact plugin identities for saved jobs. Each job owns an immutable flame snapshot and render settings, so you can keep editing the source while a background worker renders the queue in order.
 
 ## Add a render
 
@@ -21,6 +21,18 @@ The resolution presets are 1920 × 1080, 2560 × 1440, 3840 × 2160, 4096 × 409
 | Renderer and device | Chooses CPU, automatic selection, or Vulkan; GPU budget and CPU fallback are separate settings. The queue reports the actual resolved backend, device, and fallback reason. |
 
 The estimate shows planned buffer storage, conservative disk allowance, and the number and height of strips. An available-space check is also shown when a destination volume can be inspected. It does not predict render time before work has been measured. Dimensions, sampling settings, budgets, format, and the output extension are checked before a job is accepted.
+
+The **Project preset** selector restores named settings. **Save current preset…** records the dialog's current render controls, and **Remove preset** removes the selected preset. Save a native `.apoproject` document to retain those presets and the current render settings. Presets do not contain a queue or start jobs; choose a destination and add work separately.
+
+## Scripted render batches
+
+Open **Tools → Script editor…**, enable **Allow queued renders**, and choose an existing **Output folder**. A call to `apo.render` captures the flame and render options at that point in the script. Further script edits do not change an earlier request. **Run** works on a private document and collects requests; it does not start those renders.
+
+After a successful run, **Apply result** checks all destinations, snapshots and settings, then adds the render requests as one persisted batch before new work launches. If any job in the batch is invalid, none of its jobs is added. A stopped queue stays stopped until **Start / resume**. If the queue is already running, its worker continues into the added pending jobs in order. Existing jobs retain their original snapshots and settings.
+
+The output folder bounds script-requested paths. Inputs, application configuration and recovery files, queue state, checkpoint storage, loaded native module files and paths already reserved by pending jobs remain protected. **Allow replacing output files** permits replacing ordinary existing outputs; it does not bypass those protections. Scripts cannot supply checkpoint or resume paths. The host allocates each accepted job's checkpoint directory.
+
+**Apply result** makes one document undo step. Undo affects the edited document; queued jobs and files already exported remain. If the script also requests exports, **Allow exports** must be enabled. Those files are published atomically one at a time, so an I/O failure on a later file can leave earlier completed exports in place; the Activity panel identifies them. Document changes, external files and the render queue are not one filesystem transaction. See [SCRIPTING.md](SCRIPTING.md) for request fields and [EDITOR.md](EDITOR.md) for the script controls.
 
 ## Queue controls
 
@@ -46,9 +58,9 @@ Progress allocates 80% to sampling and 20% to reconstruction strips. This is a w
 
 Normal editor sessions save `render-queue.json` in Qt's application-local data directory. Sampling checkpoints live under its `render-checkpoints` subdirectory, each in a UUID-named directory. A session lock prevents two editor instances from silently replacing the same automatic queue file. If that file is already owned, another session uses separate persistent checkpoint storage and can save its queue explicitly.
 
-Each job saves its source label and destination, embedded flame XML, transform math conventions, all render/export settings, status, progress, elapsed time, actual device/backend, fallback reason, and error. Full-width integer counters and seeds are stored as decimal strings. Queue files use `QSaveFile` to commit atomically. Invalid JSON, incompatible versions, duplicate identifiers, invalid snapshots, and invalid render settings fail before replacing the current list or its automatic save file.
+Each job saves its source label and destination, embedded flame XML, transform math conventions, plugin identity when needed, all render/export settings, status, progress, elapsed time, actual device/backend, fallback reason, and error. Full-width integer counters and seeds are stored as decimal strings. Queue files use `QSaveFile` to commit atomically. Invalid JSON, incompatible versions, duplicate identifiers, invalid snapshots, mismatched plugin identities and invalid render settings fail before replacing the current list or its automatic save file.
 
-At normal startup the editor restores its saved list. Interrupted running jobs become paused, and **no restored job starts without an explicit Start / resume action**. A malformed automatic file is retained; the editor reports the error and disables writes to that file so a new session cannot overwrite the recovery evidence.
+At normal startup the editor loads unchanged, explicitly approved plugins and then restores its saved list. Interrupted running jobs become paused, and **no restored job starts without an explicit Start / resume action**. An automatic file that fails restoration is retained; the editor reports the error and disables writes to that file so a new session cannot overwrite the recovery evidence.
 
 Pausing first shows a stopping state. The worker returns after stopping safely, then the queue checks the committed checkpoint before showing **Paused · checkpoint saved**. If no sampling chunk was committed yet, the status says the job is ready to restart. A chunk consists of immutable sampled hits followed by an atomic manifest commit. Only complete, referenced chunks participate in a resume. The core validates checkpoint identity and chunk integrity when resuming.
 
@@ -58,22 +70,47 @@ Closing the editor with an active queue requests a pause and keeps processing UI
 
 Saving a queue JSON does **not** copy its checkpoint chunks. The file references absolute destination and checkpoint paths. Keep the referenced checkpoint directory when moving queue files between machines or installations. Missing checkpoints require starting the job over; the editor does not silently claim such a job was resumed. Completed, removed, and superseded checkpoint directories are retained in this milestone. No operating-system shutdown or power-management action is implemented.
 
+## Native plugins and exact restoration
+
+A job using a native variation keeps a shared reference to its loaded module. **Tools → Plugins… → Disable** prevents new model parsing and future automatic loading, while existing immutable render snapshots retain the code they need. The manager refuses to remove a module's files while a flame or job still holds it. No variation is substituted when a module is unavailable.
+
+Portable flame XML records the plugin variation name, module ID/version and parameter values. The queue's separate `plugin_identity` additionally binds the job to the loaded native library's SHA-256 fingerprint. Checkpoints also include this identity. A binary rebuilt or replaced under the same ID and version does not satisfy an earlier queue or checkpoint identity.
+
+If an approved module is missing, disabled or changed, queue restoration fails before replacing the existing list or its saved file. Reinstall the original trusted binary if needed, explicitly enable it in **Tools → Plugins…**, and use **Restore queue** to retry the retained JSON file. A changed implementation requires a fresh render with its own queue snapshot and checkpoint. Opening a project or restoring a queue never grants plugin trust.
+
+Queue JSON files do not bundle native libraries. Preserve the required trusted modules as well as the referenced checkpoint chunks. A build for another operating system has a different binary fingerprint and cannot resume a saved job bound to the old module; the portable source flame can be opened with its compatible, explicitly enabled module for a new render. Plugin approval checks the principal library binary, not every transitive system/runtime dependency. [PLUGINS.md](PLUGINS.md) explains that boundary and the in-process native-code model.
+
+M8 native variations have CPU implementations only. CPU rendering is supported directly; automatic or Vulkan selection reports a CPU fallback when permitted, and strict Vulkan requests fail explicitly. The actual backend and fallback reason remain visible in the queue and its reports.
+
 ## Verification modes
 
 `render-queue-tests` covers immutable snapshots, exact 64-bit settings, model math conventions, queue ordering, atomic restore rollback, responsive timer callbacks during real queued work, pause/checkpoint/restore/resume, byte equality with uninterrupted rendering, destination preservation, failure/retry, and graceful destruction into a stopped resumable queue. The existing editor regression also checks that renderer details remain visible when backend selection changes.
 
-For a small strict native UI check:
+M8's `extensions-editor-tests` exercises private script application, document undo and validated batches. `plugin-dialog-tests` covers explicit approvals, disabled-plugin snapshot lifetime, exact plugin identities and restoration failure without overwriting queue state. These checks run natively; the Windows binaries are cross-compiled and statically audited in this environment. Windows runtime execution remains a separate acceptance step.
+
+From the extracted package root on Windows, run a small native UI check:
 
 ```sh
-apophysis-reborn --queue-smoke-test OUTPUT_DIRECTORY
+./bin/windows-x64/apophysis-reborn.exe --queue-smoke-test out/queue-smoke --backend cpu
 ```
 
 This runs two 192 × 144 jobs and requires successful 16-bit transparent PNG and opaque TIFF exports, plus event-loop heartbeats while work is active. It saves `queue-render-16.png`, `queue-render-16.tif`, `render-queue.png`, `high-resolution-settings.png`, `render-queue.json`, and `queue-report.json`, as well as the shared `editor.png`, `preview.png`, and `saved-example.flame` smoke artifacts. The report records actual execution backend, device, fallback reason, samples, elapsed time, and heartbeat count. Smoke modes use isolated settings; the small mode's sample checkpoints are temporary.
 
+The M8 extension smoke exercises the script editor, trusted bundled plugin and queued script render together:
+
+```sh
+./bin/windows-x64/apophysis-reborn.exe \
+  --extensions-smoke-test out/extensions-smoke \
+  --plugin-manifest bin/windows-x64/plugins/reborn-wave/reborn_wave.apoplugin \
+  --backend cpu
+```
+
+The explicit manifest argument opts into the bundled sample's native code for this process. Outputs include `script-editor.png`, `plugin-manager.png`, `script-render-queue.png`, `extensions-editor.png`, `script-render.png`, `example.apoproject`, script/legacy/palette exports and `extensions-report.json`. The report records the actual backend and plugin fingerprint. [QT_BUILD.md](QT_BUILD.md) lists every output and the complete Windows verification commands. For a native source build, substitute `./build/apophysis-reborn` and its `build/plugins/reborn-wave/reborn_wave.apoplugin` manifest.
+
 For an optional full-resolution acceptance run, outside normal CTest:
 
 ```sh
-apophysis-reborn --large-render-smoke-test OUTPUT_DIRECTORY
+./bin/windows-x64/apophysis-reborn.exe --large-render-smoke-test out/16k-smoke --backend cpu
 ```
 
 This renders the built-in Ember spiral at **16384 × 16384**, using 8,388,611 samples, seed 123456, CPU rendering, 128 MiB of planned buffer budget, an 8192 MiB disk budget, automatic strip height, one-times oversampling, and 16-bit RGBA PNG output. Its camera scale is the source scale multiplied by 16384/576. It is a native full-resolution render, not an enlarged preview, and requires several GiB of free storage.

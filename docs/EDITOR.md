@@ -1,16 +1,24 @@
-# Native Editor guide — 0.7.0
+# Native Editor guide — 0.8.0
 
-Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU/Vulkan rendering paths and legacy document model as the command-line tools. It starts with Ember Spiral when a file has not been supplied. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md); device selection and backend behavior are described in [GPU_RENDERING.md](GPU_RENDERING.md).
+Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU/Vulkan rendering paths, document model, scripting host and plugin registry as the command-line tools. It starts with Ember Spiral when a file has not been supplied. M8 adds native projects, modern and supported legacy scripting, trusted native variations and historical palette/UPR exchange. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md); device selection and backend behavior are described in [GPU_RENDERING.md](GPU_RENDERING.md).
 
-## Open a flame library
+## Open a project or flame library
 
-Choose **File → Open library**, use **Ctrl+O**, or drop one local file onto the window. The file picker recognizes `.flame`, `.xml`, and historical `.temp` libraries. Files saved with the 0.3.0 checkpoint can be opened directly.
+Choose **File → Open project or library…**, use **Ctrl+O**, or drop one local file onto the window. The file picker recognizes native `.apoproject` files, `.flame`, `.xml`, historical `.temp` libraries and supported Apophysis `.upr` collections. Files saved with the 0.3.0 checkpoint can be opened directly.
 
 The **Flame library** panel lists the file's entries. Its search field filters names. Selecting an entry shows its producer, camera, preview, and transforms. A thumbnail appears after that entry has rendered. **File → Recent files** retains the ten most recently opened paths.
 
 A preservation-only entry displays its first render blocker. Its name, output dimensions, center, and scale remain editable. The whole library can be saved with those changes while retaining unsupported variations and other original data. Transform editing becomes available when the selected flame can be converted to the supported render model. The current historical coverage is recorded in [COMPATIBILITY.md](COMPATIBILITY.md) and [LEGACY_CORPUS.md](LEGACY_CORPUS.md).
 
 **File → New flame** creates a new library containing the foundation triangle flame. Saving an untitled library prompts for a destination.
+
+### Native projects and historical exchange
+
+A native `.apoproject` file keeps the original flame library and its encoding inside a versioned envelope. It also retains the selected flame, preview and render settings, named render presets, workspace state, thumbnail, metadata and plugin references. Unknown project sections and reserved animation data survive round trips; animation playback is not implemented. Use **File → Save as…** and choose the native project format to retain this additional state. Opening plugin references never installs or enables native code. See [PROJECT_FORMAT.md](PROJECT_FORMAT.md) for the format and compatibility limits.
+
+Opening a `.upr` collection offers its supported entries and reports incompatible entries. This accepts the historical Apophysis UPR dialect described in [LEGACY_FORMATS.md](LEGACY_FORMATS.md); arbitrary Ultra Fractal formulas and layered scenes are outside that importer. The original source stays untouched, and saving an imported entry as a native project retains its original UPR text as metadata. **File → Export Apophysis UPR…** writes only representable models and reports unsupported features before export.
+
+The **Gradient editor** has **Import…** and **Export…** actions for GPL, UGR and Fractint MAP palettes. UGR collections offer compatible entries by name; unsupported gradient behavior produces a diagnostic. Palette application follows the creative editor's normal preview and undo workflow. [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) describes those controls, and [LEGACY_FORMATS.md](LEGACY_FORMATS.md) specifies the exchange rules.
 
 ## Live preview
 
@@ -50,7 +58,9 @@ The **Geometry** tab exposes all six affine coefficients in their `.flame` order
 
 ### Variations, color, and Xaos
 
-The **Variations** tab lists the 31 registered variations. Search by name and edit its weight in the table. Signed weights are supported. Setting a weight to zero disables its contribution. JuliaN exposes its nonzero integer power and finite distance parameter when its weight is active.
+The **Variations** tab lists the 31 built-in variations. Search by name and edit its weight in the table. Signed weights are supported. Setting a weight to zero disables its contribution. JuliaN exposes its nonzero integer power and finite distance parameter when its weight is active.
+
+**Plugin variations…** opens weights and named parameters for enabled native variations. Each parameter uses the module's declared type, default and valid range. The dialog retains existing variation order and full stored numeric precision when unchanged values are applied. Enable a trusted module through **Tools → Plugins…** before adding its variation. Native variations use the CPU renderer; an unavailable variation remains a render blocker and is never replaced with a built-in formula.
 
 The **Color** tab controls palette coordinate, color speed, and opacity, each from zero to one. The palette strip shows the selected flame's current palette. A color speed of zero retains the incoming color coordinate, while one adopts the transform's color. The saved producer determines the historical interpretation of opacity and the serialized color-speed field.
 
@@ -66,13 +76,33 @@ Moving transforms reorders both sides of the Xaos matrix. Deleting one removes i
 
 Undo and redo restore complete document snapshots, including selection and original XML details. The session retains the latest 100 undoable changes. Returning to the last saved state clears the modified marker in the window title.
 
-## Save libraries and recover work
+## Save documents and recover work
 
-**Save library** writes the entire loaded document. An unchanged save retains its original bytes. Edited saves patch the affected fields and transform elements, retaining unrelated entries, comments, history, and palettes. The original XML encoding is preserved. **Save library as** writes to a chosen path. If the current file changed on disk after opening, the editor offers **Save a copy**, **Replace disk version**, or **Cancel**.
+**File → Save** writes the entire loaded document. In a legacy library, an unchanged save retains its original bytes. Edited saves patch the affected fields and transform elements, retaining unrelated entries, comments, history, and palettes. The original XML encoding is preserved. **Save as…** writes to a chosen path. Native projects retain this library inside the project envelope along with their additional state; choosing `.flame` or `.xml` saves the library without the project settings. If the current file changed on disk after opening, the editor offers **Save a copy**, **Replace disk version**, or **Cancel**.
 
-**Export selected flame** creates a canonical standalone file for the selected renderable model. It includes the supported parameters and embedded palette. Collection metadata, comments, and editor history are omitted by that export operation. Use Save library when those original details should accompany the edited file.
+**Export selected flame** creates a canonical standalone file for the selected renderable model. It includes the supported parameters and embedded palette. Collection metadata, comments, and editor history are omitted by that export operation. Use **Save** when those original details should accompany the edited file.
 
-While a library has unsaved edits, the editor writes a recovery copy every 45 seconds. Startup offers the newest available recovery copy as an unsaved library, with **Recover edits**, **Discard recovery copy**, and **Later** choices. Copies belonging to an editor that is still open are skipped. Saving or discarding a recovered session removes its adopted recovery copy. Recovery files and the rotating activity log are stored in the application's per-user local data directory. Opening another library, creating a new flame, and closing the editor prompt about unsaved changes.
+While a document has unsaved edits, the editor writes a recovery copy every 45 seconds. Native project recovery retains its envelope as well as the flame library. Startup offers the newest available recovery copy as an unsaved document, with **Recover edits**, **Discard recovery copy**, and **Later** choices. Copies belonging to an editor that is still open are skipped. Saving or discarding a recovered session removes its adopted recovery copy. Recovery files and the rotating activity log are stored in the application's per-user local data directory. Opening another document, creating a new flame, and closing the editor prompt about unsaved changes.
+
+## Run scripts
+
+Open **Tools → Script editor…** or press **Ctrl+E**. Choose **Lua** or **Legacy Apophysis (supported subset)**, open a script or select an included example, and use **API reference** for the available host operations. The editor provides syntax highlighting and **Ctrl+Space** API completion. **Run**, also available with **Ctrl+Return**, executes on a private copy of the selected document; the open document and requested output files stay unchanged until **Apply result**.
+
+The console shows messages, compatibility notes, errors and deferred output destinations. A failed or stopped run cannot be applied. **Stop** requests cooperative cancellation. **Seed**, **Time limit**, **Lua memory** and **Instructions** bound the script run; initial limits are 10 seconds, 32 MiB of Lua allocation and two million VM instructions. These are script limits, separate from render memory or the whole editor process. The legacy option translates the documented subset and reports unsupported syntax or operations; it does not execute arbitrary Delphi or Pascal programs. See [SCRIPTING.md](SCRIPTING.md) and [LEGACY_SCRIPTING.md](LEGACY_SCRIPTING.md) for supported calls, limits and examples.
+
+**Allow queued renders** and **Allow exports** start unchecked. Enable the capabilities needed by the script and choose an existing **Output folder**. **Add input file…** supplies an explicitly selected input for the script's named import API. **Allow replacing output files** permits replacement of ordinary existing destinations. Scripts cannot directly access the filesystem, network, processes or native module loader; the host validates their requests and protects source inputs, application settings and recovery data, queue/checkpoint state, loaded plugin files and destinations already reserved by pending jobs.
+
+After reviewing a successful run, **Apply result** creates one document undo step and publishes the permitted outputs. All requested render jobs are validated and added as one persisted queue batch before new work starts. A stopped queue waits for **Start / resume**; a running queue continues into the new pending jobs in queue order. Each request keeps the flame snapshot captured at that script call. Document undo does not remove queued jobs or exported files. Exports are committed atomically one file at a time; if a later write fails, earlier completed files can remain and the Activity panel reports them. [RENDER_QUEUE.md](RENDER_QUEUE.md) explains the batch and persistence behavior.
+
+## Manage native variation plugins
+
+Open **Tools → Plugins…**. **Add folder…**, **Remove folder** and **Refresh** manage the saved search paths. The table reads `.apoplugin` manifests and inspects their library files without executing them. Select a row to review identity, version, description, parameter defaults/ranges, SHA-256 fingerprint and any discovery error.
+
+**Install…** copies a manifest and its adjacent native library into the user plugin directory; installation does not enable it. **Enable…** shows the exact library and fingerprint and requires **Trust and enable**. This runs native code inside the application with its filesystem and operating-system access. A faulty module can crash or hang the process; the script resource limits do not isolate native plugin faults. The approved manifest path and binary fingerprint are saved. On the next launch, only an unchanged approved binary is enabled, before the queue is restored. A replaced binary requires fresh approval.
+
+**Disable** removes the variation from new model parsing and removes its startup approval. Existing immutable render snapshots retain the loaded module until their work and references are released. **Remove files…** is available for disabled packages and refuses removal while a flame or job still retains the module. Project references and old queue files never enable modules themselves. Re-enable the required trusted module to render a blocked document or restore its queue; changed plugin binaries invalidate exact queue/checkpoint identities.
+
+M8 plugins are CPU-only. Automatic or Vulkan rendering reports the CPU fallback when allowed; a strict Vulkan request fails for a native plugin variation. Old 32-bit Apophysis DLLs cannot load into this x64 application. The bundled sample and C SDK provide the source migration path described in [PLUGINS.md](PLUGINS.md).
 
 ## Render an image
 
@@ -80,11 +110,13 @@ Choose **File → Render image** or press **Ctrl+R**. Select an output preset fr
 
 Set sample density or disable automatic calculation to enter an exact sample count. Oversampling, spatial filter and radius, random seed, CPU worker count, system buffer budget, and working disk budget are independent controls. Renderer, preferred device, GPU working budget, and CPU fallback start with the preview preferences and apply to this queued export. The estimate shows planned buffers, conservative storage allowance, strip count, and strip height. Phase time estimates become available after the queue measures actual progress.
 
+The **Project preset** selector restores named render settings. **Save current preset…** stores the current controls under a name, and **Remove preset** removes the selected preset. Save the document as `.apoproject` to retain presets and render settings across sessions. A preset does not enqueue work; choose a destination and add a job separately.
+
 Choose the destination in the same dialog. **PNG** and **TIFF** support 8- or 16-bit output with optional transparent backgrounds using straight alpha. **PPM** supports 8- or 16-bit RGB, and **BMP** supports 8-bit RGB. The filename extension must match the selected format. Choose **Add to queue** to leave the new job pending, or **Add and start queue** to start queued and paused jobs in their current order.
 
 Open **Render queue** from the File menu or toolbar to inspect and manage jobs. Each job keeps an immutable flame snapshot and its output settings while one background worker processes the list. You can keep editing, reorder pending jobs, pause the queue, cancel a job, retry or resume a stopped job, or start the selected snapshot over. The table and details show progress, elapsed time, measured phase ETA, actual backend and device, fallback reasons, and errors; **Activity** also reports the active export.
 
-The queue saves automatically in the application's per-user local data directory and can also be saved or restored as a JSON file. Restored queues wait for an explicit **Start / resume** action. Pausing first requests a safe stop; a saved-checkpoint status appears only after the worker returns and the committed checkpoint is verified. Closing the editor pauses active work before exiting. Checkpoint samples stay in their referenced working directories when a queue JSON is saved elsewhere; removing a queue entry does not delete its output or checkpoint files.
+The queue saves automatically in the application's per-user local data directory and can also be saved or restored as a JSON file. Restored queues wait for an explicit **Start / resume** action. Jobs with native variations record the exact plugin binary fingerprint; a missing, disabled or changed module blocks restoration before any job list or automatic queue file is replaced. Pausing first requests a safe stop; a saved-checkpoint status appears only after the worker returns and the committed checkpoint is verified. Closing the editor pauses active work before exiting. Checkpoint samples stay in their referenced working directories when a queue JSON is saved elsewhere; removing a queue entry does not delete its output or checkpoint files.
 
 High-resolution output uses bounded reconstruction strips with global sampling and filter overlap. Images are staged and replace the destination only after rendering and writing complete, so a failed or cancelled render preserves an existing destination. A resumed reconstruction starts its output again from saved samples. System, GPU, and disk budgets are checked separately. See [RENDER_QUEUE.md](RENDER_QUEUE.md) for queue controls, persistence, and recovery, and [HIGH_RES_RENDERING.md](HIGH_RES_RENDERING.md) for memory planning, file formats, and command-line rendering.
 
@@ -99,9 +131,9 @@ Library, transform, properties, and activity panels can be docked, tabbed, float
 | Windows shortcut | Command |
 | --- | --- |
 | Ctrl+N | New flame |
-| Ctrl+O | Open library |
-| Ctrl+S | Save library |
-| Ctrl+Shift+S | Save library as |
+| Ctrl+O | Open project or library |
+| Ctrl+S | Save |
+| Ctrl+Shift+S | Save as |
 | Ctrl+Z | Undo |
 | Ctrl+Y | Redo |
 | Ctrl+D | Duplicate transform |
@@ -112,6 +144,7 @@ Library, transform, properties, and activity panels can be docked, tabbed, float
 | Ctrl+J | Adjustment editor |
 | Ctrl+M | Mutation explorer |
 | Ctrl+Shift+N | Random flame generator |
+| Ctrl+E | Script editor |
 | Ctrl+R | Render image |
 | F11 | Full screen |
 

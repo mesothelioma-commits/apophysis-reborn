@@ -3,6 +3,8 @@
 #include "flame_io.hpp"
 #include "gpu.hpp"
 #include "output_file.hpp"
+#include "plugin_dialog.hpp"
+#include "project_document.hpp"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -23,6 +25,7 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -291,6 +294,7 @@ void applyDarkTheme() {
   p.setColor(QPalette::Base, QColor("#171d25"));
   p.setColor(QPalette::AlternateBase, QColor("#232c37"));
   p.setColor(QPalette::Text, QColor("#dde4ed"));
+  p.setColor(QPalette::PlaceholderText, QColor("#8e9cae"));
   p.setColor(QPalette::Button, QColor("#2b3542"));
   p.setColor(QPalette::ButtonText, QColor("#dde4ed"));
   p.setColor(QPalette::Highlight, QColor("#316a7c"));
@@ -335,6 +339,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
                        const QString &queueDirectory)
     : QMainWindow(parent), session_(this), preview_(this),
       useSettings_(useSettings) {
+  const auto pluginWarnings =
+      useSettings_ ? loadApprovedPlugins(settings_) : QStringList{};
   QString queueWarning;
   try {
     const auto data = queueDirectory.isEmpty()
@@ -374,6 +380,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   makeTransformEditor();
   makeProperties();
   makeLogs();
+  for (const auto &warning : pluginWarnings)
+    record(warning);
   resizeDocks({libraryDock_, propertiesDock_}, {220, 370}, Qt::Horizontal);
   resizeDocks({transformDock_}, {260}, Qt::Vertical);
   defaultLayout_ = saveState(1);
@@ -406,14 +414,16 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   });
   help->addAction("About Apophysis Reborn", this, [this] {
     QMessageBox::about(
-        this, "Apophysis Reborn 0.7.0",
-        "High-Resolution Rendering development checkpoint\nC++20 / Qt 6 / CPU "
+        this, "Apophysis Reborn 0.8.0",
+        "Extended Compatibility development checkpoint\nC++20 / Qt 6 / CPU "
         "and Vulkan compute\n\n"
         "31 registered variations, gradient and adjustment editors, seeded "
         "generation and "
         "mutations. Global sampling, disk-backed reconstruction, persistent "
         "render queues, "
         "restart-safe sampling checkpoints and 8/16-bit image exports.\n"
+        "Lua and legacy script editor, trusted native variation plugins, "
+        "native projects and historical palette/UPR formats.\n"
         "See the packaged compatibility report for historical rendering "
         "coverage.\n\n"
         "Qt and other third-party license texts accompany the portable "
@@ -521,6 +531,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   timer->setInterval(45000);
   connect(timer, &QTimer::timeout, this, [this] {
     try {
+      if (session_.isProject() && session_.isModified())
+        captureProjectState();
       if (!session_.writeRecovery().isEmpty())
         record("Recovery copy updated");
     } catch (const std::exception &e) {
@@ -595,7 +607,8 @@ void MainWindow::makeActions() {
   create->setShortcut(QKeySequence::New);
   create->setObjectName("actionNew");
   auto open = file->addAction(style()->standardIcon(QStyle::SP_DirOpenIcon),
-                              "&Open library…", this, &MainWindow::chooseOpen);
+                              "&Open project or library…", this,
+                              &MainWindow::chooseOpen);
   open->setShortcut(QKeySequence::Open);
   open->setObjectName("actionOpen");
   auto recent = file->addMenu("Recent files");
@@ -607,11 +620,11 @@ void MainWindow::makeActions() {
       recent->addAction("No recent files")->setEnabled(false);
   });
   save_ = file->addAction(style()->standardIcon(QStyle::SP_DialogSaveButton),
-                          "&Save library", this, [this] { saveDocument(); });
+                          "&Save", this, [this] { saveDocument(); });
   save_->setShortcut(QKeySequence::Save);
   save_->setObjectName("actionSave");
-  auto saveAs = file->addAction("Save library &as…", this,
-                                [this] { saveDocument(true); });
+  auto saveAs =
+      file->addAction("Save &as…", this, [this] { saveDocument(true); });
   saveAs->setShortcut(QKeySequence::SaveAs);
   file->addSeparator();
   auto standalone = file->addAction("Export selected flame…", this, [this] {
@@ -637,6 +650,8 @@ void MainWindow::makeActions() {
   });
   standalone->setToolTip("Creates a standalone supported model. Comments, "
                          "history and collection metadata are omitted.");
+  file->addAction("Export Apophysis UPR…", this, &MainWindow::exportUpr)
+      ->setObjectName("actionExportUpr");
   render_ = file->addAction(style()->standardIcon(QStyle::SP_DialogApplyButton),
                             "&Render image…", this, &MainWindow::renderImage);
   render_->setShortcut(QKeySequence("Ctrl+R"));
@@ -683,6 +698,13 @@ void MainWindow::makeActions() {
   edit->addSeparator();
   edit->addAction("Preferences…", this, &MainWindow::preferences)
       ->setObjectName("actionPreferences");
+  auto tools = menuBar()->addMenu("&Tools");
+  auto script =
+      tools->addAction("Script editor…", this, &MainWindow::showScriptEditor);
+  script->setObjectName("actionScriptEditor");
+  script->setShortcut(QKeySequence("Ctrl+E"));
+  tools->addAction("Plugins…", this, &MainWindow::showPluginManager)
+      ->setObjectName("actionPlugins");
   auto transform = menuBar()->addMenu("&Transform");
   add_ = transform->addAction("Add transform", this, [this] {
     run([&] {
@@ -1270,6 +1292,11 @@ void MainWindow::makeProperties() {
     ++row;
   }
   variationLayout->addWidget(variations_, 1);
+  auto plugins = new QPushButton("Plugin variations…");
+  plugins->setObjectName("editPluginVariations");
+  variationLayout->addWidget(plugins);
+  connect(plugins, &QPushButton::clicked, this,
+          &MainWindow::editPluginVariations);
   connect(search, &QLineEdit::textChanged, this, [this](const QString &query) {
     for (int i = 0; i < variations_->rowCount(); ++i)
       variations_->setRowHidden(i, !variations_->item(i, 0)->text().contains(
@@ -1809,7 +1836,12 @@ bool MainWindow::openFile(const QString &path) {
   if (!confirmDiscard())
     return false;
   try {
-    session_.load(path);
+    if (QFileInfo(path).suffix().compare("upr", Qt::CaseInsensitive) == 0) {
+      if (!importUpr(path))
+        return false;
+    } else
+      session_.load(path);
+    restoreProjectState();
     for (int i = 0; i < library_->count(); ++i)
       library_->item(i)->setIcon({});
     librarySearch_->clear();
@@ -1833,8 +1865,9 @@ bool MainWindow::openFile(const QString &path) {
 }
 void MainWindow::chooseOpen() {
   const auto path = QFileDialog::getOpenFileName(
-      this, "Open flame library", session_.path(),
-      "Flame libraries (*.flame *.xml *.temp);;All files (*)");
+      this, "Open project or flame library", session_.path(),
+      "Projects and flames (*.apoproject *.flame *.xml *.temp *.upr);;Native "
+      "projects (*.apoproject);;Apophysis UPR (*.upr);;All files (*)");
   if (!path.isEmpty())
     openFile(path);
 }
@@ -1843,6 +1876,7 @@ void MainWindow::openExample() {
   if (!file.open(QIODevice::ReadOnly))
     throw std::runtime_error("The built-in example is missing");
   session_.loadBytes(file.readAll().toStdString());
+  restoreProjectState();
   triangles_->fit();
 }
 void MainWindow::newDocument() {
@@ -1852,6 +1886,7 @@ void MainWindow::newDocument() {
     auto flame = demo_flame();
     flame.name = "Untitled flame";
     session_.loadBytes(serialize_flame(flame), {}, true);
+    restoreProjectState();
     triangles_->fit();
     previewCanvas_->fit();
   });
@@ -1862,11 +1897,15 @@ bool MainWindow::saveDocument(bool saveAs) {
   QString path = session_.path();
   if (saveAs || path.isEmpty())
     path = QFileDialog::getSaveFileName(
-        this, "Save flame library", path.isEmpty() ? "my-flames.flame" : path,
-        "Flame libraries (*.flame);;XML files (*.xml)");
+        this, "Save project or flame library",
+        path.isEmpty() ? "my-project.apoproject" : path,
+        "Native projects (*.apoproject);;Flame libraries (*.flame);;XML files "
+        "(*.xml)");
   if (path.isEmpty())
     return false;
   try {
+    if (is_project_path(filesystemPath(path)))
+      captureProjectState();
     session_.save(path);
     record("Saved " + path);
     return true;
@@ -2050,6 +2089,99 @@ void MainWindow::renderImage() {
   auto add = buttons->addButton("Add to queue", QDialogButtonBox::ActionRole);
   add->setObjectName("addOutputToQueue");
   layout->addWidget(buttons);
+  auto savedRow = new QHBoxLayout;
+  auto savedPresets = new QComboBox;
+  savedPresets->setObjectName("savedRenderPresets");
+  auto savePreset = new QPushButton("Save current preset…");
+  savePreset->setObjectName("saveRenderPreset");
+  auto removePreset = new QPushButton("Remove preset");
+  removePreset->setObjectName("removeRenderPreset");
+  savedRow->addWidget(new QLabel("Project preset"));
+  savedRow->addWidget(savedPresets, 1);
+  savedRow->addWidget(savePreset);
+  savedRow->addWidget(removePreset);
+  layout->insertLayout(0, savedRow);
+  auto populatePresets = [&] {
+    const QSignalBlocker block(savedPresets);
+    savedPresets->clear();
+    savedPresets->addItem("Choose saved settings…");
+    for (const auto &p : renderPresets_)
+      savedPresets->addItem(text(p.name));
+  };
+  populatePresets();
+  const QStringList savedKeys{
+      "outputWidth",         "outputHeight",       "outputQuality",
+      "deriveOutputSamples", "outputSamples",      "outputOversample",
+      "outputFilter",        "outputFilterRadius", "outputFormat",
+      "outputAlpha",         "outputThreads",      "outputMemory",
+      "outputDisk",          "outputSeed",         "renderBackend",
+      "renderDevice",        "gpuMemory",          "cpuFallback",
+      "outputAspectLock"};
+  auto captureSettings = [&] {
+    auto values = renderSettings_;
+    for (const auto &key : savedKeys) {
+      auto widget = dialog.findChild<QWidget *>(key);
+      if (auto field = qobject_cast<QSpinBox *>(widget))
+        values[key.toStdString()] = std::to_string(field->value());
+      else if (auto field = qobject_cast<QDoubleSpinBox *>(widget))
+        values[key.toStdString()] = number(field->value()).toStdString();
+      else if (auto field = qobject_cast<QCheckBox *>(widget))
+        values[key.toStdString()] = field->isChecked() ? "1" : "0";
+      else if (auto field = qobject_cast<QLineEdit *>(widget))
+        values[key.toStdString()] = field->text().toStdString();
+      else if (auto field = qobject_cast<QComboBox *>(widget))
+        values[key.toStdString()] =
+            field->currentData().isValid()
+                ? field->currentData().toString().toStdString()
+                : std::to_string(field->currentIndex());
+    }
+    return values;
+  };
+  auto applySettings = [&](const ProjectSettings &values) {
+    std::vector<std::unique_ptr<QSignalBlocker>> blocks;
+    for (const auto &key : savedKeys)
+      if (auto widget = dialog.findChild<QWidget *>(key))
+        blocks.push_back(std::make_unique<QSignalBlocker>(widget));
+    for (const auto &key : savedKeys) {
+      const auto it = values.find(key.toStdString());
+      if (it == values.end())
+        continue;
+      const auto value = text(it->second);
+      auto widget = dialog.findChild<QWidget *>(key);
+      bool ok = false;
+      if (auto field = qobject_cast<QSpinBox *>(widget)) {
+        auto v = value.toInt(&ok);
+        if (ok && v >= field->minimum() && v <= field->maximum())
+          field->setValue(v);
+      } else if (auto field = qobject_cast<QDoubleSpinBox *>(widget)) {
+        auto v = QLocale::c().toDouble(value, &ok);
+        if (ok && std::isfinite(v) && v >= field->minimum() &&
+            v <= field->maximum())
+          field->setValue(v);
+      } else if (auto field = qobject_cast<QCheckBox *>(widget)) {
+        if (value == "0" || value == "1")
+          field->setChecked(value == "1");
+      } else if (auto field = qobject_cast<QLineEdit *>(widget))
+        field->setText(value);
+      else if (auto field = qobject_cast<QComboBox *>(widget)) {
+        if (field->itemData(0).isValid()) {
+          int selected = -1;
+          for (int i = 0; i < field->count(); ++i)
+            if (field->itemData(i).toString() == value) {
+              selected = i;
+              break;
+            }
+          if (selected >= 0)
+            field->setCurrentIndex(selected);
+        } else {
+          const int selected = value.toInt(&ok);
+          if (ok && selected >= 0 && selected < field->count())
+            field->setCurrentIndex(selected);
+        }
+      }
+    }
+  };
+  applySettings(renderSettings_);
   bool startNow = true;
   auto resized = [&] {
     auto f = original;
@@ -2178,6 +2310,50 @@ void MainWindow::renderImage() {
     changingSize = false;
     update();
   });
+  connect(savedPresets, &QComboBox::activated, &dialog, [&](int index) {
+    if (index < 1)
+      return;
+    applySettings(renderPresets_.at(std::size_t(index - 1)).settings);
+    ratio = double(width->value()) / height->value();
+    update();
+  });
+  connect(savePreset, &QPushButton::clicked, &dialog, [&] {
+    bool ok = false;
+    const auto name =
+        QInputDialog::getText(&dialog, "Save render preset", "Preset name",
+                              QLineEdit::Normal, {}, &ok)
+            .trimmed();
+    if (!ok || name.isEmpty())
+      return;
+    if (name.size() > 128 || renderPresets_.size() >= 100) {
+      estimate->setText(
+          "Use a name up to 128 characters and at most 100 project presets.");
+      return;
+    }
+    const auto nameUtf8 = name.toStdString();
+    auto found =
+        std::find_if(renderPresets_.begin(), renderPresets_.end(),
+                     [&](const auto &p) { return p.name == nameUtf8; });
+    ProjectPreset saved{nameUtf8, captureSettings()};
+    if (found == renderPresets_.end())
+      renderPresets_.push_back(std::move(saved));
+    else
+      *found = std::move(saved);
+    populatePresets();
+    if (session_.isProject())
+      captureProjectState();
+    record("Saved render preset " + name +
+           ". Save as a native project to retain it.");
+  });
+  connect(removePreset, &QPushButton::clicked, &dialog, [&] {
+    if (savedPresets->currentIndex() < 1)
+      return;
+    renderPresets_.erase(renderPresets_.begin() + savedPresets->currentIndex() -
+                         1);
+    populatePresets();
+    if (session_.isProject())
+      captureProjectState();
+  });
   connect(aspect, &QCheckBox::toggled, &dialog, [&](bool checked) {
     if (checked)
       ratio = double(width->value()) / height->value();
@@ -2227,6 +2403,9 @@ void MainWindow::renderImage() {
   if (dialog.exec() != QDialog::Accepted)
     return;
   run([&] {
+    renderSettings_ = captureSettings();
+    if (session_.isProject())
+      captureProjectState();
     const auto id = queue_->add(resized(), options(), fileOptions(),
                                 destination->text(), session_.path());
     if (startNow)
@@ -2306,7 +2485,8 @@ void MainWindow::recoverPreviousSession() {
       QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) +
       "/recovery";
   QDir folder(directory);
-  const auto files = folder.entryInfoList({"*.flame"}, QDir::Files, QDir::Time);
+  const auto files = folder.entryInfoList({"*.flame", "*.apoproject"},
+                                          QDir::Files, QDir::Time);
   for (const auto &candidate : files) {
     QLockFile lock(candidate.absoluteFilePath() + ".lock");
     lock.setStaleLockTime(0);
@@ -2325,6 +2505,7 @@ void MainWindow::recoverPreviousSession() {
     if (dialog.clickedButton() == recover)
       run([&] {
         session_.recover(candidate.absoluteFilePath());
+        restoreProjectState();
         record("Recovered edits from " + candidate.fileName());
       });
     else if (dialog.clickedButton() == discard && lock.tryLock()) {

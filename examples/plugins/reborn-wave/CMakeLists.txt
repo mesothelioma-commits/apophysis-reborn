@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.20)
+project(reborn_wave_plugin LANGUAGES C)
+# Standalone SDK example. Set APO_PLUGIN_SDK to the extracted source's src directory.
+set(APO_PLUGIN_SDK "${CMAKE_CURRENT_LIST_DIR}/../../../src" CACHE PATH "Directory containing plugin_api.h")
+add_library(reborn-wave SHARED reborn_wave.c)
+target_include_directories(reborn-wave PRIVATE "${APO_PLUGIN_SDK}")
+set_target_properties(reborn-wave PROPERTIES PREFIX "" OUTPUT_NAME "reborn_wave")
+if(UNIX)
+    target_link_libraries(reborn-wave PRIVATE m)
+endif()
+set(APO_PLUGIN_LIBRARY "reborn_wave${CMAKE_SHARED_LIBRARY_SUFFIX}")
+configure_file(reborn_wave.apoplugin.in "${CMAKE_CURRENT_BINARY_DIR}/reborn_wave.apoplugin" @ONLY)

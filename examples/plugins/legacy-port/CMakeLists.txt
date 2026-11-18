@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(reborn_migration_example LANGUAGES C)
+set(APO_PLUGIN_SDK "${CMAKE_CURRENT_LIST_DIR}/../../../src" CACHE PATH "Directory containing plugin_api.h")
+add_library(migrated-gain SHARED migrated_gain.c)
+target_include_directories(migrated-gain PRIVATE "${APO_PLUGIN_SDK}")
+set_target_properties(migrated-gain PROPERTIES PREFIX "" OUTPUT_NAME "migrated_gain")
+set(APO_PLUGIN_LIBRARY "migrated_gain${CMAKE_SHARED_LIBRARY_SUFFIX}")
+configure_file(migrated_gain.apoplugin.in "${CMAKE_CURRENT_BINARY_DIR}/migrated_gain.apoplugin" @ONLY)

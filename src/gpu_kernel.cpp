@@ -38,6 +38,8 @@ std::string transform_reason(const Transform &t) {
     if (std::abs(double(t.parameters.julian_power)) > 16777216)
         return "JuliaN power exceeds exact FP32 integer range";
     for (const auto &term : t.variations) {
+        if (term.id == Variation::plugin)
+            return "Native plugin variations require the CPU renderer";
         if (auto reason = field_reason(term.weight, "Variation weight"); !reason.empty())
             return reason;
         if (!term.weight || !t.parameters.apophysis_math)

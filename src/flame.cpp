@@ -1,10 +1,12 @@
 #include "flame.hpp"
+#include "plugin.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cctype>
 #include <numbers>
 #include <stdexcept>
+#include <set>
 #include <utility>
 
 namespace apo {
@@ -56,14 +58,14 @@ void validate_transform(const Transform& t) {
         throw std::invalid_argument("color, color_speed and opacity must be in [0,1]");
     if (t.parameters.julian_power == 0 || !std::isfinite(t.parameters.julian_dist))
         throw std::invalid_argument("JuliaN needs a nonzero integer power and finite distance");
-    std::array<bool, static_cast<unsigned>(Variation::pre_blur) + 1> seen{};
+    std::set<std::string> seen;
     for (const auto& term : t.variations) {
-        const auto name = variation_name(term.id);
-        const auto i = static_cast<unsigned>(term.id);
-        if (seen[i]) throw std::invalid_argument("duplicate variation: " + std::string(name));
+        validate_plugin_term(term);
+        const auto name = term_name(term);
+        if (!seen.insert(std::string(name)).second)
+            throw std::invalid_argument("duplicate variation: " + std::string(name));
         if (!std::isfinite(term.weight))
             throw std::invalid_argument("nonfinite variation weight: " + std::string(name));
-        seen[i] = true;
     }
 }
 
@@ -357,6 +359,8 @@ Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters
     }
     case Variation::bent:
         return {x < 0 ? 2 * x : x, y < 0 ? y / 2 : y};
+    case Variation::plugin:
+        throw std::invalid_argument("Plugin variations need their retained Term descriptor");
     }
     throw std::invalid_argument("unrecognized variation id");
 }
@@ -375,7 +379,9 @@ Orbit apply_transform(const Transform& transform, Orbit previous, Rng& rng) {
     Point sum;
     for (const auto& term : transform.variations) {
         if (term.id == Variation::pre_blur || term.weight == 0) continue; // A disabled stochastic variation must not consume a draw.
-        const Point v = apply_variation(term.id, input, rng, transform.parameters, transform.pre);
+        const Point v = term.id == Variation::plugin
+            ? term.plugin->evaluate(input, transform.pre, term.weight, term.plugin_parameters, rng)
+            : apply_variation(term.id, input, rng, transform.parameters, transform.pre);
         sum.x += term.weight * v.x;
         sum.y += term.weight * v.y;
     }
@@ -384,6 +390,8 @@ Orbit apply_transform(const Transform& transform, Orbit previous, Rng& rng) {
 }
 
 void validate(const Flame& flame) {
+    // A serialized variation name must identify one module throughout the model.
+    (void)plugin_identity(flame);
     if (flame.model_version != Flame::current_model_version)
         throw std::invalid_argument("unsupported flame model version");
     if (flame.width < 1 || flame.height < 1 || flame.oversample < 1)

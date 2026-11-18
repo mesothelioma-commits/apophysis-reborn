@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include <random>
 #include <span>
 #include <string>
@@ -32,7 +33,7 @@ enum class Variation : unsigned {
     linear, sinusoidal, spherical, swirl, horseshoe, polar, handkerchief, heart,
     disc, spiral, hyperbolic, diamond, ex, julia, bent, waves, fisheye, popcorn,
     exponential, power, cosine, rings, fan, eyefish = 27, bubble = 28,
-    cylinder = 29, noise = 31, julian = 32, blur = 34, foci = 64, pre_blur = 67
+    cylinder = 29, noise = 31, julian = 32, blur = 34, foci = 64, pre_blur = 67, plugin = 0xffff
 };
 struct VariationInfo { Variation id; std::string_view name; };
 std::span<const VariationInfo> variation_registry();
@@ -44,7 +45,13 @@ struct VariationParameters {
     bool apophysis_math = false;
     bool separate_blur_angle = false; // 7X Pascal pre-blur draws a separate angle.
 };
-struct Term { Variation id = Variation::linear; double weight = 1; };
+class PluginVariation;
+struct Term {
+    Variation id = Variation::linear;
+    double weight = 1;
+    std::shared_ptr<const PluginVariation> plugin;
+    std::vector<double> plugin_parameters;
+};
 
 struct Transform {
     Affine pre, post;

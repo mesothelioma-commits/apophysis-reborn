@@ -1,4 +1,5 @@
 #include "legacy_document.hpp"
+#include "plugin.hpp"
 #include "flame_io.hpp"
 
 #include <expat.h>
@@ -654,7 +655,16 @@ bool same_affine(const Affine& a, const Affine& b) {
 }
 bool same_terms(const std::vector<Term>& a, const std::vector<Term>& b) {
     return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
-        [](Term lhs, Term rhs) { return lhs.id == rhs.id && lhs.weight == rhs.weight; });
+        [](const Term& lhs, const Term& rhs) {
+            if (term_name(lhs) != term_name(rhs) || lhs.weight != rhs.weight || lhs.plugin_parameters != rhs.plugin_parameters)
+                return false;
+            if (lhs.plugin && rhs.plugin) {
+                const auto& x = lhs.plugin->info();
+                const auto& y = rhs.plugin->info();
+                return x.id == y.id && x.version == y.version && x.fingerprint == y.fingerprint;
+            }
+            return bool(lhs.plugin) == bool(rhs.plugin);
+        });
 }
 }
 
@@ -701,6 +711,13 @@ void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_ind
         }
     }
     if (edits.variations && !same_terms(transform.variations, *edits.variations)) {
+        for (const auto& old : transform.variations) if (old.id == Variation::plugin) {
+            const auto name = std::string(term_name(old));
+            changes[name] = std::nullopt;
+            for (const auto& [parameter, value] : term_parameters(old)) changes[name + "_" + parameter] = std::nullopt;
+            changes["reborn_plugin_id_" + name] = std::nullopt;
+            changes["reborn_plugin_version_" + name] = std::nullopt;
+        }
         transform.variations = *edits.variations;
         changes["var"] = std::nullopt;
         changes["var1"] = std::nullopt;
@@ -711,15 +728,21 @@ void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_ind
         std::string order;
         if (source.attributes.contains("flatten")) order = "flatten";
         for (const auto& term : transform.variations) {
-            const auto name = std::string(variation_name(term.id));
+            const auto name = std::string(term_name(term));
             const bool linear3d = term.id == Variation::linear && source.attributes.contains("linear3D");
             changes[linear3d ? "linear3D" : name] = shortest(term.weight);
+            if (term.id == Variation::plugin) {
+                for (const auto& [parameter, value] : term_parameters(term)) changes[name + "_" + parameter] = shortest(value);
+                changes["reborn_plugin_id_" + name] = term.plugin->info().id;
+                changes["reborn_plugin_version_" + name] = term.plugin->info().version;
+            }
             if (term.id == Variation::sinusoidal) has_sinusoidal = true;
             if (!order.empty()) order += ' ';
             order += name;
         }
         if (!has_sinusoidal) changes["sinusoidal_use3D"] = std::nullopt;
-        if (apophysis && !is_apophysis_2(model.source_version)) changes["var_order"] = order;
+        if ((apophysis && !is_apophysis_2(model.source_version)) ||
+            std::any_of(transform.variations.begin(), transform.variations.end(), [](const Term& term){return term.id == Variation::plugin;})) changes["var_order"] = order;
         if (std::any_of(transform.variations.begin(), transform.variations.end(),
                 [](Term term) { return term.id == Variation::julian; })) {
             changes["julian_power"] = std::to_string(transform.parameters.julian_power);

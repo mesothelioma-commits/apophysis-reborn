@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../script.hpp"
 #include "canvases.hpp"
 #include "document_session.hpp"
 #include "preview_controller.hpp"
@@ -38,6 +39,10 @@ public:
   bool openFile(const QString &path);
   void openExample();
   void recoverPreviousSession();
+  void applyScriptResult(
+      const ScriptResult &, const QString &outputDirectory,
+      bool replaceExisting = false,
+      const std::vector<std::filesystem::path> &protectedFiles = {});
 
 protected:
   void closeEvent(QCloseEvent *) override;
@@ -77,10 +82,19 @@ private:
       *duplicateFlame_, *deleteFlame_;
   QAction *queueAction_;
   QByteArray defaultLayout_;
+  ProjectSettings renderSettings_;
+  std::vector<ProjectPreset> renderPresets_;
   QString previewBackend_ = "CPU", previewDevice_ = "CPU", previewFallback_,
           lastBackendReport_;
 
   void makeActions();
+  void showScriptEditor();
+  void showPluginManager();
+  void editPluginVariations();
+  bool importUpr(const QString &path);
+  void exportUpr();
+  void captureProjectState();
+  void restoreProjectState();
   void makeLibrary();
   void makePreview();
   void makeTransformEditor();

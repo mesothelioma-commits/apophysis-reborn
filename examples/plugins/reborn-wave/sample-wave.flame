@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<flame name="Sample wave plugin" size="640 480" center="0 0.2" scale="220" gamma="2.2" brightness="4">
+  <xform weight="1" color="0.1" coefs="0.5 0 0 0.5 -0.5 0" sample_wave="0.8" linear="0.2"
+    sample_wave_amplitude="0.2" sample_wave_frequency="3"
+    reborn_plugin_id_sample_wave="org.apophysis.reborn.wave" reborn_plugin_version_sample_wave="1.0.0"
+    var_order="sample_wave linear"/>
+  <xform weight="1" color="0.6" coefs="0.5 0 0 0.5 0.5 0" sample_wave="1"
+    sample_wave_amplitude="0.08" sample_wave_frequency="5"
+    reborn_plugin_id_sample_wave="org.apophysis.reborn.wave" reborn_plugin_version_sample_wave="1.0.0"/>
+  <xform weight="1" color="0.95" coefs="0.5 0 0 0.5 0 0.7" linear="1"/>
+</flame>

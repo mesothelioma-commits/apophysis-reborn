@@ -1,4 +1,5 @@
 #include "flame_io.hpp"
+#include "plugin.hpp"
 
 #include <expat.h>
 
@@ -14,6 +15,7 @@
 #include <memory>
 #include <numbers>
 #include <sstream>
+#include <set>
 #include <stdexcept>
 #include <iterator>
 #include <utility>
@@ -211,6 +213,36 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
             fail("Unsupported julian_power; use a nonzero integer within int range");
         t.parameters.julian_power = static_cast<int>(power);
     }
+    // Resolve explicitly enabled ordinary plugins before walking parameter attributes.
+    std::map<std::string, Term> plugin_terms;
+    std::set<std::string> plugin_fields;
+    for (const auto& [key, value] : attributes) {
+        constexpr std::string_view prefix = "reborn_plugin_id_";
+        if (key.starts_with(prefix) && !find_plugin_variation(key.substr(prefix.size())))
+            fail("Unavailable plugin variation '" + std::string(key.substr(prefix.size())) +
+                 "'; enable its matching plugin before opening this flame");
+    }
+    for (const auto& [key, value] : attributes) {
+        if (auto plugin = find_plugin_variation(key)) {
+            if (attributes.contains("var1") || attributes.contains("var"))
+                fail("Cannot mix numbered and plugin variation weights");
+            std::map<std::string, double> parameters;
+            for (const auto& p : plugin->info().parameters) {
+                const auto field = std::string(key) + "_" + p.name;
+                plugin_fields.insert(field);
+                if (const auto it = attributes.find(field); it != attributes.end())
+                    parameters.emplace(p.name, number<double>(it->second, field));
+            }
+            const auto id_field = "reborn_plugin_id_" + std::string(key);
+            const auto version_field = "reborn_plugin_version_" + std::string(key);
+            plugin_fields.insert(id_field); plugin_fields.insert(version_field);
+            if (attributes.contains(id_field) && required(attributes, id_field) != plugin->info().id)
+                fail("Plugin identity does not match saved flame: " + std::string(key));
+            if (attributes.contains(version_field) && required(attributes, version_field) != plugin->info().version)
+                fail("Plugin version does not match saved flame: " + std::string(key));
+            plugin_terms.emplace(std::string(key), make_variation_term(key, number<double>(value,key), parameters));
+        }
+    }
     for (const auto& [key, value] : attributes) {
         if (key == "weight") {
             const auto weight = number<double>(value, key);
@@ -238,7 +270,7 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
         else if (key == "flatten" && (identify_producer(version) == Producer::seven || identify_producer(version) == Producer::av)) {
             // In the verified 2D path every Z input is zero; flatten only assigns Z.
             (void)number<double>(value,key);
-        } else if (key == "var_order" && apo && !is_apophysis_2(version)) {
+        } else if (key == "var_order") {
             // Apply the recorded order after all named weights are available.
         }
         else if (key == "sinusoidal_use3D" && apo && attributes.contains("sinusoidal")) {
@@ -270,6 +302,10 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
             if (attributes.contains("var1") || attributes.contains("var"))
                 fail("Cannot mix numbered and named variation weights");
             t.variations.push_back({*id, number<double>(value, key)});
+        } else if (const auto plugin = plugin_terms.find(std::string(key)); plugin != plugin_terms.end()) {
+            t.variations.push_back(plugin->second);
+        } else if (plugin_fields.contains(std::string(key))) {
+            // Validated with the associated plugin above; unknown fields remain errors.
         } else {
             fail("Unsupported transform attribute or variation '" + std::string(key) + "'");
         }
@@ -284,9 +320,8 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
         std::string name;
         while (names >> name) {
             if (name == "flatten" && attributes.contains("flatten")) continue; // Z-only pre stage
-            const auto id = find_variation(name);
             const auto term = std::find_if(t.variations.begin(), t.variations.end(),
-                [&](Term item){ return id && item.id == *id; });
+                [&](const Term& item){ return term_name(item) == name; });
             if (term == t.variations.end()) fail("Unmatched var_order entry '" + name + "'");
             ordered.push_back(*term);
         }
@@ -294,7 +329,7 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
         t.variations = std::move(ordered);
     } else {
         std::sort(t.variations.begin(), t.variations.end(),
-                  [](const Term& a, const Term& b) { return a.id < b.id; });
+                  [](const Term& a, const Term& b) { return a.id == b.id ? term_name(a) < term_name(b) : a.id < b.id; });
     }
     return t;
 }
@@ -543,12 +578,18 @@ void write_transform(std::ostream& out, const Transform& t, bool final, bool apo
         out << '"';
     }
     for (const auto& term : t.variations) {
-        out << ' ' << variation_name(term.id)
-            << "=\"" << term.weight << '"';
+        out << ' ' << term_name(term) << "=\"" << term.weight << '"';
+        if (term.id == Variation::plugin) {
+            for (const auto& [name, value] : term_parameters(term))
+                out << ' ' << term_name(term) << '_' << name << "=\"" << value << '"';
+            out << " reborn_plugin_id_" << term_name(term) << "=\"" << escaped(term.plugin->info().id)
+                << "\" reborn_plugin_version_" << term_name(term) << "=\"" << escaped(term.plugin->info().version) << '"';
+        }
     }
-    if (apo && !std::is_sorted(t.variations.begin(), t.variations.end(), [](Term a, Term b){ return a.id < b.id; })) {
+    if (std::any_of(t.variations.begin(), t.variations.end(), [](const Term& term){return term.id == Variation::plugin;}) ||
+        (apo && !std::is_sorted(t.variations.begin(), t.variations.end(), [](const Term& a, const Term& b){ return a.id < b.id; }))) {
         out << " var_order=\"";
-        for (const auto& term : t.variations) out << variation_name(term.id) << ' ';
+        for (const auto& term : t.variations) out << term_name(term) << ' ';
         out << '"';
     }
     if (std::any_of(t.variations.begin(), t.variations.end(), [](Term term){ return term.id == Variation::julian; }))

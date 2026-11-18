@@ -1,6 +1,8 @@
 # Native Qt desktop build
 
-The 0.7.0 editor, creative tools and persistent render queue use Qt 6 Widgets and the same C++20 CPU/Vulkan rendering and legacy-document library as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ and zlib runtimes. Keep the complete executable directory together.
+The 0.8.0 editor combines the existing creative tools and persistent render queue with native projects, a Lua/legacy script editor, trusted native variation plugins and historical palette/UPR exchange. It uses Qt 6 Widgets and the same C++20 document, scripting and CPU/Vulkan rendering libraries as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ and zlib runtimes. Keep the complete executable directory and its plugin subdirectories together.
+
+Lua 5.5.1 is built from the vendored sources as the static `apo-lua` library and linked into the core. End users need no separate Lua installation or Lua DLL. The selected upstream sources are compiled as C++ so Lua's protected errors unwind C++ host callbacks correctly; do not change that build to C/`longjmp` without revising the integration. The complete MIT notice ships in [licenses/lua/LICENSE.txt](../licenses/lua/LICENSE.txt) and beside the source in [third_party/lua/LICENSE](../third_party/lua/LICENSE), with version, source hashes and build details in [third_party/lua/README.md](../third_party/lua/README.md).
 
 ## Build with an installed Qt development kit
 
@@ -11,7 +13,7 @@ export APO_QT_PREFIX=/path/to/Qt/6.8.2/your-desktop-kit
 bash scripts/build-editor.sh
 ```
 
-The script invokes the normal source build with `APO_BUILD_EDITOR=ON`, builds the editor and tests, and runs CTest. The Qt directory can also be supplied as `-DCMAKE_PREFIX_PATH=...`. Expat and zlib installed through vcpkg can use the existing `VCPKG_ROOT` handling in `scripts/build.sh`; install both for the selected target triplet. CMake links the core to `ZLIB::ZLIB`. A core-only build uses `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF` and still requires Expat and zlib.
+The script invokes the normal source build with `APO_BUILD_EDITOR=ON`, builds the editor and tests, and runs CTest. The Qt directory can also be supplied as `-DCMAKE_PREFIX_PATH=...`. Expat and zlib installed through vcpkg can use the existing `VCPKG_ROOT` handling in `scripts/build.sh`; install both for the selected target triplet. CMake links the core to `ZLIB::ZLIB`. A core-only build uses `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF` and still requires Expat and zlib. Both configurations build the `sample_wave` SDK example in `build/plugins/reborn-wave`; tests additionally build the valid and incompatible-ABI fixture modules. Lua is built from the included source in either configuration.
 
 ## Vulkan build and runtime
 
@@ -73,12 +75,22 @@ python3 scripts/stage_editor_runtime.py \
   --compiler-runtime "$APO_TOOLCHAIN/x86_64-w64-mingw32/bin" \
   --objdump "$APO_TOOLCHAIN/bin/llvm-objdump" \
   --output "$APO_EDITOR_BUILD/portable" \
+  --module "$APO_EDITOR_BUILD/app/plugins/reborn-wave/reborn_wave.dll" \
+           plugins/reborn-wave/reborn_wave.dll \
+  --data "$APO_EDITOR_BUILD/app/plugins/reborn-wave/reborn_wave.apoplugin" \
+         plugins/reborn-wave/reborn_wave.apoplugin \
+  --module "$APO_EDITOR_BUILD/app/libplugin-fixture.dll" \
+           tests/plugins/libplugin-fixture.dll \
+  --module "$APO_EDITOR_BUILD/app/libplugin-bad-abi.dll" \
+           tests/plugins/libplugin-bad-abi.dll \
   "$APO_EDITOR_BUILD/app/"*.exe
 ```
 
 For an extracted Debian host Qt installation, set `LD_LIBRARY_PATH` to its `usr/lib/x86_64-linux-gnu` directory while running CMake and host Qt tools. This is specific to the isolated development environment. Installed Qt kits use their normal runtime lookup.
 
-The runtime staging script requires all package dependencies to be extracted into the Qt prefix. Downloaded input names and checksums are in `licenses/qt/PACKAGES.sha256`. Its `qt.conf` keeps plugin lookup relative to the executable directory. The `runtime-dependencies.json` beside the editor lists the actual copied DLLs and Windows system imports. Copy the staged runtime to `bin/windows-x64` in a full source distribution and retain the examples, notices and corresponding source archives.
+The runtime staging script requires all package dependencies to be extracted into the Qt prefix. Downloaded input names and checksums are in `licenses/qt/PACKAGES.sha256`. Repeatable `--module SOURCE RELATIVE` arguments add PE roots at the requested relative locations and include their dependency checks; repeatable `--data SOURCE RELATIVE` arguments copy sidecars or other data without loading them. Relative destinations use `/`, and traversal, conflicting file/directory destinations and output symlink escapes are rejected before payloads are copied. The script checks imported non-system symbols; it does not execute the Windows files. Its path/dependency regression checks can be run with `python3 tests/staging_tests.py`.
+
+The generated `qt.conf` keeps Qt plugin lookup relative to the executable directory. `runtime-dependencies.json` lists the actual staged files, data files and Windows system imports. Copy the staged runtime to `bin/windows-x64` in a full source distribution and retain the examples, notices and corresponding source archives. The native variation sample is `bin/windows-x64/plugins/reborn-wave/reborn_wave.dll` with its adjacent `.apoplugin` sidecar. Test-only modules are `bin/windows-x64/tests/plugins/libplugin-fixture.dll` and `libplugin-bad-abi.dll`; the plugin test executable supplies their explicit paths.
 
 ## Native and Windows verification
 
@@ -90,13 +102,25 @@ export QT_QPA_PLATFORM_PLUGIN_PATH=/path/to/native-qt/usr/lib/x86_64-linux-gnu/q
 ctest --test-dir build --output-on-failure
 ```
 
-The Linux editor uses Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. M7 registers **25 CTest entries**, including file rendering/checkpoints, streaming image codecs, bounded Vulkan hit streaming, CLI file workflows and the render queue. The final Release and ASan/UBSan execution records accompany the distribution; leak detection is disabled for the sanitizer run. The core-only build with Vulkan disabled has **19 CTest entries**: 16 pass and three device-execution checks explicitly skip. A skipped check does not establish GPU execution.
+The Linux editor uses Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. M8 adds project-envelope, Lua/legacy script, script-output boundary, UGR/MAP/UPR and native plugin tests, plus Qt extension and plugin-dialog tests. The GUI tests cover private script execution, one-step document undo, queue batches, source/recovery protection, plugin approvals and fingerprint-checked queue restoration.
+
+The final M8 native Release suite passed **33/33 CTest entries in 6.09 seconds**. A separate ASan/UBSan build passed **33/33 in 48.83 seconds** with leak detection disabled; this does not establish a leak-check result. The Vulkan-disabled core-only build passed **22 checks** and skipped **three device-execution checks**, for **25 entries in 1.95 seconds**. [TEST_PLAN.md](TEST_PLAN.md) records the options, execution scope and limits. Full logs are retained in the package's `verification` directory; a registered test or a cross-compiled test executable alone is not an execution result.
+
+The complete M8 Windows build produces **26 executables**: the CLI, sixteen core test programs, the editor and eight Qt test programs. It also produces the SDK example DLL/manifest and two plugin test DLLs listed above. Lua is statically linked, while the chosen Qt, C++ and zlib runtime files remain beside the executables. The final M8 stage contains **63 runtime files**, including **60 PE modules**. Its recursive dependency audit resolved **19,959 non-system imported symbols**, with **zero missing**. Executable and plugin fingerprints are recorded in the package's `verification/windows-runtime-record.json`.
+
+The Windows binaries are cross-compiled and statically audited here, with **no Windows runtime execution** in this environment. The audit checks the packaged imports and exports; the dynamically loaded system Vulkan driver requires a separate Windows execution check.
+
+### Historical measurements
+
+M7 registered **25 CTest entries**, including file rendering/checkpoints, streaming image codecs, bounded Vulkan hit streaming, CLI file workflows and the render queue. Its separate core-only, Vulkan-disabled configuration had **19 CTest entries**: 16 passed and three device-execution checks explicitly skipped. The M7 Release and ASan/UBSan records describe that earlier source revision; leak detection was disabled for the sanitizer run. A skipped check does not establish GPU execution.
 
 For historical comparison, the M6 Release build passed its 20 entries in 3.42 seconds and the M6 ASan/UBSan build passed the same 20 in 18.37 seconds. Its core-only Vulkan-disabled configuration had 15 entries: 13 passed and two skipped.
 
-The compute tests execute through llvmpipe software Vulkan on this host. M7 compares dense and streamed GPU histograms and final pixels, tests partial GPU checkpoint resume and rejects an incompatible shader identity. Native acceptance also renders an actual 16384×16384 PNG RGBA16 through the queue, pauses with a committed checkpoint, resumes and records responsive event-loop heartbeats. These results verify the algorithms, compute/API path and bounded rendering workflow; physical GPU performance and Windows driver acceptance remain separate checks. The M6 native desktop interaction and `examples/gpu-palette-study.flame` remain part of the earlier verification history.
+The historical compute executions used llvmpipe software Vulkan on this host. M7 compared dense and streamed GPU histograms and final pixels, tested partial GPU checkpoint resume and rejected an incompatible shader identity. Its native acceptance also rendered an actual 16384×16384 PNG RGBA16 through the queue, paused with a committed checkpoint, resumed and recorded responsive event-loop heartbeats. Those results verify the earlier algorithms, compute/API path and bounded rendering workflow; they do not establish physical GPU performance or Windows driver acceptance. The M6 native desktop interaction and `examples/gpu-palette-study.flame` remain part of that earlier verification history.
 
-The M7 Windows editor and eighteen console executables cross-compile against the matched Qt headers and import libraries: **19 executables** in total. The staged runtime contains **52 files**, including **50 PE modules**. Its dependency audit resolves all **14,948 non-system imported symbols** against the exact copied libraries, with zero missing; `verification/windows-runtime-record.json` records the source/executable fingerprints. All staged executables match the final build. The Windows programs were compiled and audited, not executed. The system Vulkan loader is loaded dynamically, so the static import audit does not itself verify a Windows Vulkan driver. The prior M6 stage contained 15 executables, 48 files and 46 PE modules, with 13,232 resolved non-system symbols.
+The historical M7 Windows stage contained **19 executables**, **52 files** and **50 PE modules**. Its dependency audit resolved **14,948 non-system imported symbols** against its copied libraries with zero missing. The prior M6 stage contained 15 executables, 48 files and 46 PE modules, with 13,232 resolved non-system symbols. These are historical stage measurements, not the M8 audit totals. Neither stage established Windows runtime execution.
+
+### Run the current Windows checks
 
 When ready to run that check on Windows 11, extract the complete milestone ZIP and run from Git Bash.
 
@@ -104,7 +128,26 @@ When ready to run that check on Windows 11, extract the complete milestone ZIP a
 bash scripts/verify-editor-windows.sh
 ```
 
-The script records the OS version and Vulkan discovery, runs the CPU/core and Qt tests, checks CPU fallback and checkpoint resume, then launches both the creative and queue smoke workflows explicitly with the CPU backend. The core script covers BMP, PPM, PNG and TIFF, true 16-bit output and transparent PNG/TIFF; the queue smoke writes PNG RGBA16 and TIFF RGB16 and checks UI heartbeats. It verifies every required output and inspects the saved original, random batch and mutation flame through the CLI. It keeps a log and artifacts under the project's `logs` and `out` directories. A GPU is not required, and the CPU script does not claim Vulkan execution. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+The script records the OS version and Vulkan discovery, runs the CPU/core and Qt tests, checks CPU fallback and checkpoint resume, then launches the creative, queue and M8 extension smoke workflows explicitly with the CPU backend. It explicitly enables the bundled SDK and test modules for the corresponding plugin checks. The core workflow exercises native projects, modern and legacy scripts, UGR/MAP/UPR exchange and scripted native-plugin rendering, alongside BMP/PPM/PNG/TIFF, true 16-bit output and transparent PNG/TIFF. The queue smoke writes PNG RGBA16 and TIFF RGB16 and checks UI heartbeats. Required outputs are checked and the saved documents are inspected through the CLI. Logs and artifacts stay under the project's `logs` and `out` directories. A GPU is not required, and this CPU script does not claim Vulkan execution. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+
+The M8 workflow can also run directly from the extracted project root:
+
+```bash
+./bin/windows-x64/apophysis-reborn.exe \
+  --extensions-smoke-test out/extensions-smoke \
+  --plugin-manifest bin/windows-x64/plugins/reborn-wave/reborn_wave.apoplugin \
+  --backend cpu
+```
+
+This explicit plugin argument trusts the bundled sample's native code for the smoke run. The workflow exercises the actual script editor, plugin manager and render queue; it saves a native project, executes a supported legacy script and exports UGR/MAP palettes. Its report identifies the loaded module fingerprint and actual render backend.
+
+| M8 smoke outputs | Files |
+| --- | --- |
+| Window screenshots | `script-editor.png`, `plugin-manager.png`, `script-render-queue.png`, `extensions-editor.png` |
+| Report / native project | `extensions-report.json`, `example.apoproject` |
+| Scripted output | `script-export.flame`, `script-palette.gpl`, `script-render.png` |
+| Legacy script result | `legacy-script.flame`, `legacy-translated.lua` |
+| Palette exchange | `palette.ugr`, `palette.map` |
 
 The ordinary gate includes a 16K storage estimate. Request the actual 16K render and pause/resume acceptance explicitly when ready:
 

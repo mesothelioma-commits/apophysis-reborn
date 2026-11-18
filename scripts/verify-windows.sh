@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M7 high-resolution CPU/export/checkpoint verification in Git Bash on Windows.
+# M8 compatibility, scripting, plugins and CPU/export/checkpoint verification.
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
@@ -11,10 +11,18 @@ exec > >(tee "$log") 2>&1
 trap 'status=$?; echo "Exit code: $status"; echo "Log: $log"; exit "$status"' EXIT
 bin=./bin/windows-x64
 for exe in flame-cpu reference-tests import-tests renderer-tests legacy-document-tests creative-tests \
-    extended-variation-tests gpu-kernel-tests file-render-tests image-stream-tests; do
+    extended-variation-tests gpu-kernel-tests file-render-tests image-stream-tests \
+    project-io-tests legacy-formats-tests script-tests script-host-tests plugin-tests; do
     [[ -f "$bin/$exe.exe" ]] || { echo "Missing $bin/$exe.exe. Extract the full milestone ZIP before running this check."; exit 1; }
 done
-echo "Apophysis Reborn 0.7.0 CPU and file-export verification / $(date -Iseconds)"
+plugin_manifest="$bin/plugins/reborn-wave/reborn_wave.apoplugin"
+plugin_fixture="$bin/tests/plugins/libplugin-fixture.dll"
+plugin_bad_abi="$bin/tests/plugins/libplugin-bad-abi.dll"
+for file in "$plugin_manifest" "$bin/plugins/reborn-wave/reborn_wave.dll" "$plugin_fixture" "$plugin_bad_abi"; do
+    [[ -f "$file" ]] || { echo "Missing $file. Extract the full milestone ZIP before running this check."; exit 1; }
+done
+echo "Apophysis Reborn 0.8.0 extended compatibility and CPU verification / $(date -Iseconds)"
+echo "This check explicitly enables the bundled sample_wave and test fixture DLLs, which are native code."
 cmd.exe //c ver
 "$bin/flame-cpu.exe" --list-devices --json | tee "$run_dir/devices.json"
 "$bin/reference-tests.exe" tests/reference-vectors.tsv tests/reference-geometry.flame tests/reference-image.flame tests/reference-image.ppm
@@ -26,6 +34,58 @@ cmd.exe //c ver
 "$bin/gpu-kernel-tests.exe" --cpu-only
 "$bin/image-stream-tests.exe"
 "$bin/file-render-tests.exe" --cpu-only
+"$bin/project-io-tests.exe"
+"$bin/legacy-formats-tests.exe" tests/fixtures/formats
+"$bin/script-tests.exe"
+"$bin/script-host-tests.exe"
+"$bin/plugin-tests.exe" "$plugin_manifest" "$plugin_fixture" "$plugin_bad_abi"
+
+# M8 workflows use isolated outputs and never modify the bundled source files.
+m8_dir="$run_dir/extensions"
+mkdir -p "$m8_dir"
+"$bin/flame-cpu.exe" plugins info "$plugin_manifest"
+"$bin/flame-cpu.exe" project create examples/ember-spiral.flame --output "$m8_dir/example.apoproject"
+"$bin/flame-cpu.exe" project inspect "$m8_dir/example.apoproject"
+"$bin/flame-cpu.exe" project extract "$m8_dir/example.apoproject" --output "$m8_dir/extracted.flame"
+cmp examples/ember-spiral.flame "$m8_dir/extracted.flame"
+"$bin/flame-cpu.exe" script "$m8_dir/example.apoproject" \
+    --script examples/scripts/palette-and-geometry.lua --output "$m8_dir/lua.apoproject"
+"$bin/flame-cpu.exe" inspect "$m8_dir/lua.apoproject" --json
+"$bin/flame-cpu.exe" script examples/ember-spiral.flame \
+    --script examples/scripts/legacy-triangles.asc --output "$m8_dir/legacy-script.flame"
+"$bin/flame-cpu.exe" inspect "$m8_dir/legacy-script.flame" --json
+"$bin/flame-cpu.exe" --flame "$m8_dir/legacy-script.flame" --size 160 120 \
+    --samples 8195 --threads 1 --backend cpu --output "$m8_dir/legacy-script.png"
+"$bin/flame-cpu.exe" palette-export "$m8_dir/lua.apoproject" --output "$m8_dir/palette.ugr"
+"$bin/flame-cpu.exe" palette-export "$m8_dir/lua.apoproject" --output "$m8_dir/palette.map"
+"$bin/flame-cpu.exe" palette-import "$m8_dir/palette.ugr" --flame examples/ember-spiral.flame \
+    --output "$m8_dir/ugr-roundtrip.flame"
+"$bin/flame-cpu.exe" palette-export "$m8_dir/ugr-roundtrip.flame" --output "$m8_dir/ugr-roundtrip.map"
+cmp "$m8_dir/palette.map" "$m8_dir/ugr-roundtrip.map"
+"$bin/flame-cpu.exe" upr-import examples/classic-upr-study.upr --output "$m8_dir/upr.flame"
+"$bin/flame-cpu.exe" upr-export "$m8_dir/upr.flame" --output "$m8_dir/roundtrip.upr"
+"$bin/flame-cpu.exe" --plugin "$plugin_manifest" --flame examples/plugins/reborn-wave/sample-wave.flame \
+    --size 160 120 --samples 8195 --threads 1 --backend cpu --output "$m8_dir/plugin.png"
+cat > "$m8_dir/plugin-requests.lua" <<'LUA'
+apo.set_flame {name = 'Windows plugin script'}
+local t = apo.transform(1)
+t.variations = {
+  {name = 'linear', weight = 0.8},
+  {name = 'sample_wave', weight = 0.2, parameters = {amplitude = 0.18, frequency = 3}}
+}
+apo.set_transform(1, t)
+apo.export_flame('plugin-script.flame')
+apo.render('plugin-script.png', {width=160,height=120,samples=8195,
+  seed='18446744073709551615',threads=1,backend='cpu',format='png16',alpha=true})
+LUA
+"$bin/flame-cpu.exe" --plugin "$plugin_manifest" script examples/ember-spiral.flame \
+    --script "$m8_dir/plugin-requests.lua" --output "$m8_dir/plugin-result.apoproject" \
+    --allow-renders --allow-exports --output-dir "$m8_dir"
+"$bin/flame-cpu.exe" --plugin "$plugin_manifest" inspect "$m8_dir/plugin-script.flame" --json
+for file in example.apoproject lua.apoproject legacy-script.flame legacy-script.png palette.ugr \
+    palette.map upr.flame roundtrip.upr plugin.png plugin-result.apoproject plugin-script.flame plugin-script.png; do
+    [[ -s "$m8_dir/$file" ]] || { echo "M8 verification did not produce $file"; exit 1; }
+done
 "$bin/flame-cpu.exe" inspect tests/legacy/fox-3d-hack.flame --json
 "$bin/flame-cpu.exe" save tests/legacy/fox-3d-hack.flame --output "$run_dir/legacy-copy.flame"
 cmp tests/legacy/fox-3d-hack.flame "$run_dir/legacy-copy.flame"
@@ -81,8 +141,8 @@ cmp "$run_dir/before-pause.txt" "$run_dir/resumed.ppm"
 "$bin/flame-cpu.exe" --flame examples/ember-spiral.flame --size 192 144 --samples 65539 \
     --threads 1 --backend cpu --strip-rows 7 --output "$run_dir/fresh.ppm"
 cmp "$run_dir/resumed.ppm" "$run_dir/fresh.ppm"
-sha256sum "$bin/"*.exe "$run_dir/ember-4.bmp"
-echo "Passed historical pixels, legacy preservation, creative algorithms, CPU references, bounded file rendering, all image formats, true 16-bit/alpha export and committed pause/resume on this computer."
+sha256sum "$bin/"*.exe "$bin/plugins/reborn-wave/reborn_wave.dll" "$plugin_fixture" "$plugin_bad_abi" "$run_dir/ember-4.bmp"
+echo "Passed native projects, Lua/legacy scripts, UGR/MAP/UPR exchange, trusted native plugin contracts, historical pixels, legacy preservation, creative algorithms, CPU references, bounded file rendering, all image formats, true 16-bit/alpha export and committed pause/resume on this computer."
 echo "The 16K check above validates the storage plan; it does not render a 16K image."
 echo "No Vulkan execution is required or claimed by this CPU verification script."
 echo "Device inventory: $run_dir/devices.json"

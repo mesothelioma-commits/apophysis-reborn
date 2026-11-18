@@ -50,6 +50,9 @@ public:
     // Replace only the selected entry's palette payload. Embedded palette comments are retained.
     // Indexed palette references become palette="-1"; other source data and encoding survive.
     void edit_palette(std::size_t index, const Palette& palette);
+    // Atomically apply one complete scripting model while preserving unrelated source bytes.
+    void apply_model(std::size_t index, const Flame& model,
+                     std::span<const std::optional<std::size_t>> transform_sources = {});
     // Appending to a standalone flame adds a collection wrapper without rewriting its bytes.
     // New models are validated and serialized; duplicate retains even unsupported source data.
     std::size_t append_flame(const Flame& flame);

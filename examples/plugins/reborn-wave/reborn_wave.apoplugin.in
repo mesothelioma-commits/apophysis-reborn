@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<apophysis-plugin abi="1" id="org.apophysis.reborn.wave" name="sample_wave" version="1.0.0" description="Ordinary 2D sine displacement" library="@APO_PLUGIN_LIBRARY@">
+  <parameter name="amplitude" default="0.2" min="-2" max="2" type="real"/>
+  <parameter name="frequency" default="3" min="0" max="20" type="real"/>
+</apophysis-plugin>

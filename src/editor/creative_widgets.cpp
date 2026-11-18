@@ -1,6 +1,8 @@
 #include "creative_widgets.hpp"
 #include "document_session.hpp"
 #include "flame_io.hpp"
+#include "legacy_formats.hpp"
+#include "plugin.hpp"
 #include "output_file.hpp"
 #include <QCheckBox>
 #include <QColorDialog>
@@ -62,8 +64,17 @@ bool equal(const Affine &a, const Affine &b) {
     return a.a == b.a && a.b == b.b && a.c == b.c && a.d == b.d && a.e == b.e && a.f == b.f;
 }
 bool equal(const std::vector<Term> &a, const std::vector<Term> &b) {
-    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](Term x, Term y) {
-               return x.id == y.id && x.weight == y.weight;
+    return a.size() == b.size() &&
+           std::equal(a.begin(), a.end(), b.begin(), [](const Term &x, const Term &y) {
+               if (x.id != y.id || x.weight != y.weight || term_name(x) != term_name(y) ||
+                   x.plugin_parameters != y.plugin_parameters || bool(x.plugin) != bool(y.plugin))
+                   return false;
+               if (!x.plugin)
+                   return true;
+               const auto &left = x.plugin->info();
+               const auto &right = y.plugin->info();
+               return left.id == right.id && left.version == right.version &&
+                      left.fingerprint == right.fingerprint;
            });
 }
 QColor color(RGB value) {
@@ -223,7 +234,7 @@ GradientDialog::GradientDialog(const Flame &flame, QWidget *parent, const Previe
     top->addWidget(presets_, 1);
     auto usePreset = button("Use preset", "usePalettePreset");
     auto import = button("Import…", "importPalette");
-    auto exportPalette = button("Export GPL…", "exportPalette");
+    auto exportPalette = button("Export…", "exportPalette");
     auto savePreset = button("Save to library…", "savePalettePreset");
     for (auto control : {usePreset, import, exportPalette, savePreset})
         top->addWidget(control);
@@ -469,17 +480,21 @@ GradientDialog::GradientDialog(const Flame &flame, QWidget *parent, const Previe
     connect(import, &QPushButton::clicked, this, [this] {
         const auto path = QFileDialog::getOpenFileName(
             this, "Import palette", {},
-            "Palettes and flames (*.gpl *.flame *.xml *.temp);;All files (*)");
+            "Palettes and flames (*.gpl *.ugr *.map *.flame *.xml *.temp);;GIMP palettes (*.gpl);;Ultra Fractal gradients (*.ugr);;Fractint palettes (*.map);;All files (*)");
         if (!path.isEmpty())
             run([&] { importPaletteFile(path); });
     });
     connect(exportPalette, &QPushButton::clicked, this, [this] {
-        auto path = QFileDialog::getSaveFileName(this, "Export GIMP palette", "palette.gpl",
-                                                 "GIMP palettes (*.gpl)");
+        QString selectedFilter;
+        auto path = QFileDialog::getSaveFileName(
+            this, "Export palette", "palette",
+            "GIMP palettes (*.gpl);;Ultra Fractal gradients (*.ugr);;Fractint palettes (*.map)",
+            &selectedFilter);
         if (!path.isEmpty())
             run([&] {
                 if (QFileInfo(path).suffix().isEmpty())
-                    path += ".gpl";
+                    path += selectedFilter.contains("*.ugr") ? ".ugr"
+                            : selectedFilter.contains("*.map") ? ".map" : ".gpl";
                 exportPaletteFile(path);
             });
     });
@@ -590,8 +605,51 @@ void GradientDialog::buildStops() {
                                                       : creative::GradientSpace::rgb));
 }
 void GradientDialog::importPaletteFile(const QString &path) {
-    if (QFileInfo(path).suffix().compare("gpl", Qt::CaseInsensitive) == 0) {
+    const auto suffix = QFileInfo(path).suffix().toLower();
+    if (suffix == "gpl") {
         setColors(creative::import_gimp_palette(readSmallFile(path)));
+        return;
+    }
+    if (suffix == "map") {
+        setColors(import_fractint_map(readSmallFile(path)));
+        return;
+    }
+    if (suffix == "ugr") {
+        const auto entries = import_ugr(readSmallFile(path));
+        QStringList names, issues;
+        std::vector<std::size_t> indices;
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            const auto label = QString::number(i + 1) + " · " + text(entries[i].name);
+            if (entries[i].report.supported()) {
+                indices.push_back(i);
+                names << label;
+            } else {
+                QStringList reasons;
+                for (const auto &error : entries[i].report.errors)
+                    reasons << text(error);
+                issues << label + ": " + reasons.join("; ");
+            }
+        }
+        if (indices.empty())
+            throw std::invalid_argument(("No compatible UGR gradients. " + issues.join("\n")).toStdString());
+        int chosen = 0;
+        if (entries.size() > 1) {
+            bool ok = false;
+            const auto item = QInputDialog::getItem(
+                this, "Choose UGR palette", "Compatible gradients", names, 0, false, &ok);
+            if (!ok)
+                return;
+            chosen = names.indexOf(item);
+        }
+        const auto &entry = entries[indices.at(chosen)];
+        setColors(entry.palette);
+        QStringList details;
+        details << "Imported " + text(entry.name) + ".";
+        for (const auto &warning : entry.report.warnings)
+            details << text(warning);
+        if (!issues.isEmpty())
+            details << "Skipped unsupported gradients:\n" + issues.join("\n");
+        status_->setText(details.join("\n"));
         return;
     }
     const auto document = LegacyDocument::load(filesystemPath(path));
@@ -616,8 +674,17 @@ void GradientDialog::importPaletteFile(const QString &path) {
     setColors(document.render_model(indices.at(chosen)).palette);
 }
 void GradientDialog::exportPaletteFile(const QString &path) const {
-    const auto bytes =
-        creative::export_gimp_palette(flame_.palette, QFileInfo(path).completeBaseName().toStdString());
+    const auto suffix = QFileInfo(path).suffix().toLower();
+    const auto name = QFileInfo(path).completeBaseName().toStdString();
+    std::string bytes;
+    if (suffix == "ugr")
+        bytes = export_ugr(flame_.palette, name);
+    else if (suffix == "map")
+        bytes = export_fractint_map(flame_.palette, name);
+    else if (suffix == "gpl" || suffix.isEmpty())
+        bytes = creative::export_gimp_palette(flame_.palette, name);
+    else
+        throw std::invalid_argument("Choose a .gpl, .ugr or .map palette filename.");
     write_atomic(filesystemPath(path), [&](std::ostream &out) { out << bytes; });
 }
 
