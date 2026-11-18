@@ -29,6 +29,9 @@ struct RenderJob {
   Flame flame;
   RenderOptions render;
   FileRenderOptions file;
+  // Null retains ordinary render behavior; empty requires an absent output;
+  // a SHA-256 requires the admitted file to remain byte-identical until publish.
+  std::optional<std::string> destination_sha256;
   RenderJobState state = RenderJobState::queued;
   QString phase, backend, device, fallback, error;
   std::uint64_t completed_samples = 0, plotted = 0, invalid = 0;

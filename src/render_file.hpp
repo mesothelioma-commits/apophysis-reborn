@@ -19,6 +19,9 @@ struct FileRenderOptions {
     std::uint64_t disk_mib = 16384;
     unsigned strip_rows = 0; // Zero chooses a height within the working-memory budget.
     std::function<void(const FileRenderProgress&)> status;
+    // Host-side publication guard, called after reconstruction immediately
+    // before the atomic image replacement. Not part of rendering identity.
+    std::function<void()> before_publish;
 };
 struct RenderFilePlan {
     int width = 0, height = 0;

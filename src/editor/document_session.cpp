@@ -61,6 +61,21 @@ private:
   bool beforeFinal_, afterFinal_;
 };
 
+class AnimationChange : public QUndoCommand {
+public:
+  AnimationChange(DocumentSession &session, QString label,
+                  std::optional<std::string> after)
+      : QUndoCommand(std::move(label)), session_(session),
+        before_(session.projectSnapshot().animation_data),
+        after_(std::move(after)) {}
+  void undo() override { session_.restoreAnimation(before_); }
+  void redo() override { session_.restoreAnimation(after_); }
+
+private:
+  DocumentSession &session_;
+  std::optional<std::string> before_, after_;
+};
+
 DocumentSession::DocumentSession(QObject *parent)
     : QObject(parent), undo_(this) {
   undo_.setUndoLimit(100);
@@ -129,6 +144,10 @@ void DocumentSession::save(const QString &path, bool replaceExternalChange) {
   };
   checkConflict();
   const bool native = is_project_path(filesystemPath(path));
+  if (!native && hasAnimation())
+    throw std::invalid_argument(
+        "This document contains animation. Save it as .apoproject to retain "
+        "the timeline, or export a separate flame library.");
   auto project = projectSnapshot();
   const auto bytes = native ? serialize_project(project) : document_->bytes();
   write_atomic(
@@ -167,6 +186,25 @@ void DocumentSession::setProjectState(ProjectFile state) {
   project_ = std::move(state);
   projectDirty_ = true;
   emit modifiedChanged(true);
+}
+
+void DocumentSession::changeAnimation(const QString &label,
+                                      std::optional<std::string> bytes) {
+  auto state = projectSnapshot();
+  if (state.animation_data == bytes)
+    return;
+  state.animation_data = bytes;
+  // Validate all envelope limits before the undo command mutates anything.
+  (void)serialize_project(state);
+  undo_.push(new AnimationChange(*this, label, std::move(bytes)));
+}
+
+void DocumentSession::restoreAnimation(
+    const std::optional<std::string> &bytes) {
+  auto state = projectSnapshot();
+  state.animation_data = bytes;
+  project_ = std::move(state);
+  emit changed();
 }
 
 void DocumentSession::selectFlame(int index) {

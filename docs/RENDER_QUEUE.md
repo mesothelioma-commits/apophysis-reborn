@@ -1,6 +1,6 @@
-# Render queue and high-resolution dialog — 0.8.0
+# Render queue and high-resolution dialog — 0.9.0
 
-The native editor's persistent render queue was introduced in M7. M8 adds scripted render batches, native-project render presets and exact plugin identities for saved jobs. Each job owns an immutable flame snapshot and render settings, so you can keep editing the source while a background worker renders the queue in order.
+The native editor's persistent render queue was introduced in M7. M8 added scripted render batches, native-project render presets and exact plugin identities for saved jobs. M9 adds evaluated animation-frame batches and preserved color-curve settings. Each job owns an immutable flame snapshot and render settings, so you can keep editing the source while a background worker renders the queue in order.
 
 ## Add a render
 
@@ -33,6 +33,14 @@ After a successful run, **Apply result** checks all destinations, snapshots and 
 The output folder bounds script-requested paths. Inputs, application configuration and recovery files, queue state, checkpoint storage, loaded native module files and paths already reserved by pending jobs remain protected. **Allow replacing output files** permits replacing ordinary existing outputs; it does not bypass those protections. Scripts cannot supply checkpoint or resume paths. The host allocates each accepted job's checkpoint directory.
 
 **Apply result** makes one document undo step. Undo affects the edited document; queued jobs and files already exported remain. If the script also requests exports, **Allow exports** must be enabled. Those files are published atomically one at a time, so an I/O failure on a later file can leave earlier completed exports in place; the Activity panel identifies them. Document changes, external files and the render queue are not one filesystem transaction. See [SCRIPTING.md](SCRIPTING.md) for request fields and [EDITOR.md](EDITOR.md) for the script controls.
+
+## Animated frame sequences
+
+Open **Tools → Animation timeline… → Image sequence** and choose the inclusive frame range, step, output folder/prefix, fixed canvas, format, samples and budgets. **Apply & queue frames** preflights the selected frames and adds them as one persisted batch. The queue admits at most 1,000 total jobs; select explicit subranges for longer clips. Filenames retain the original zero-based frame indices, and every job owns its evaluated model, color curves, seed and native-module references. Timeline undo does not remove already queued jobs.
+
+Existing frame images require **Replace existing frame images**. A destination that appears or changes after admission is checked again immediately before publication and is preserved if it conflicts. That admitted destination state survives queue save/restore. The animation batch's disk budget includes all retained job checkpoints, not just the currently running frame's scratch files. A stopped queue waits for **Start / resume**; an already running queue continues into its new jobs.
+
+See [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md) for timeline controls and [COLOR_TOOLS.md](COLOR_TOOLS.md) for the curve settings carried in each snapshot. [ANIMATION_CLI.md](ANIMATION_CLI.md) describes the separate CLI sequence journal, completed-image hash verification and resume workflow. CLI sequences remove completed frame checkpoints; the Qt queue retains them under its existing recovery policy.
 
 ## Queue controls
 
@@ -88,6 +96,8 @@ M8 native variations have CPU implementations only. CPU rendering is supported d
 
 M8's `extensions-editor-tests` exercises private script application, document undo and validated batches. `plugin-dialog-tests` covers explicit approvals, disabled-plugin snapshot lifetime, exact plugin identities and restoration failure without overwriting queue state. These checks run natively; the Windows binaries are cross-compiled and statically audited in this environment. Windows runtime execution remains a separate acceptance step.
 
+M9's `animation-editor-tests` adds timeline/private-edit and frame-batch coverage, including destination conflicts. `color-editor-tests` checks curve snapshots through queue save/restore and source-preserving dialog undo. The core sequence tests cover interrupted publication, checkpoint reuse and verification of completed image bytes. Current executed results and platform boundaries are in [TEST_PLAN.md](TEST_PLAN.md); the separate [animation CLI guide](ANIMATION_CLI.md) explains the sequence recovery contract.
+
 From the extracted package root on Windows, run a small native UI check:
 
 ```sh
@@ -106,6 +116,8 @@ The M8 extension smoke exercises the script editor, trusted bundled plugin and q
 ```
 
 The explicit manifest argument opts into the bundled sample's native code for this process. Outputs include `script-editor.png`, `plugin-manager.png`, `script-render-queue.png`, `extensions-editor.png`, `script-render.png`, `example.apoproject`, script/legacy/palette exports and `extensions-report.json`. The report records the actual backend and plugin fingerprint. [QT_BUILD.md](QT_BUILD.md) lists every output and the complete Windows verification commands. For a native source build, substitute `./build/apophysis-reborn` and its `build/plugins/reborn-wave/reborn_wave.apoplugin` manifest.
+
+The packaged full-16K long-run measurements are historical M7 evidence. Running the following optional command on a current build creates a separate acceptance run; the small M9 suites do not repeat or replace those long-run measurements.
 
 For an optional full-resolution acceptance run, outside normal CTest:
 

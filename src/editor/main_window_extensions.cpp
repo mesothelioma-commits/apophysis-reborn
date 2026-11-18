@@ -1,4 +1,5 @@
 #include "../flame_io.hpp"
+#include "../animation.hpp"
 #include "../legacy_formats.hpp"
 #include "../output_file.hpp"
 #include "../plugin.hpp"
@@ -420,7 +421,7 @@ void MainWindow::captureProjectState() {
   project.render_settings = renderSettings_;
   project.render_presets = renderPresets_;
   project.metadata["application"] = "Apophysis Reborn";
-  project.metadata["application-version"] = "0.8.0";
+  project.metadata["application-version"] = "0.9.0";
   auto remember = [&](const Transform &transform) {
     for (const auto &term : transform.variations)
       if (term.plugin) {
@@ -449,6 +450,23 @@ void MainWindow::captureProjectState() {
       if (f.final_transform)
         remember(*f.final_transform);
     }
+  if (project.animation_data && is_animation_payload(*project.animation_data)) {
+    try {
+      const auto clip = parse_animation(*project.animation_data);
+      for (const auto &key : clip.keyframes) {
+        const auto document = LegacyDocument::parse(key.library_bytes);
+        if (document.render_issue(key.selected_index))
+          continue;
+        const auto frame = document.render_model(key.selected_index);
+        for (const auto &transform : frame.transforms)
+          remember(transform);
+        if (frame.final_transform)
+          remember(*frame.final_transform);
+      }
+    } catch (const std::exception &) {
+      // Preserve newer or unsupported animation payloads without interpretation.
+    }
+  }
   session_.setProjectState(std::move(project));
 }
 void MainWindow::restoreProjectState() {

@@ -1,6 +1,6 @@
-# Native Editor guide — 0.8.0
+# Native Editor guide — 0.9.0
 
-Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU/Vulkan rendering paths, document model, scripting host and plugin registry as the command-line tools. It starts with Ember Spiral when a file has not been supplied. M8 adds native projects, modern and supported legacy scripting, trusted native variations and historical palette/UPR exchange. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md); device selection and backend behavior are described in [GPU_RENDERING.md](GPU_RENDERING.md).
+Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU/Vulkan rendering paths, document model, scripting host and plugin registry as the command-line tools. It starts with Ember Spiral when a file has not been supplied. M9 adds the native animation timeline, morphing, queued frame sequences and extended color curves to M8's projects, scripting, trusted native variations and historical palette/UPR exchange. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md); device selection and backend behavior are described in [GPU_RENDERING.md](GPU_RENDERING.md).
 
 ## Open a project or flame library
 
@@ -14,7 +14,7 @@ A preservation-only entry displays its first render blocker. Its name, output di
 
 ### Native projects and historical exchange
 
-A native `.apoproject` file keeps the original flame library and its encoding inside a versioned envelope. It also retains the selected flame, preview and render settings, named render presets, workspace state, thumbnail, metadata and plugin references. Unknown project sections and reserved animation data survive round trips; animation playback is not implemented. Use **File → Save as…** and choose the native project format to retain this additional state. Opening plugin references never installs or enables native code. See [PROJECT_FORMAT.md](PROJECT_FORMAT.md) for the format and compatibility limits.
+A native `.apoproject` file keeps the original flame library and its encoding inside a versioned envelope. It also retains the selected flame, preview and render settings, named render presets, workspace state, thumbnail, metadata, plugin references and the M9 animation timeline. Unknown project sections and unsupported animation payloads survive round trips; the timeline editor reports unsupported data instead of replacing it. Use **File → Save as…** and choose the native project format to retain this additional state. Opening plugin references never installs or enables native code. See [PROJECT_FORMAT.md](PROJECT_FORMAT.md) for the format and compatibility limits.
 
 Opening a `.upr` collection offers its supported entries and reports incompatible entries. This accepts the historical Apophysis UPR dialect described in [LEGACY_FORMATS.md](LEGACY_FORMATS.md); arbitrary Ultra Fractal formulas and layered scenes are outside that importer. The original source stays untouched, and saving an imported entry as a native project retains its original UPR text as metadata. **File → Export Apophysis UPR…** writes only representable models and reports unsupported features before export.
 
@@ -78,11 +78,19 @@ Undo and redo restore complete document snapshots, including selection and origi
 
 ## Save documents and recover work
 
-**File → Save** writes the entire loaded document. In a legacy library, an unchanged save retains its original bytes. Edited saves patch the affected fields and transform elements, retaining unrelated entries, comments, history, and palettes. The original XML encoding is preserved. **Save as…** writes to a chosen path. Native projects retain this library inside the project envelope along with their additional state; choosing `.flame` or `.xml` saves the library without the project settings. If the current file changed on disk after opening, the editor offers **Save a copy**, **Replace disk version**, or **Cancel**.
+**File → Save** writes the entire loaded document. In a legacy library, an unchanged save retains its original bytes. Edited saves patch the affected fields and transform elements, retaining unrelated entries, comments, history, and palettes. The original XML encoding is preserved. **Save as…** writes to a chosen path. Native projects retain this library inside the project envelope along with their additional state. A document containing animation must be saved as `.apoproject`; **Export flame library** writes a separate `.flame` or `.xml` copy without discarding the open timeline. Without animation, choosing a legacy save format writes the library without project settings. If the current file changed on disk after opening, the editor offers **Save a copy**, **Replace disk version**, or **Cancel**.
 
 **Export selected flame** creates a canonical standalone file for the selected renderable model. It includes the supported parameters and embedded palette. Collection metadata, comments, and editor history are omitted by that export operation. Use **Save** when those original details should accompany the edited file.
 
 While a document has unsaved edits, the editor writes a recovery copy every 45 seconds. Native project recovery retains its envelope as well as the flame library. Startup offers the newest available recovery copy as an unsaved document, with **Recover edits**, **Discard recovery copy**, and **Later** choices. Copies belonging to an editor that is still open are skipped. Saving or discarding a recovered session removes its adopted recovery copy. Recovery files and the rotating activity log are stored in the application's per-user local data directory. Opening another document, creating a new flame, and closing the editor prompt about unsaved changes.
+
+## Animation, morphing and color curves
+
+Open **Tools → Animation timeline…** (`Ctrl+T`) or **Timeline** on the creative toolbar. Capture source flames at the playhead, set their outgoing transitions and review transform correspondence before morphing different entries. The timeline edits a private clip, provides local Undo/Redo, and previews scrubbed or played frames. **Apply timeline** creates a document undo step; **Cancel** discards the private changes. **Gradient** and **Adjustments** edit a selected keyframe, and **Use frame in editor** loads the evaluated playhead for ordinary editing. Save as `.apoproject` to retain the timeline and its source snapshots. The [timeline guide](ANIMATION_EDITOR.md) explains rational timing, presets, capture/import, playback and frame sequences; [MORPHING.md](MORPHING.md) defines correspondence and interpolation limits.
+
+**Adjustment editor → Tone / color → Tone curves…** edits master and RGB reconstruction curves. **Gradient editor → Color adjustments → Palette curves…** bakes curves into the working palette. Both offer plotted control points, numeric weights, presets and reset; cancelling a containing dialog discards its pending edits. The Gradient editor also provides HSL controls and linear-light RGB/HSL stop interpolation. Original 7X lookup and continuous transfer are explicit modes with different evaluation rules. See [COLOR_TOOLS.md](COLOR_TOOLS.md) before changing a historical curve's mode.
+
+On the timeline's **Image sequence** tab, choose a finite frame range and output settings, then use **Apply & queue frames**. Each admitted job keeps its own evaluated model and seed; later edits do not change it. Queue controls and checkpoint storage are covered in [RENDER_QUEUE.md](RENDER_QUEUE.md). The independent, resumable CLI sequence workflow is documented in [ANIMATION_CLI.md](ANIMATION_CLI.md).
 
 ## Run scripts
 
@@ -145,6 +153,7 @@ Library, transform, properties, and activity panels can be docked, tabbed, float
 | Ctrl+M | Mutation explorer |
 | Ctrl+Shift+N | Random flame generator |
 | Ctrl+E | Script editor |
+| Ctrl+T | Animation timeline |
 | Ctrl+R | Render image |
 | F11 | Full screen |
 

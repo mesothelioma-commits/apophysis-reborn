@@ -21,6 +21,7 @@ struct LegacyEdits {
     std::optional<double> filter_radius;
     std::optional<int> oversample;
     std::optional<RGB> background;
+    std::optional<ColorCurves> curves;
     std::optional<PaletteMode> palette_mode;
     // Remove explicit filter/filter_shape overrides. The producer's defaults then apply.
     bool clear_filter_radius = false;

@@ -80,6 +80,35 @@ RGB mix_hsv(RGB a, RGB b, double amount) {
     return hsv_rgb({first.h + amount * difference, std::lerp(first.s, last.s, amount),
                     std::lerp(first.v, last.v, amount)});
 }
+struct HSL { double h, s, l; };
+HSL rgb_hsl(RGB rgb) {
+    const auto hsv = rgb_hsv(rgb);
+    const double low = std::min({rgb.r, rgb.g, rgb.b});
+    const double lightness = (hsv.v + low) / 2;
+    const double delta = hsv.v - low;
+    return {hsv.h, delta == 0 ? 0 : delta / (1 - std::abs(2 * lightness - 1)), lightness};
+}
+RGB hsl_rgb(HSL hsl) {
+    const double value = hsl.l + hsl.s * std::min(hsl.l, 1 - hsl.l);
+    return hsv_rgb({hsl.h, value == 0 ? 0 : 2 * (1 - hsl.l / value), value});
+}
+RGB mix_hsl(RGB a, RGB b, double amount) {
+    auto first = rgb_hsl(a), last = rgb_hsl(b);
+    if (first.s == 0) first.h = last.h;
+    if (last.s == 0) last.h = first.h;
+    return hsl_rgb({first.h + amount * std::remainder(last.h - first.h, 360.0),
+                    std::lerp(first.s, last.s, amount), std::lerp(first.l, last.l, amount)});
+}
+double linear_srgb(double value) {
+    return value <= .04045 ? value / 12.92 : std::pow((value + .055) / 1.055, 2.4);
+}
+double encoded_srgb(double value) {
+    return value <= .0031308 ? value * 12.92 : 1.055 * std::pow(value, 1 / 2.4) - .055;
+}
+bool valid_space(GradientSpace space) {
+    return space == GradientSpace::rgb || space == GradientSpace::hsv_shortest ||
+           space == GradientSpace::linear_rgb || space == GradientSpace::hsl_shortest;
+}
 RGB hex(unsigned value) {
     return {double((value >> 16) & 255) / 255, double((value >> 8) & 255) / 255,
             double(value & 255) / 255};
@@ -217,10 +246,36 @@ void mutate_transform(Transform &transform, const MutationOptions &options,
 }
 } // namespace
 
+RGB blend_colors(RGB from, RGB to, double amount, GradientSpace space) {
+    if (!valid_color(from) || !valid_color(to) || !(amount >= 0 && amount <= 1))
+        throw std::invalid_argument("Color channels and blend amount must be in [0,1]");
+    if (!valid_space(space)) throw std::invalid_argument("Unknown gradient interpolation space");
+    if (amount == 0) return from;
+    if (amount == 1) return to;
+    if (space == GradientSpace::rgb) return mix(from, to, amount);
+    if (space == GradientSpace::hsv_shortest) return mix_hsv(from, to, amount);
+    if (space == GradientSpace::hsl_shortest) return mix_hsl(from, to, amount);
+    const auto channel = [&](double a, double b) {
+        return unit(encoded_srgb(std::lerp(linear_srgb(a), linear_srgb(b), amount)));
+    };
+    return {channel(from.r, to.r), channel(from.g, to.g), channel(from.b, to.b)};
+}
+
+Palette curve_palette(const Palette& palette, const ColorCurves& curves) {
+    validate_palette(palette);
+    const ColorCurveEvaluator evaluator(curves);
+    if (!evaluator.active()) return palette;
+    auto result = palette;
+    for (auto& color : result)
+        color = {unit(evaluator.map(0, color.r)), unit(evaluator.map(1, color.g)),
+                 unit(evaluator.map(2, color.b))};
+    return result;
+}
+
 Palette palette_from_stops(std::span<const ColorStop> source, GradientSpace space) {
     if (source.size() < 2 || source.size() > 256)
         throw std::invalid_argument("Use between 2 and 256 palette stops");
-    if (space != GradientSpace::rgb && space != GradientSpace::hsv_shortest)
+    if (!valid_space(space))
         throw std::invalid_argument("Unknown gradient interpolation space");
     std::vector<ColorStop> stops(source.begin(), source.end());
     std::sort(stops.begin(), stops.end(), [](const ColorStop &a, const ColorStop &b) {
@@ -246,8 +301,7 @@ Palette palette_from_stops(std::span<const ColorStop> source, GradientSpace spac
         else {
             const auto &left = stops[right - 1], &last = stops[right];
             const double amount = double(i - left.index) / double(last.index - left.index);
-            result[i] = space == GradientSpace::rgb ? mix(left.color, last.color, amount)
-                                                    : mix_hsv(left.color, last.color, amount);
+            result[i] = blend_colors(left.color, last.color, amount, space);
         }
     }
     return result;

@@ -36,6 +36,12 @@ public:
   // View/preset settings are kept outside model undo. The complete native
   // envelope is nevertheless included in saving, conflict checks and recovery.
   void setProjectState(ProjectFile state);
+  // Animation is document content and participates in the ordinary undo stack.
+  // Other project preferences remain outside content undo.
+  void changeAnimation(const QString &label, std::optional<std::string> bytes);
+  bool hasAnimation() const {
+    return project_ && project_->animation_data.has_value();
+  }
   QUndoStack &undoStack() { return undo_; }
   int selectedFlame() const { return flame_; }
   int selectedTransform() const { return transform_; }
@@ -61,7 +67,9 @@ signals:
 
 private:
   friend class DocumentChange;
+  friend class AnimationChange;
   void restore(const std::string &bytes, int flame, int transform, bool final);
+  void restoreAnimation(const std::optional<std::string> &bytes);
   std::optional<LegacyDocument> document_;
   std::optional<ProjectFile> project_;
   bool projectDirty_ = false;

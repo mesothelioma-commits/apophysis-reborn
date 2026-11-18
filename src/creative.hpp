@@ -9,7 +9,7 @@ struct ColorStop {
     int index = 0;
     RGB color;
 };
-enum class GradientSpace { rgb, hsv_shortest };
+enum class GradientSpace { rgb, hsv_shortest, linear_rgb, hsl_shortest };
 struct PaletteAdjustment {
     double hue_degrees = 0;
     double saturation = 1, value = 1;
@@ -25,6 +25,10 @@ struct PalettePreset {
 // Stops may be unsorted, but indices must be unique and in [0,255].
 Palette palette_from_stops(std::span<const ColorStop> stops,
                            GradientSpace space = GradientSpace::rgb);
+// Encoded RGB, shortest HSV hue, linear-light sRGB, or shortest HSL hue.
+// Endpoint colors are returned exactly; achromatic hues borrow the colored end.
+RGB blend_colors(RGB from, RGB to, double amount, GradientSpace space = GradientSpace::rgb);
+Palette curve_palette(const Palette& palette, const ColorCurves& curves);
 // A positive rotation moves the original entry 0 to the given positive index.
 Palette rotate_palette(const Palette &palette, int shift);
 Palette reverse_palette(const Palette &palette);

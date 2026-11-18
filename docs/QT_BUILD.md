@@ -1,6 +1,6 @@
 # Native Qt desktop build
 
-The 0.8.0 editor combines the existing creative tools and persistent render queue with native projects, a Lua/legacy script editor, trusted native variation plugins and historical palette/UPR exchange. It uses Qt 6 Widgets and the same C++20 document, scripting and CPU/Vulkan rendering libraries as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ and zlib runtimes. Keep the complete executable directory and its plugin subdirectories together.
+The 0.9.0 editor adds the animation timeline, morphing, queued image sequences and extended color curves to the existing creative tools, persistent render queue, native projects, scripting, trusted native variations and historical exchange. It uses Qt 6 Widgets and the same C++20 document, animation, scripting and CPU/Vulkan rendering libraries as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ and zlib runtimes. Keep the complete executable directory and its plugin subdirectories together. [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md), [ANIMATION_CLI.md](ANIMATION_CLI.md) and [COLOR_TOOLS.md](COLOR_TOOLS.md) describe the M9 workflows; image sequences do not require a bundled video encoder.
 
 Lua 5.5.1 is built from the vendored sources as the static `apo-lua` library and linked into the core. End users need no separate Lua installation or Lua DLL. The selected upstream sources are compiled as C++ so Lua's protected errors unwind C++ host callbacks correctly; do not change that build to C/`longjmp` without revising the integration. The complete MIT notice ships in [licenses/lua/LICENSE.txt](../licenses/lua/LICENSE.txt) and beside the source in [third_party/lua/LICENSE](../third_party/lua/LICENSE), with version, source hashes and build details in [third_party/lua/README.md](../third_party/lua/README.md).
 
@@ -102,15 +102,21 @@ export QT_QPA_PLATFORM_PLUGIN_PATH=/path/to/native-qt/usr/lib/x86_64-linux-gnu/q
 ctest --test-dir build --output-on-failure
 ```
 
-The Linux editor uses Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. M8 adds project-envelope, Lua/legacy script, script-output boundary, UGR/MAP/UPR and native plugin tests, plus Qt extension and plugin-dialog tests. The GUI tests cover private script execution, one-step document undo, queue batches, source/recovery protection, plugin approvals and fingerprint-checked queue restoration.
+The Linux editor uses Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. M9 adds animation-model and sequence-export tests, animation CLI workflows, the original 7X curve oracle, and the Qt `animation-editor-tests` and `color-editor-tests`. These extend the existing project-envelope, scripting, plugin, producer, renderer and queue checks. The new Qt coverage includes private timeline edits, exact keyframe/source retention, curve controls, cancellation, undo, queued snapshots and destination conflict handling. [TEST_PLAN.md](TEST_PLAN.md) and the packaged verification records contain the current executed results and audit totals; no current count is inferred from the historical measurements below.
+
+The Windows programs are cross-compiled and statically audited in this environment, with no Windows runtime execution claimed. Available Vulkan execution uses software Vulkan and does not establish physical-GPU performance or target-driver acceptance. Use the target-system checks below to collect that separate evidence.
+
+### Historical M8 measurements
+
+M8 introduced project-envelope, Lua/legacy script, script-output boundary, UGR/MAP/UPR and native plugin tests, plus Qt extension and plugin-dialog tests. Its GUI checks covered private script execution, one-step document undo, queue batches, source/recovery protection, plugin approvals and fingerprint-checked queue restoration.
 
 The final M8 native Release suite passed **33/33 CTest entries in 6.09 seconds**. A separate ASan/UBSan build passed **33/33 in 48.83 seconds** with leak detection disabled; this does not establish a leak-check result. The Vulkan-disabled core-only build passed **22 checks** and skipped **three device-execution checks**, for **25 entries in 1.95 seconds**. [TEST_PLAN.md](TEST_PLAN.md) records the options, execution scope and limits. Full logs are retained in the package's `verification` directory; a registered test or a cross-compiled test executable alone is not an execution result.
 
-The complete M8 Windows build produces **26 executables**: the CLI, sixteen core test programs, the editor and eight Qt test programs. It also produces the SDK example DLL/manifest and two plugin test DLLs listed above. Lua is statically linked, while the chosen Qt, C++ and zlib runtime files remain beside the executables. The final M8 stage contains **63 runtime files**, including **60 PE modules**. Its recursive dependency audit resolved **19,959 non-system imported symbols**, with **zero missing**. Executable and plugin fingerprints are recorded in the package's `verification/windows-runtime-record.json`.
+The complete M8 Windows build produced **26 executables**: the CLI, sixteen core test programs, the editor and eight Qt test programs. It also produced the SDK example DLL/manifest and two plugin test DLLs listed above. Lua was statically linked, while the chosen Qt, C++ and zlib runtime files remained beside the executables. The final M8 stage contained **63 runtime files**, including **60 PE modules**. Its recursive dependency audit resolved **19,959 non-system imported symbols**, with **zero missing**. These totals describe M8; the current package's executable/plugin fingerprints and audit totals are recorded in `verification/windows-runtime-record.json`.
 
 The Windows binaries are cross-compiled and statically audited here, with **no Windows runtime execution** in this environment. The audit checks the packaged imports and exports; the dynamically loaded system Vulkan driver requires a separate Windows execution check.
 
-### Historical measurements
+### Historical M7 and M6 measurements
 
 M7 registered **25 CTest entries**, including file rendering/checkpoints, streaming image codecs, bounded Vulkan hit streaming, CLI file workflows and the render queue. Its separate core-only, Vulkan-disabled configuration had **19 CTest entries**: 16 passed and three device-execution checks explicitly skipped. The M7 Release and ASan/UBSan records describe that earlier source revision; leak detection was disabled for the sanitizer run. A skipped check does not establish GPU execution.
 
@@ -118,7 +124,7 @@ For historical comparison, the M6 Release build passed its 20 entries in 3.42 se
 
 The historical compute executions used llvmpipe software Vulkan on this host. M7 compared dense and streamed GPU histograms and final pixels, tested partial GPU checkpoint resume and rejected an incompatible shader identity. Its native acceptance also rendered an actual 16384×16384 PNG RGBA16 through the queue, paused with a committed checkpoint, resumed and recorded responsive event-loop heartbeats. Those results verify the earlier algorithms, compute/API path and bounded rendering workflow; they do not establish physical GPU performance or Windows driver acceptance. The M6 native desktop interaction and `examples/gpu-palette-study.flame` remain part of that earlier verification history.
 
-The historical M7 Windows stage contained **19 executables**, **52 files** and **50 PE modules**. Its dependency audit resolved **14,948 non-system imported symbols** against its copied libraries with zero missing. The prior M6 stage contained 15 executables, 48 files and 46 PE modules, with 13,232 resolved non-system symbols. These are historical stage measurements, not the M8 audit totals. Neither stage established Windows runtime execution.
+The historical M7 Windows stage contained **19 executables**, **52 files** and **50 PE modules**. Its dependency audit resolved **14,948 non-system imported symbols** against its copied libraries with zero missing. The prior M6 stage contained 15 executables, 48 files and 46 PE modules, with 13,232 resolved non-system symbols. These are historical stage measurements, not the current M9 audit totals. Neither stage established Windows runtime execution. Retained M7 full-16K long runs are historical acceptance evidence; they are not newly executed M9 measurements.
 
 ### Run the current Windows checks
 
@@ -130,7 +136,16 @@ bash scripts/verify-editor-windows.sh
 
 The script records the OS version and Vulkan discovery, runs the CPU/core and Qt tests, checks CPU fallback and checkpoint resume, then launches the creative, queue and M8 extension smoke workflows explicitly with the CPU backend. It explicitly enables the bundled SDK and test modules for the corresponding plugin checks. The core workflow exercises native projects, modern and legacy scripts, UGR/MAP/UPR exchange and scripted native-plugin rendering, alongside BMP/PPM/PNG/TIFF, true 16-bit output and transparent PNG/TIFF. The queue smoke writes PNG RGBA16 and TIFF RGB16 and checks UI heartbeats. Required outputs are checked and the saved documents are inspected through the CLI. Logs and artifacts stay under the project's `logs` and `out` directories. A GPU is not required, and this CPU script does not claim Vulkan execution. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
 
-The M8 workflow can also run directly from the extracted project root:
+The current verification scripts also run the M9 core/CLI animation and curve checks, Qt timeline/color tests and the CPU animation smoke workflow. To run the M9 desktop workflow directly from the extracted project root:
+
+```bash
+./bin/windows-x64/apophysis-reborn.exe \
+  --animation-smoke-test out/animation-smoke --backend cpu
+```
+
+The [timeline guide](ANIMATION_EDITOR.md) and [color guide](COLOR_TOOLS.md) describe what those controls do. The smoke workflow uses isolated application settings and exercises native-project saving and queued frame output; compiling it does not establish Windows execution.
+
+The retained M8 workflow can also run directly from the extracted project root:
 
 ```bash
 ./bin/windows-x64/apophysis-reborn.exe \

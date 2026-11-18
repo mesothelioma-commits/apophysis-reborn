@@ -1,5 +1,7 @@
 #pragma once
 
+#include "color_curves.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -73,6 +75,7 @@ struct Flame {
     double gamma_threshold = 0;
     int oversample = 1;
     RGB background;
+    ColorCurves curves;
     PaletteMode palette_mode = PaletteMode::step;
     Palette palette = default_palette();
     std::vector<Transform> transforms;

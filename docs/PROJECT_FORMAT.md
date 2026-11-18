@@ -67,9 +67,12 @@ project never loads, installs or enables native code. The plugin manager retains
 its separate explicit enablement boundary. A project reference alone is not a
 trust decision.
 
-The animation payload is reserved data. Version 1 preserves the bytes without
-parsing them, playing an animation, or declaring compatibility with a future
-animation schema. There is no compressed archive and no decompression step.
+The project envelope preserves animation bytes independently of their meaning. M9
+adds a strict `apophysis-animation` version-1 schema, interpreted only by the
+animation module; see [ANIMATION_MODEL.md](ANIMATION_MODEL.md). Unknown payloads
+and future versions remain opaque and survive project saves. The timeline editor
+refuses implicit replacement, while the CLI requires `--replace-animation` for
+intentional replacement. There is no compressed archive or decompression step.
 
 ## Preservation on edits
 
@@ -154,3 +157,19 @@ section expansion, presets and plugin references, 64-bit seed preservation,
 opaque animation bytes, invalid versions, duplicate sections/keys, bad base64,
 entity declarations, excessive nesting and atomic-save failure preservation.
 The editor's document-session tests additionally cover project integration.
+
+## Animation content and undo in M9
+
+`DocumentSession::changeAnimation` validates the complete project envelope before
+pushing one content-undo command. Undo restores the animation payload while
+retaining current library bytes and unrelated project preferences. The ordinary
+clean marker tracks timeline edits. Save, conflict detection and interrupted-session
+recovery include the entire native envelope.
+
+A document containing any animation payload cannot be saved directly as a plain
+`.flame`/`.xml` file. The UI prompts for `.apoproject` and offers a separate
+**Export flame library** action. Exact source bytes in that exported copy exclude
+the project envelope and timeline. Timeline keyframes retain their own source
+collections, selected entries, correspondence IDs and captured module identities.
+Plugin references used only by recognized animation keyframes are also recorded
+when the editor captures project state; recording them does not enable code.

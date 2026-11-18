@@ -1,4 +1,5 @@
 #include "creative_widgets.hpp"
+#include "color_curve_dialog.hpp"
 #include "document_session.hpp"
 #include "flame_io.hpp"
 #include "legacy_formats.hpp"
@@ -260,13 +261,19 @@ GradientDialog::GradientDialog(const Flame &flame, QWidget *parent, const Previe
     hue_ = integer("paletteHue", 0, 359, 0);
     saturation_ = integer("paletteSaturation", 0, 100, 0);
     value_ = integer("paletteValue", 0, 100, 0);
+    hslHue_ = integer("paletteHslHue", 0, 359, 0);
+    hslSaturation_ = integer("paletteHslSaturation", 0, 100, 0);
+    lightness_ = integer("paletteLightness", 0, 100, 0);
     form->addRow("Palette index", index_);
     form->addRow("Red", red_);
     form->addRow("Green", green_);
     form->addRow("Blue", blue_);
-    form->addRow("Hue", hue_);
-    form->addRow("Saturation %", saturation_);
-    form->addRow("Value %", value_);
+    form->addRow("HSV hue °", hue_);
+    form->addRow("HSV saturation %", saturation_);
+    form->addRow("HSV value %", value_);
+    form->addRow("HSL hue °", hslHue_);
+    form->addRow("HSL saturation %", hslSaturation_);
+    form->addRow("HSL lightness %", lightness_);
     auto pick = button("Choose color…", "choosePaletteColor");
     form->addRow(pick);
     paletteMode_ = new QComboBox;
@@ -298,7 +305,7 @@ GradientDialog::GradientDialog(const Flame &flame, QWidget *parent, const Previe
     stopsLayout->addLayout(stopActions);
     space_ = new QComboBox;
     space_->setObjectName("gradientColorSpace");
-    space_->addItems({"RGB interpolation", "HSV shortest hue path"});
+    space_->addItems({"RGB interpolation", "HSV shortest hue path", "Linear-light sRGB", "HSL shortest hue path"});
     stopsLayout->addWidget(space_);
     auto build = button("Build gradient", "buildPaletteStops");
     stopsLayout->addWidget(build);
@@ -321,6 +328,8 @@ GradientDialog::GradientDialog(const Flame &flame, QWidget *parent, const Previe
     adjustmentsForm->addRow("Contrast", contrast);
     auto adjust = button("Apply color adjustment", "applyPaletteAdjustment");
     adjustmentsForm->addRow(adjust);
+    auto paletteCurves = button("Palette curves…", "editPaletteCurves");
+    adjustmentsForm->addRow(paletteCurves);
     auto curveHelp = new QLabel("These controls change the stored palette colors. Flame gamma and "
                                 "brightness are in the Adjustment editor.");
     curveHelp->setWordWrap(true);
@@ -409,6 +418,27 @@ GradientDialog::GradientDialog(const Flame &flame, QWidget *parent, const Previe
         });
         ++channel;
     }
+    for (int channel = 0; auto field : {hslHue_, hslSaturation_, lightness_}) {
+        connect(field, &QSpinBox::valueChanged, this, [this, channel](int value) {
+            if (syncing_) return;
+            auto next = flame_.palette;
+            const auto previous = color(next[index_->value()]);
+            const double hue = channel == 0 ? value / 360.0 : std::max(0.0, double(previous.hslHueF()));
+            const double saturation = channel == 1 ? value / 100.0 : previous.hslSaturationF();
+            const double lightness = channel == 2 ? value / 100.0 : previous.lightnessF();
+            next[index_->value()] = rgb(QColor::fromHslF(hue, saturation, lightness));
+            setColors(next);
+        });
+        ++channel;
+    }
+    connect(paletteCurves, &QPushButton::clicked, this, [this] {
+        ColorCurves initial;
+        initial.mode = ColorCurveMode::continuous;
+        ColorCurveDialog dialog(initial, this);
+        dialog.setWindowTitle("Palette curves — change stored colors");
+        if (dialog.exec() == QDialog::Accepted)
+            run([&] { setColors(creative::curve_palette(flame_.palette, dialog.resultCurves())); });
+    });
     connect(pick, &QPushButton::clicked, this, [this] {
         const auto chosen =
             QColorDialog::getColor(color(flame_.palette[index_->value()]), this, "Palette color");
@@ -562,6 +592,9 @@ void GradientDialog::refreshColor() {
     hue_->setValue(std::max(0, selected.hsvHue()));
     saturation_->setValue(qRound(selected.hsvSaturationF() * 100));
     value_->setValue(qRound(selected.valueF() * 100));
+    hslHue_->setValue(std::max(0, selected.hslHue()));
+    hslSaturation_->setValue(qRound(selected.hslSaturationF() * 100));
+    lightness_->setValue(qRound(selected.lightnessF() * 100));
     syncing_ = false;
 }
 void GradientDialog::requestPreview() {
@@ -600,9 +633,7 @@ void GradientDialog::buildStops() {
         }
         stops.push_back({values[0], {values[1] / 255.0, values[2] / 255.0, values[3] / 255.0}});
     }
-    setColors(creative::palette_from_stops(stops, space_->currentIndex()
-                                                      ? creative::GradientSpace::hsv_shortest
-                                                      : creative::GradientSpace::rgb));
+    setColors(creative::palette_from_stops(stops, static_cast<creative::GradientSpace>(space_->currentIndex())));
 }
 void GradientDialog::importPaletteFile(const QString &path) {
     const auto suffix = QFileInfo(path).suffix().toLower();
@@ -759,8 +790,10 @@ AdjustmentDialog::AdjustmentDialog(const Flame &flame, QWidget *parent, const Pr
              "Blend between independent-channel gamma and color-preserving gamma, from 0 to 1.");
     background_ = button("Choose background…", "adjust_background");
     toneForm->addRow("Background", background_);
+    auto toneCurves = button("Tone curves…", "editToneCurves");
+    toneForm->addRow(toneCurves);
     auto paletteHelp =
-        new QLabel("Use the Gradient editor for palette hue, saturation, value and RGB color curves.");
+        new QLabel("Tone curves affect the reconstructed image. Use the Gradient editor to change stored palette colors.");
     paletteHelp->setWordWrap(true);
     toneForm->addRow(paletteHelp);
     addField(renderingForm, "quality", "Sample density",
@@ -835,6 +868,14 @@ AdjustmentDialog::AdjustmentDialog(const Flame &flame, QWidget *parent, const Pr
         const auto chosen = QColorDialog::getColor(color(flame_.background), this, "Flame background");
         if (chosen.isValid()) {
             flame_.background = rgb(chosen);
+            updateFlame();
+        }
+    });
+    connect(toneCurves, &QPushButton::clicked, this, [this] {
+        if (!updateFlame()) return;
+        ColorCurveDialog dialog(flame_.curves, this);
+        if (dialog.exec() == QDialog::Accepted) {
+            flame_.curves = dialog.resultCurves();
             updateFlame();
         }
     });
@@ -975,6 +1016,8 @@ LegacyEdits AdjustmentDialog::edits() const {
         result.oversample = flame_.oversample;
     if (!equal(flame_.background, original_.background))
         result.background = flame_.background;
+    if (flame_.curves != original_.curves)
+        result.curves = flame_.curves;
     if (!filter_->currentIndex() && original_.filter_radius)
         result.clear_filter_radius = true;
     else if (flame_.filter_radius != original_.filter_radius && flame_.filter_radius)
@@ -1445,9 +1488,10 @@ void applyCreativeFlame(LegacyDocument &document, std::size_t index, const Flame
         editTransform(*before.final_transform, *flame.final_transform, 0, true);
     if (!equal(before.palette, flame.palette))
         document.edit_palette(index, flame.palette);
-    if (before.palette_mode != flame.palette_mode) {
+    if (before.palette_mode != flame.palette_mode || before.curves != flame.curves) {
         LegacyEdits edit;
-        edit.palette_mode = flame.palette_mode;
+        if (before.palette_mode != flame.palette_mode) edit.palette_mode = flame.palette_mode;
+        if (before.curves != flame.curves) edit.curves = flame.curves;
         document.edit(index, edit);
     }
 }

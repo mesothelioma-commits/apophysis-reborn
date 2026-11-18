@@ -414,8 +414,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   });
   help->addAction("About Apophysis Reborn", this, [this] {
     QMessageBox::about(
-        this, "Apophysis Reborn 0.8.0",
-        "Extended Compatibility development checkpoint\nC++20 / Qt 6 / CPU "
+        this, "Apophysis Reborn 0.9.0",
+        "Animation and Color development checkpoint\nC++20 / Qt 6 / CPU "
         "and Vulkan compute\n\n"
         "31 registered variations, gradient and adjustment editors, seeded "
         "generation and "
@@ -424,6 +424,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
         "restart-safe sampling checkpoints and 8/16-bit image exports.\n"
         "Lua and legacy script editor, trusted native variation plugins, "
         "native projects and historical palette/UPR formats.\n"
+        "Keyframe timeline, morphing, frame sequences, RGB/HSV/HSL gradients "
+        "and original 7X color curves.\n"
         "See the packaged compatibility report for historical rendering "
         "coverage.\n\n"
         "Qt and other third-party license texts accompany the portable "
@@ -627,6 +629,8 @@ void MainWindow::makeActions() {
       file->addAction("Save &as…", this, [this] { saveDocument(true); });
   saveAs->setShortcut(QKeySequence::SaveAs);
   file->addSeparator();
+  file->addAction("Export flame library…", this, &MainWindow::exportFlameLibrary)
+      ->setObjectName("actionExportLibrary");
   auto standalone = file->addAction("Export selected flame…", this, [this] {
     run([&] {
       if (!model_)
@@ -699,6 +703,10 @@ void MainWindow::makeActions() {
   edit->addAction("Preferences…", this, &MainWindow::preferences)
       ->setObjectName("actionPreferences");
   auto tools = menuBar()->addMenu("&Tools");
+  animation_ = tools->addAction("Animation timeline…", this,
+                               &MainWindow::showAnimationTimeline);
+  animation_->setObjectName("actionAnimation");
+  animation_->setShortcut(QKeySequence("Ctrl+T"));
   auto script =
       tools->addAction("Script editor…", this, &MainWindow::showScriptEditor);
   script->setObjectName("actionScriptEditor");
@@ -871,11 +879,12 @@ void MainWindow::makeActions() {
   creativeTools->setObjectName("creativeToolbar");
   creativeTools->setToolButtonStyle(Qt::ToolButtonTextOnly);
   for (const auto &[label, action] :
-       std::array<std::pair<QString, QAction *>, 4>{
+       std::array<std::pair<QString, QAction *>, 5>{
            {{"Gradient", gradient_},
             {"Adjust", adjustments_},
             {"Mutate", mutations_},
-            {"Random", randomFlames_}}}) {
+            {"Random", randomFlames_},
+            {"Timeline", animation_}}}) {
     auto shortcut = creativeTools->addAction(label, action, &QAction::trigger);
     connect(action, &QAction::changed, shortcut,
             [action, shortcut] { shortcut->setEnabled(action->isEnabled()); });
@@ -1485,6 +1494,7 @@ void MainWindow::refreshSelection() {
   model_.reset();
   const bool available = session_.hasDocument();
   save_->setEnabled(available);
+  animation_->setEnabled(available);
   duplicateFlame_->setEnabled(available);
   deleteFlame_->setEnabled(available &&
                            session_.document().entries().size() > 1);
@@ -1895,12 +1905,18 @@ bool MainWindow::saveDocument(bool saveAs) {
   if (!session_.hasDocument())
     return false;
   QString path = session_.path();
+  const bool needsNative = session_.hasAnimation();
+  if (needsNative && !path.isEmpty() && !is_project_path(filesystemPath(path))) {
+    const QFileInfo info(path);
+    path = info.absolutePath() + "/" + info.completeBaseName() + ".apoproject";
+    saveAs = true;
+  }
   if (saveAs || path.isEmpty())
     path = QFileDialog::getSaveFileName(
         this, "Save project or flame library",
         path.isEmpty() ? "my-project.apoproject" : path,
-        "Native projects (*.apoproject);;Flame libraries (*.flame);;XML files "
-        "(*.xml)");
+        needsNative ? "Native projects (*.apoproject)"
+                    : "Native projects (*.apoproject);;Flame libraries (*.flame);;XML files (*.xml)");
   if (path.isEmpty())
     return false;
   try {

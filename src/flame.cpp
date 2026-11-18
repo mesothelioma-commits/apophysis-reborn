@@ -392,6 +392,7 @@ Orbit apply_transform(const Transform& transform, Orbit previous, Rng& rng) {
 void validate(const Flame& flame) {
     // A serialized variation name must identify one module throughout the model.
     (void)plugin_identity(flame);
+    validate_color_curves(flame.curves);
     if (flame.model_version != Flame::current_model_version)
         throw std::invalid_argument("unsupported flame model version");
     if (flame.width < 1 || flame.height < 1 || flame.oversample < 1)

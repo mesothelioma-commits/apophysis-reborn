@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../script.hpp"
+#include "../animation_export.hpp"
 #include "canvases.hpp"
 #include "document_session.hpp"
 #include "preview_controller.hpp"
@@ -39,6 +40,9 @@ public:
   bool openFile(const QString &path);
   void openExample();
   void recoverPreviousSession();
+  void applyAnimation(const AnimationClip &);
+  std::vector<QString> queueAnimation(const AnimationClip &,
+                                      AnimationExportOptions options);
   void applyScriptResult(
       const ScriptResult &, const QString &outputDirectory,
       bool replaceExisting = false,
@@ -80,7 +84,7 @@ private:
       *copy_, *paste_, *moveUp_, *moveDown_;
   QAction *gradient_, *adjustments_, *mutations_, *randomFlames_,
       *duplicateFlame_, *deleteFlame_;
-  QAction *queueAction_;
+  QAction *queueAction_, *animation_;
   QByteArray defaultLayout_;
   ProjectSettings renderSettings_;
   std::vector<ProjectPreset> renderPresets_;
@@ -89,6 +93,8 @@ private:
 
   void makeActions();
   void showScriptEditor();
+  void showAnimationTimeline();
+  void exportFlameLibrary();
   void showPluginManager();
   void editPluginVariations();
   bool importUpr(const QString &path);

@@ -79,3 +79,26 @@ The row encoder receives double-valued tone-mapped RGB/alpha. Sixteen-bit format
 `plugin_api.h` defines a versioned C ABI with no C++ objects crossing the boundary. Discovery reads sidecar XML and module bytes without executing them. Enabling is the trusted-code boundary: architecture, ABI, exact descriptor/parameter metadata and approved binary hashes are validated. Immutable `PluginVariation` references in `Term` keep modules alive for queued/worker snapshots. Disabling removes lookup for new parses, without invalidating those snapshots. Module callbacks are reentrant, receive the current orbit RNG capability and return an unweighted contribution. GPU admission rejects these CPU callbacks explicitly. Checkpoints and persisted queue jobs additionally bind module binary identities; portable canonical XML records stable IDs/versions/parameters.
 
 `project_io.cpp` preserves a versioned native XML envelope with exact base64-encoded legacy bytes and typed string maps for settings, named presets, plugin references and optional opaque animation. It validates bounds, versions and XML structure while retaining unknown source spans. `project_document.cpp` routes native and legacy documents. `DocumentSession` fingerprints and recovers the whole envelope, with model undo retaining its existing library-byte semantics. Loading plugin references never enables native code. `legacy_formats.cpp` implements original-source-checked UGR/MAP and the strictly admitted Apophysis UPR dialect with per-entry reports.
+
+## Animation and color in 0.9.0
+
+`animation_io.cpp` validates a bounded versioned UTF-8/base64 schema.
+`animation.cpp` prepares immutable snapshot models once, verifies correspondence
+and native module identities, and evaluates exact or interpolated frames. The
+project envelope remains independent of this schema and preserves unknown bytes.
+The native `AnimationDialog` owns private history and preview work; accepted
+content enters `DocumentSession` undo. `MainWindow::queueAnimation` validates a
+complete finite range and submits immutable frame jobs as one persisted batch.
+
+`animation_export.cpp` shares fixed-canvas evaluation and destination admission
+with the editor. Its CLI path uses a separate locked manifest, verified complete
+outputs, ready/publication crash recovery and per-frame renderer checkpoints.
+The shared SHA-256 implementation also retains plugin fingerprint semantics.
+Sequence and Qt queue resume are distinct workflows. Queue publication guards
+persist admitted destination identities and refuse intervening external changes.
+
+`color_curves.cpp` implements the original 257-entry 7X LUT and an explicitly
+selected continuous-mode LUT. Dense and file reconstruction share the same
+evaluator and account its storage in the working-memory plan. Identity curves
+skip extra arithmetic/allocation. `creative::blend_colors` centralizes RGB,
+linear-light RGB, HSV and HSL interpolation for gradient editing and animation.

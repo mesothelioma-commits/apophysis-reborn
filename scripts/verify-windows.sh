@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M8 compatibility, scripting, plugins and CPU/export/checkpoint verification.
+# M9 animation, morphing, color curves and cumulative CPU/export verification.
 set -euo pipefail
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_dir"
@@ -12,7 +12,8 @@ trap 'status=$?; echo "Exit code: $status"; echo "Log: $log"; exit "$status"' EX
 bin=./bin/windows-x64
 for exe in flame-cpu reference-tests import-tests renderer-tests legacy-document-tests creative-tests \
     extended-variation-tests gpu-kernel-tests file-render-tests image-stream-tests \
-    project-io-tests legacy-formats-tests script-tests script-host-tests plugin-tests; do
+    project-io-tests legacy-formats-tests script-tests script-host-tests plugin-tests \
+    animation-tests animation-export-tests color-curves-tests; do
     [[ -f "$bin/$exe.exe" ]] || { echo "Missing $bin/$exe.exe. Extract the full milestone ZIP before running this check."; exit 1; }
 done
 plugin_manifest="$bin/plugins/reborn-wave/reborn_wave.apoplugin"
@@ -21,7 +22,7 @@ plugin_bad_abi="$bin/tests/plugins/libplugin-bad-abi.dll"
 for file in "$plugin_manifest" "$bin/plugins/reborn-wave/reborn_wave.dll" "$plugin_fixture" "$plugin_bad_abi"; do
     [[ -f "$file" ]] || { echo "Missing $file. Extract the full milestone ZIP before running this check."; exit 1; }
 done
-echo "Apophysis Reborn 0.8.0 extended compatibility and CPU verification / $(date -Iseconds)"
+echo "Apophysis Reborn 0.9.0 animation, color and CPU verification / $(date -Iseconds)"
 echo "This check explicitly enables the bundled sample_wave and test fixture DLLs, which are native code."
 cmd.exe //c ver
 "$bin/flame-cpu.exe" --list-devices --json | tee "$run_dir/devices.json"
@@ -39,6 +40,64 @@ cmd.exe //c ver
 "$bin/script-tests.exe"
 "$bin/script-host-tests.exe"
 "$bin/plugin-tests.exe" "$plugin_manifest" "$plugin_fixture" "$plugin_bad_abi"
+"$bin/animation-tests.exe" "$plugin_manifest" "$plugin_fixture"
+"$bin/animation-export-tests.exe"
+"$bin/color-curves-tests.exe" tests/fixtures/color
+
+# M9 exports use a fixed canvas, full-width fixed seed and global frame numbers.
+m9_dir="$run_dir/animation"
+mkdir -p "$m9_dir/frames"
+"$bin/flame-cpu.exe" animation create examples/ember-spiral.flame --preset camera-orbit \
+    --frames 5 --fps 30000/1001 --seed 18446744073709551615 --output "$m9_dir/orbit.apoproject"
+"$bin/flame-cpu.exe" animation inspect "$m9_dir/orbit.apoproject" --json | tee "$m9_dir/clip.json"
+"$bin/flame-cpu.exe" project extract "$m9_dir/orbit.apoproject" --output "$m9_dir/original.flame"
+cmp examples/ember-spiral.flame "$m9_dir/original.flame"
+"$bin/flame-cpu.exe" animation frame "$m9_dir/orbit.apoproject" --frame 2 --output "$m9_dir/middle.flame"
+"$bin/flame-cpu.exe" animation frame "$m9_dir/orbit.apoproject" --frame 2 \
+    --width 160 --height 120 --samples 8195 --threads 1 --format png16 --alpha \
+    --output "$m9_dir/middle.png"
+"$bin/flame-cpu.exe" animation render "$m9_dir/orbit.apoproject" --output-dir "$m9_dir/frames" \
+    --first 0 --last 4 --width 160 --height 120 --samples 8195 --threads 1 \
+    --format png16 --alpha --estimate
+[[ ! -e "$m9_dir/frames/.apo-sequence-frame" ]] || { echo "Animation preflight created sequence state"; exit 1; }
+animation_pause_status=0
+"$bin/flame-cpu.exe" animation render "$m9_dir/orbit.apoproject" --output-dir "$m9_dir/frames" \
+    --first 0 --last 4 --width 160 --height 120 --samples 8195 --threads 1 \
+    --format png16 --alpha --pause-after-frames 2 || animation_pause_status=$?
+[[ "$animation_pause_status" -eq 75 ]] || { echo "Expected animation pause exit 75, got $animation_pause_status"; exit 1; }
+[[ -s "$m9_dir/frames/frame_000001.png" && ! -e "$m9_dir/frames/frame_000002.png" ]] || {
+    echo "Animation pause did not preserve exactly its completed frames"; exit 1;
+}
+"$bin/flame-cpu.exe" animation render "$m9_dir/orbit.apoproject" --output-dir "$m9_dir/frames" \
+    --first 0 --last 4 --width 160 --height 120 --samples 8195 --threads 2 \
+    --format png16 --alpha --resume
+cmp "$m9_dir/middle.png" "$m9_dir/frames/frame_000002.png"
+"$bin/flame-cpu.exe" animation render "$m9_dir/orbit.apoproject" --output-dir "$m9_dir/frames" \
+    --first 0 --last 4 --width 160 --height 120 --samples 8195 --threads 1 \
+    --format png16 --alpha --resume
+cp "$m9_dir/frames/frame_000000.png" "$m9_dir/before-corruption.png"
+cp "$m9_dir/frames/.apo-sequence-frame/manifest.aposequence" "$m9_dir/before-corruption.aposequence"
+printf 'changed completed image\n' >> "$m9_dir/frames/frame_000000.png"
+animation_corrupt_status=0
+"$bin/flame-cpu.exe" animation render "$m9_dir/orbit.apoproject" --output-dir "$m9_dir/frames" \
+    --first 0 --last 4 --width 160 --height 120 --samples 8195 --threads 1 \
+    --format png16 --alpha --resume || animation_corrupt_status=$?
+[[ "$animation_corrupt_status" -ne 0 ]] || { echo "Animation resume blindly skipped a changed completed image"; exit 1; }
+cmp "$m9_dir/before-corruption.aposequence" "$m9_dir/frames/.apo-sequence-frame/manifest.aposequence"
+mv -f "$m9_dir/before-corruption.png" "$m9_dir/frames/frame_000000.png"
+"$bin/flame-cpu.exe" animation morph examples/ember-spiral.flame --to "$m9_dir/middle.flame" \
+    --frames 5 --easing smootherstep --palette linear-rgb --output "$m9_dir/morph.apoproject"
+"$bin/flame-cpu.exe" animation inspect "$m9_dir/morph.apoproject"
+"$bin/flame-cpu.exe" --plugin "$plugin_manifest" animation create examples/plugins/reborn-wave/sample-wave.flame \
+    --frames 2 --output "$m9_dir/plugin.apoproject"
+"$bin/flame-cpu.exe" animation inspect "$m9_dir/plugin.apoproject" --json
+"$bin/flame-cpu.exe" --plugin "$plugin_manifest" animation frame "$m9_dir/plugin.apoproject" \
+    --frame 1 --width 160 --height 120 --samples 8195 --threads 1 --output "$m9_dir/plugin.png"
+for file in orbit.apoproject original.flame middle.flame middle.png morph.apoproject plugin.apoproject plugin.png \
+    frames/frame_000000.png frames/frame_000001.png frames/frame_000002.png \
+    frames/frame_000003.png frames/frame_000004.png frames/.apo-sequence-frame/manifest.aposequence; do
+    [[ -s "$m9_dir/$file" ]] || { echo "M9 verification did not produce $file"; exit 1; }
+done
 
 # M8 workflows use isolated outputs and never modify the bundled source files.
 m8_dir="$run_dir/extensions"
@@ -142,7 +201,7 @@ cmp "$run_dir/before-pause.txt" "$run_dir/resumed.ppm"
     --threads 1 --backend cpu --strip-rows 7 --output "$run_dir/fresh.ppm"
 cmp "$run_dir/resumed.ppm" "$run_dir/fresh.ppm"
 sha256sum "$bin/"*.exe "$bin/plugins/reborn-wave/reborn_wave.dll" "$plugin_fixture" "$plugin_bad_abi" "$run_dir/ember-4.bmp"
-echo "Passed native projects, Lua/legacy scripts, UGR/MAP/UPR exchange, trusted native plugin contracts, historical pixels, legacy preservation, creative algorithms, CPU references, bounded file rendering, all image formats, true 16-bit/alpha export and committed pause/resume on this computer."
+echo "Passed native timelines, explicit morphs, color curves, verified animation pause/resume, native projects, Lua/legacy scripts, UGR/MAP/UPR exchange, trusted native plugin contracts, historical pixels, legacy preservation, creative algorithms, CPU references, bounded file rendering, all image formats, true 16-bit/alpha export and committed pause/resume on this computer."
 echo "The 16K check above validates the storage plan; it does not render a 16K image."
 echo "No Vulkan execution is required or claimed by this CPU verification script."
 echo "Device inventory: $run_dir/devices.json"

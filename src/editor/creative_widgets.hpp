@@ -62,6 +62,7 @@ class GradientDialog : public QDialog {
     PreviewCanvas *canvas_;
     PaletteStrip *strip_;
     QSpinBox *index_, *red_, *green_, *blue_, *hue_, *saturation_, *value_, *rotate_;
+    QSpinBox *hslHue_, *hslSaturation_, *lightness_;
     QComboBox *presets_, *space_, *paletteMode_;
     QTableWidget *stops_;
     QLabel *status_;

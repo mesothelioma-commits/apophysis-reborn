@@ -447,6 +447,21 @@ void LegacyDocument::edit(std::size_t index, const LegacyEdits& edits) {
             changes["palette_mode"] = *edits.palette_mode == PaletteMode::linear ? "linear" : "step";
         if (model) model->palette_mode = *edits.palette_mode;
     }
+    if (edits.curves) {
+        validate_color_curves(*edits.curves);
+        if (!model || model->curves != *edits.curves) {
+            std::string encoded;
+            for (const auto& curve : edits.curves->channels)
+                for (const auto& point : curve) {
+                    if (!encoded.empty()) encoded += ' ';
+                    encoded += shortest(point.x) + " " + shortest(point.y) + " " + shortest(point.weight);
+                }
+            changes["curves"] = std::move(encoded);
+            changes["reborn_curve_mode"] = edits.curves->mode == ColorCurveMode::continuous ?
+                std::optional<std::string>("continuous") : std::nullopt;
+        }
+        if (model) model->curves = *edits.curves;
+    }
     if (edits.clear_filter_radius && edits.filter_radius)
         throw std::invalid_argument("Cannot set and clear the filter radius together");
     if (edits.filter_radius) {

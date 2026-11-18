@@ -139,7 +139,7 @@ struct Layout {
 Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOptions& file) {
     if (flame.width > 16384 || flame.height > 16384)
         throw std::invalid_argument("File rendering supports dimensions up to 16384 by 16384");
-    auto geometry = detail::render_geometry(flame, opt);
+    auto geometry = detail::render_geometry(flame, opt, false);
     if (opt.backend != RenderBackend::cpu && opt.backend != RenderBackend::automatic &&
         opt.backend != RenderBackend::vulkan)
         throw std::invalid_argument("Choose CPU, Automatic or Vulkan rendering");
@@ -177,7 +177,8 @@ Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOpti
     const auto row_bytes = multiply(flame.width, sizeof(std::array<double, 4>));
     const auto base = add(add(2 * MiB, model), add(row_bytes,
         ImageStreamWriter::working_bytes(flame.width, file.image)));
-    const auto kernel_bytes = multiply(geometry.kernel.taps, sizeof(double));
+    const auto kernel_bytes = add(multiply(geometry.kernel.taps, sizeof(double)),
+                                  ColorCurveEvaluator::storage_bytes(flame.curves));
     const auto fixed = add(base, kernel_bytes);
     const auto hist_row = multiply(geometry.gpu.width, sizeof(detail::Bin));
     const auto gutter_bytes = multiply(2ull * geometry.kernel.padding, hist_row);
@@ -475,6 +476,8 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
         m.backend_identity = m.backend == RenderBackend::cpu ? "CPU MT19937-64 / stream-1" : "";
         save_manifest(directory, m);
     }
+    if (!color_curves_are_identity(f.curves))
+        l.geometry.curves = std::make_shared<ColorCurveEvaluator>(f.curves);
     const auto output_parent = output.has_parent_path() ? output.parent_path() : fs::current_path();
     const auto output_bytes = image_export_upper_bound(f.width, f.height, file.image);
     std::error_code ec;
@@ -582,7 +585,10 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
         }
         cancel(opt.stop_token);
         writer.finish();
-    }, [&] { cancel(opt.stop_token); });
+    }, [&] {
+        cancel(opt.stop_token);
+        if (file.before_publish) file.before_publish();
+    });
     report("Complete", l.public_plan.strip_count);
     return {m.plotted, m.invalid, m.workers, m.backend, m.device, m.fallback,
             std::chrono::duration<double, std::milli>(sampled_at - started).count(),

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(apophysis_reborn VERSION 0.8.0 LANGUAGES CXX)
+project(apophysis_reborn VERSION 0.9.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -29,12 +29,13 @@ add_library(flame-core src/flame.cpp src/flame_io.cpp src/render.cpp src/image.c
     src/legacy_document.cpp src/output_file.cpp src/creative.cpp src/gpu_kernel.cpp src/vulkan_runtime.cpp
     src/render_file.cpp src/image_stream.cpp src/plugin.cpp src/project_io.cpp
     src/project_document.cpp src/legacy_formats.cpp src/script.cpp src/legacy_script.cpp
-    src/script_document.cpp src/script_host.cpp)
+    src/script_document.cpp src/script_host.cpp src/color_curves.cpp
+    src/animation.cpp src/animation_io.cpp src/animation_export.cpp src/sha256.cpp)
 target_include_directories(flame-core PUBLIC src)
 target_include_directories(flame-core PRIVATE third_party/vulkan/include)
 target_compile_definitions(flame-core PRIVATE APO_ENABLE_VULKAN=$<BOOL:${APO_ENABLE_VULKAN}>)
 target_link_libraries(flame-core PRIVATE ${apophysis_expat_target} Threads::Threads ${CMAKE_DL_LIBS} ZLIB::ZLIB apo-lua)
-add_executable(flame-cpu src/main.cpp src/document_cli.cpp src/extension_cli.cpp)
+add_executable(flame-cpu src/main.cpp src/document_cli.cpp src/extension_cli.cpp src/animation_cli.cpp)
 target_link_libraries(flame-cpu PRIVATE flame-core)
 if(WIN32)
     target_link_libraries(flame-cpu PRIVATE shell32)
@@ -45,16 +46,18 @@ if(APO_BUILD_EDITOR)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets)
     add_library(flame-editor src/editor/document_session.cpp src/editor/canvases.cpp
         src/editor/preview_controller.cpp src/editor/main_window.cpp src/editor/creative_widgets.cpp
-        src/editor/render_queue.cpp src/editor/script_dialog.cpp src/editor/plugin_dialog.cpp src/editor/main_window_extensions.cpp)
+        src/editor/render_queue.cpp src/editor/script_dialog.cpp src/editor/plugin_dialog.cpp src/editor/main_window_extensions.cpp
+        src/editor/color_curve_dialog.cpp src/editor/color_curve_dialog.hpp
+        src/editor/animation_dialog.cpp src/editor/animation_dialog.hpp src/editor/main_window_animation.cpp)
     set_target_properties(flame-editor PROPERTIES AUTOMOC ON)
     target_include_directories(flame-editor PUBLIC src)
     target_link_libraries(flame-editor PUBLIC flame-core Qt6::Widgets)
-    add_executable(apophysis-reborn WIN32 src/editor/main.cpp src/editor/extensions_smoke.cpp src/editor/editor_resources.qrc)
+    add_executable(apophysis-reborn WIN32 src/editor/main.cpp src/editor/extensions_smoke.cpp src/editor/animation_smoke.cpp src/editor/editor_resources.qrc)
     set_target_properties(apophysis-reborn PROPERTIES AUTORCC ON)
     target_link_libraries(apophysis-reborn PRIVATE flame-editor)
     if(BUILD_TESTING)
         find_package(Qt6 REQUIRED COMPONENTS Test)
-        foreach(test_name IN ITEMS preview document_session canvas creative_editor render_queue extensions_editor)
+        foreach(test_name IN ITEMS preview document_session canvas creative_editor render_queue extensions_editor color_editor animation_editor)
             string(REPLACE "_" "-" target_name "${test_name}-tests")
             add_executable(${target_name} tests/${test_name}_tests.cpp)
             set_target_properties(${target_name} PROPERTIES AUTOMOC ON)
@@ -87,6 +90,21 @@ set(APO_PLUGIN_LIBRARY "reborn_wave${CMAKE_SHARED_LIBRARY_SUFFIX}")
 configure_file(examples/plugins/reborn-wave/reborn_wave.apoplugin.in
     "${CMAKE_CURRENT_BINARY_DIR}/plugins/reborn-wave/reborn_wave.apoplugin" @ONLY)
 if(BUILD_TESTING)
+    add_executable(animation-tests tests/animation_tests.cpp)
+    target_link_libraries(animation-tests PRIVATE flame-core)
+    add_dependencies(animation-tests reborn-wave plugin-fixture)
+    add_test(NAME animation COMMAND animation-tests
+        "${CMAKE_CURRENT_BINARY_DIR}/plugins/reborn-wave/reborn_wave.apoplugin" $<TARGET_FILE:plugin-fixture>)
+    add_executable(animation-export-tests tests/animation_export_tests.cpp)
+    target_link_libraries(animation-export-tests PRIVATE flame-core)
+    add_test(NAME animation_export COMMAND animation-export-tests)
+    add_executable(color-curves-tests tests/color_curves_tests.cpp)
+    target_link_libraries(color-curves-tests PRIVATE flame-core)
+    add_test(NAME color_curves COMMAND color-curves-tests ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/color)
+    add_test(NAME animation_cli COMMAND ${CMAKE_COMMAND}
+        -DEXE=$<TARGET_FILE:flame-cpu> -DSAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/ember-spiral.flame
+        -DMANIFEST=${CMAKE_CURRENT_BINARY_DIR}/plugins/reborn-wave/reborn_wave.apoplugin
+        -DWORK=${CMAKE_CURRENT_BINARY_DIR}/animation-cli -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/animation_cli.cmake)
     foreach(test_name IN ITEMS project_io legacy_formats script script_host)
         string(REPLACE "_" "-" target_name "${test_name}-tests")
         add_executable(${target_name} tests/${test_name}_tests.cpp)

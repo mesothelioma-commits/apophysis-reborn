@@ -35,7 +35,7 @@ struct ProjectFile {
   std::vector<ProjectPreset> render_presets;
   std::vector<ProjectPluginReference> plugin_references;
   std::optional<std::string>
-      animation_data; // Opaque bytes, reserved for future animation.
+      animation_data; // Envelope preserves bytes; animation.hpp owns known timelines.
   // Parser-owned source spans retain unrecognized XML and untouched formatting.
   std::shared_ptr<const detail::ProjectSource> retained_source;
 };

@@ -89,7 +89,7 @@ print('Prepared', apo.transform_count(), 'transforms with sample_wave')
                       filesystemPath(path + "/legacy-translated.lua"),
                       [&](std::ostream &out) { out << old.translated_source; });
                   auto report = std::make_shared<QJsonObject>(QJsonObject{
-                      {"version", "0.8.0"},
+                      {"version", "0.9.0"},
                       {"qt_platform", QGuiApplication::platformName()},
                       {"plugin", QString::fromStdString(plugin.name)},
                       {"plugin_sha256",

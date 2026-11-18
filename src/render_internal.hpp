@@ -14,13 +14,16 @@ struct RenderGeometry {
     gpu::Geometry gpu;
     Footprint kernel;
     bool historical;
+    std::shared_ptr<const ColorCurveEvaluator> curves;
 };
 struct CpuHits {
     std::vector<SampleHit> hits;
     std::uint64_t invalid = 0;
     unsigned workers = 0;
 };
-RenderGeometry render_geometry(const Flame&, const RenderOptions&);
+// Admission-only callers can skip constructing tables; storage_bytes still
+// accounts for the table that actual reconstruction will need.
+RenderGeometry render_geometry(const Flame&, const RenderOptions&, bool prepare_curves = true);
 CpuHits sample_cpu_hits(const Flame&, const RenderOptions&, const RenderGeometry&,
                        std::uint64_t first_batch, unsigned batch_count);
 // The bins contain full-width histogram rows beginning at global histogram y.

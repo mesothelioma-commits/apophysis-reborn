@@ -165,6 +165,7 @@ double gamma_alpha(double light, double exponent, double threshold) {
 
 Image develop(const Flame& f, const std::vector<Bin>& bins, double ppu, std::uint64_t samples,
               const Footprint& kernel, std::size_t stride, bool apophysis, std::stop_token stop) {
+    const ColorCurveEvaluator curves(f.curves);
     const auto os = static_cast<std::size_t>(f.oversample);
     const auto width = static_cast<std::size_t>(f.width);
     const auto filter = f.filter_radius ? gaussian_weights(kernel) : std::vector<double>{};
@@ -199,6 +200,7 @@ Image develop(const Flame& f, const std::vector<Bin>& bins, double ppu, std::uin
                 double foreground = 0;
                 if (vibrancy > 0 && average > 0) foreground += vibrancy * alpha * average;
                 if (vibrancy < 1) foreground += (1 - vibrancy) * std::pow(sum[c] * f.brightness, gamma);
+                if (curves.active() && sum[3] * f.brightness > 0) foreground = curves.map(c, foreground);
                 auto& output = image.rgb[(std::size_t(y) * width + x) * 3 + c];
                 if (apophysis) {
                     const auto bg8 = static_cast<unsigned>(std::floor(bg[c] * 255));
@@ -247,9 +249,10 @@ RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable
     const auto budget = checked_product(opt.memory_mib, 1024 * 1024);
     if (hist_bytes > budget || image_bytes > budget - hist_bytes)
         throw std::invalid_argument("Histogram and image exceed --memory-mib; reduce size or oversampling");
-    const auto kernel_bytes = f.filter_radius ? std::uint64_t(kernel.taps) * sizeof(double) : 0;
+    const auto kernel_bytes = (f.filter_radius ? std::uint64_t(kernel.taps) * sizeof(double) : 0) +
+        ColorCurveEvaluator::storage_bytes(f.curves);
     const auto remaining = budget - hist_bytes - image_bytes;
-    if (kernel_bytes > remaining) throw std::invalid_argument("Filter exceeds --memory-mib");
+    if (kernel_bytes > remaining) throw std::invalid_argument("Filter and color curves exceed --memory-mib");
     const auto started = std::chrono::steady_clock::now();
     std::string fallback;
     if (!portable && opt.backend != RenderBackend::cpu) {
@@ -360,7 +363,7 @@ std::string_view backend_name(RenderBackend backend) {
 }
 
 namespace detail {
-RenderGeometry render_geometry(const Flame& f, const RenderOptions& opt) {
+RenderGeometry render_geometry(const Flame& f, const RenderOptions& opt, bool prepare_curves) {
     validate(f);
     if (!opt.samples || opt.samples > max_samples)
         throw std::invalid_argument("Sample count exceeds the supported positive fixed-point accumulator range");
@@ -374,7 +377,8 @@ RenderGeometry render_geometry(const Flame& f, const RenderOptions& opt) {
         throw std::invalid_argument("Histogram dimensions exceed the supported coordinate range");
     const double angle = std::remainder(f.rotate, 360.0) * (std::numbers::pi / 180.0);
     return {{std::uint32_t(width), std::uint32_t(height), kernel.padding, ppu,
-             std::cos(angle), std::sin(angle)}, kernel, historical};
+             std::cos(angle), std::sin(angle)}, kernel, historical,
+             !prepare_curves || color_curves_are_identity(f.curves) ? nullptr : std::make_shared<ColorCurveEvaluator>(f.curves)};
 }
 
 CpuHits sample_cpu_hits(const Flame& f, const RenderOptions& opt, const RenderGeometry& geometry,
@@ -473,6 +477,7 @@ void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const
             double foreground = 0;
             if (vibrancy > 0 && average > 0) foreground += vibrancy * alpha * average;
             if (vibrancy < 1) foreground += (1 - vibrancy) * std::pow(sum[c] * f.brightness, gamma);
+            if (geometry.curves && sum[3] * f.brightness > 0) foreground = geometry.curves->map(c, foreground);
             if (transparent) {
                 rgba[x][c] = a > 0 ? std::clamp(foreground / a, 0.0, 1.0) : 0;
             } else if (historical && !sixteen_bit) {

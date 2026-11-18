@@ -85,13 +85,15 @@ Affine affine(Text s, Text field) {
     return {v[0], v[1], v[2], v[3], v[4], v[5]};
 }
 
-bool neutral_curves(Text value) {
-    // Four channels, each with four (x,y,weight) points, from ControlPoint.Create.
-    constexpr std::array<double,12> identity{0,0,1, 0,0,1, 1,1,1, 1,1,1};
+ColorCurves parsed_curves(Text value) {
     const auto points = numbers<double>(value, "curves", 48);
-    for (std::size_t i = 0; i < points.size(); ++i)
-        if (points[i] != identity[i % identity.size()]) return false;
-    return true;
+    ColorCurves result;
+    for (unsigned c = 0; c < 4; ++c)
+        for (unsigned i = 0; i < 4; ++i) {
+            const auto offset = c * 12 + i * 3;
+            result.channels[c][i] = {points[offset], points[offset + 1], points[offset + 2]};
+        }
+    return result;
 }
 
 void flame_settings(Flame& flame, const Attributes& attributes) {
@@ -132,8 +134,12 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
         } else if (key == "estimator_radius" || key == "estimator_minimum" || key == "estimator_curve") {
             (void)number<double>(value, key);
             if (!de_off && !radius_zero) fail("Density estimation requires disabled enable_de or estimator_radius=0");
-        } else if (key == "curves" && apo) {
-            if (!neutral_curves(value)) fail("Non-default color curves are unsupported");
+        } else if (key == "curves") {
+            flame.curves.channels = parsed_curves(value).channels;
+        } else if (key == "reborn_curve_mode") {
+            if (value == "continuous") flame.curves.mode = ColorCurveMode::continuous;
+            else if (value == "legacy_7x") flame.curves.mode = ColorCurveMode::legacy_7x;
+            else fail("Unsupported reborn_curve_mode '" + std::string(value) + "'");
         } else if (key == "new_linear" && apo) {
             if (number<int>(value,key) != 1) fail("Unsupported new_linear conversion mode");
         } else if ((key == "plugins" && apo) || key == "nick" || key == "url") {
@@ -634,6 +640,18 @@ std::string serialize_flame(const Flame& f) {
     if (!f.source_version.empty()) out << " version=\"" << escaped(f.source_version) << '"';
     if (f.filter_radius) out << " filter=\"" << *f.filter_radius << '"';
     if (f.gamma_threshold != 0) out << " gamma_threshold=\"" << f.gamma_threshold << '"';
+    if (f.curves != ColorCurves{}) {
+        out << " curves=\"";
+        bool first = true;
+        for (const auto& curve : f.curves.channels)
+            for (const auto& point : curve) {
+                if (!first) out << ' ';
+                first = false;
+                out << point.x << ' ' << point.y << ' ' << point.weight;
+            }
+        out << '"';
+    }
+    if (f.curves.mode == ColorCurveMode::continuous) out << " reborn_curve_mode=\"continuous\"";
     if (is_apophysis(f.source_version) && !is_apophysis_2(f.source_version)) out << " new_linear=\"1\"";
     out << " time=\"" << f.time << "\" size=\"" << f.width << ' ' << f.height
         << "\" center=\"" << f.center.x << ' ' << f.center.y << "\" scale=\"" << f.scale

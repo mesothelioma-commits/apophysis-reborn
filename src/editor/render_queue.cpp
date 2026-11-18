@@ -1,4 +1,5 @@
 #include "render_queue.hpp"
+#include "../sha256.hpp"
 #include "../plugin.hpp"
 #include "document_session.hpp"
 #include "flame_io.hpp"
@@ -150,6 +151,7 @@ QJsonObject jobJson(const RenderJob &j) {
       {"name", j.name},
       {"source", j.source},
       {"destination", j.destination},
+      {"destination_sha256", j.destination_sha256 ? QJsonValue(text(*j.destination_sha256)) : QJsonValue(QJsonValue::Null)},
       {"checkpoint", j.checkpoint},
       {"flame", text(serialize_flame(j.flame))},
       {"plugin_identity", text(plugin_identity(j.flame))},
@@ -198,6 +200,13 @@ RenderJob readJob(const QJsonObject &o) {
   j.name = requiredString(o, "name", true);
   j.source = requiredString(o, "source", true);
   j.destination = requiredString(o, "destination");
+  if (o.contains("destination_sha256") && !o.value("destination_sha256").isNull()) {
+    const auto hash = requiredString(o, "destination_sha256", true).toStdString();
+    if (!hash.empty() && (hash.size() != 64 ||
+        !std::all_of(hash.begin(), hash.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); })))
+      throw std::invalid_argument("Invalid render queue destination fingerprint");
+    j.destination_sha256 = hash;
+  }
   j.checkpoint = requiredString(o, "checkpoint");
   if (!QFileInfo(j.destination).isAbsolute() ||
       !QFileInfo(j.checkpoint).isAbsolute())
@@ -375,6 +384,7 @@ struct RenderQueue::Impl {
   struct Finish {
     QString id, error;
     std::optional<FileRenderResult> result;
+    std::optional<std::string> destination_sha256;
     bool cancelled = false, checkpointed = false;
     double elapsed = 0;
   };
@@ -511,9 +521,10 @@ RenderQueue::addBatch(const std::vector<RenderJob> &requests) {
       throw std::invalid_argument("Choose an output file");
     RenderJob j;
     j.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    j.name = text(flame.name);
+    j.name = request.name.isEmpty() ? text(flame.name) : request.name;
     j.source = source.isEmpty() ? QString{} : absolute(source);
     j.destination = absolute(destination);
+    j.destination_sha256 = request.destination_sha256;
     if (!j.source.isEmpty() &&
         (j.destination == j.source ||
          (QFileInfo(j.source).exists() && QFileInfo(j.destination).exists() &&
@@ -528,6 +539,7 @@ RenderQueue::addBatch(const std::vector<RenderJob> &requests) {
     j.render.progress = {};
     j.file = file;
     j.file.status = {};
+    j.file.before_publish = {};
     j.file.resume = false;
     j.file.checkpoint_directory = filesystemPath(j.checkpoint);
     if (image_format_for_path(filesystemPath(j.destination),
@@ -756,15 +768,33 @@ void RenderQueue::launchNext() {
       QMetaObject::invokeMethod(
           this, [this, id, p] { updateProgress(id, p); }, Qt::QueuedConnection);
     };
+    if (snapshot.destination_sha256) {
+      file.before_publish = [snapshot, stop] {
+        const auto path = filesystemPath(snapshot.destination);
+        const auto state = std::filesystem::symlink_status(path);
+        const bool exists = std::filesystem::exists(state);
+        if (snapshot.destination_sha256->empty()) {
+          if (exists || std::filesystem::is_symlink(state))
+            throw std::runtime_error("The frame destination appeared after queue admission. The new file was not replaced.");
+        } else if (!exists || std::filesystem::is_symlink(state) ||
+                   !std::filesystem::is_regular_file(state) ||
+                   detail::sha256_file(path, stop) != *snapshot.destination_sha256) {
+          throw std::runtime_error("The frame destination changed after queue admission. The changed file was not replaced.");
+        }
+      };
+    }
     Impl::Finish finished;
     finished.id = snapshot.id;
     const auto began = std::chrono::steady_clock::now();
     try {
       finished.result = render_to_file(
           snapshot.flame, options, filesystemPath(snapshot.destination), file);
+      if (snapshot.destination_sha256)
+        finished.destination_sha256 = detail::sha256_file(filesystemPath(snapshot.destination));
     } catch (const RenderCancelled &) {
       finished.cancelled = true;
     } catch (const std::exception &error) {
+      finished.result.reset();
       finished.error = text(error.what());
     }
     finished.elapsed =
@@ -845,6 +875,8 @@ void RenderQueue::finishActive() {
   j.phase_remaining_seconds = -1;
   j.checkpointed = finish->checkpointed;
   if (finish->result) {
+    if (finish->destination_sha256)
+      j.destination_sha256 = finish->destination_sha256;
     const auto &r = *finish->result;
     j.state = RenderJobState::complete;
     j.phase = "Complete";

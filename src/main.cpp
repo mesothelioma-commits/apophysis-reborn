@@ -1,5 +1,6 @@
 #include "document_cli.hpp"
 #include "extension_cli.hpp"
+#include "animation_cli.hpp"
 #include "gpu.hpp"
 #include "legacy_document.hpp"
 #include "plugin.hpp"
@@ -33,7 +34,7 @@ namespace {
 namespace fs = std::filesystem;
 
 void usage(std::ostream &out) {
-  out << "Apophysis Reborn 0.8.0 | Extended compatibility\n"
+  out << "Apophysis Reborn 0.9.0 | Animation and color\n"
       << "  flame-cpu --flame input.flame --output image.png [options]\n"
       << "  flame-cpu inspect input.flame [--json]\n"
       << "  flame-cpu save input.flame --output copy.flame [--index N] [--name "
@@ -91,6 +92,7 @@ void usage(std::ostream &out) {
       << "Ctrl+C cancels safely; an explicit checkpoint retains completed "
          "sampling chunks.\n";
   apo::extension_usage(out);
+  apo::animation_usage(out);
 }
 template <class T> T integer(std::string_view arg, std::string_view name) {
   T value{};
@@ -219,6 +221,8 @@ int run(const std::vector<fs::path> &args) {
   }
   if (const auto extension = apo::extension_command(args))
     return *extension;
+  if (const auto animation = apo::animation_command(args))
+    return *animation;
   if (args.size() == 1 && (args[0] == "--help" || args[0] == "-h")) {
     usage(std::cout);
     return 0;
