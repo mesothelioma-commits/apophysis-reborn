@@ -1,17 +1,16 @@
-# Release handoff — 0.12.1
+# Release handoff — 0.13.0
 
 ## Scope and release identity
 
-0.12.1 fixes horizontal resizing of Live Preview. It includes the 0.12.0 release, which adds [density estimation](DENSITY_ESTIMATION.md) for supported FLAM3 files and retires the previous per-user installation after upgrading. The earlier 43 built-ins and Save/dialog responsiveness fixes are included.
+The 0.13.0 recovery build restores the eight-flame starter library and retains the 0.12.1 Live Preview fixes. It includes the 0.12.0 release, which adds [density estimation](DENSITY_ESTIMATION.md) for supported FLAM3 files and retires the previous per-user installation after upgrading. The earlier 43 built-ins and Save/dialog responsiveness fixes are included.
 
 Use the release records for the exact final source commit, executable hashes, test counts and measured timings. Earlier documents retain their original milestone measurements; a historical M7 large-image result is not a new M10 benchmark.
 
 | Distribution | Contents and entry point |
 | --- | --- |
-| `apophysis-reborn-0.12.1-windows-x64-portable.zip` | Extracted folder `apophysis-reborn-0.12.1-windows-x64`; open `apophysis-reborn.exe` at its root. Includes the CLI, runtime dependency closure, example native plugin, offline documents, examples, notices and corresponding dependency source archives. |
-| `apophysis-reborn-0.12.1-windows-x64-setup.exe` | Per-user installation of the runtime payload with versioned shortcuts and an uninstall entry. Default `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.12.1`; no administrator elevation or file-association takeover. |
-| `apophysis-reborn-0.12.1-preview-resize.zip` | Complete `apophysis-reborn` source tree, Git bundle, SDK/example sources, tests, build and verification scripts, Windows applications under `bin/windows-x64`, dependency sources and release evidence. Use this edition for the commands below. |
-| Git source | Extract `apophysis-reborn-0.12.1-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
+| `apophysis-reborn-0.13.0-windows-x64-portable.zip` | Extracted folder `apophysis-reborn-0.13.0-windows-x64`; open `apophysis-reborn.exe` at its root. Includes the CLI, runtime dependency closure, example native plugin, offline documents, examples, notices and corresponding dependency source archives. |
+| `apophysis-reborn-0.13.0-windows-x64-setup.exe` | Per-user installation of the runtime payload with versioned shortcuts and an uninstall entry. Default `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.13.0`; no administrator elevation or file-association takeover. |
+| Git source | Extract `apophysis-reborn-0.13.0-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
 
 The complete edition contains `BUILD.txt`, `release-source.json`, `SOURCE_SHA256SUMS.txt`, `SHA256SUMS.txt` and `apophysis-reborn.bundle`. `release-source.json` identifies the release source commit; the tracked-source manifest lets configuration check the extracted source. `SHA256SUMS.txt` covers the packaged files according to its recorded inventory. Neither a checksum nor a successful dependency audit proves that an executable ran on Windows.
 
@@ -45,10 +44,10 @@ To create a new source/history-only ZIP from a clean, complete Git checkout with
 
 ```bash
 python3 scripts/package-source.py --repo /path/to/clean-checkout \
-  --output /path/to/new-source-history.zip --tag v0.12.1-preview-resize
+  --output /path/to/new-source-history.zip --tag v0.13.0-starter-library-recovery
 ```
 
-The helper refuses a dirty or shallow checkout, a mismatched tag, unsafe/nonportable paths, existing output or output inside the checkout. It includes the tracked source, a Git bundle with history reachable from the local branches/tags, source identity and manifests. It does **not** add application binaries, SDK runtime staging or verification reports; assembling the complete maintenance edition adds those separately. Identical source/ref inputs and matching Git/Python/zlib versions define the helper's reproducibility scope. An optional `--version 0.12.1` asserts the committed CMake version.
+The helper refuses a dirty or shallow checkout, a mismatched tag, unsafe/nonportable paths, existing output or output inside the checkout. It includes the tracked source, a Git bundle with history reachable from the local branches/tags, source identity and manifests. It does **not** add application binaries, SDK runtime staging or verification reports; assembling the complete maintenance edition adds those separately. Identical source/ref inputs and matching Git/Python/zlib versions define the helper's reproducibility scope. An optional `--version 0.13.0` asserts the committed CMake version.
 
 ## Build and launch from source
 
@@ -112,15 +111,15 @@ The corresponding-source directory needs its supplied `SHA256SUMS.txt`; its arch
 
 ```bash
 python3 scripts/package-runtime.py --verify \
-  /path/to/new-runtime-release/apophysis-reborn-0.12.1-windows-x64
+  /path/to/new-runtime-release/apophysis-reborn-0.13.0-windows-x64
 ```
 
 The installer builder needs NSIS **3.13 or newer**, a MinGW-w64 C++20 compiler for its private Windows helper, and a PE-capable objdump. Its default compiler is `x86_64-w64-mingw32-g++`; select another compatible executable with `--compiler`. Select NSIS with `--makensis` or `MAKENSIS`, and objdump with `--objdump` or `APO_OBJDUMP`:
 
 ```bash
 bash scripts/build-installer.sh \
-  --payload /path/to/new-runtime-release/apophysis-reborn-0.12.1-windows-x64 \
-  --output /path/to/new-runtime-release/apophysis-reborn-0.12.1-windows-x64-setup.exe \
+  --payload /path/to/new-runtime-release/apophysis-reborn-0.13.0-windows-x64 \
+  --output /path/to/new-runtime-release/apophysis-reborn-0.13.0-windows-x64-setup.exe \
   --compiler /path/to/x86_64-w64-mingw32-g++ \
   --makensis /path/to/makensis \
   --objdump /path/to/llvm-objdump \
@@ -130,7 +129,7 @@ bash scripts/build-installer.sh \
 
 `--work` names a new directory for generated inputs, the helper and `installer-build.json`. If omitted, the builder creates and reports one beside the output. The record includes the installer/payload/source hashes, compiler and NSIS identity, helper imports and signing/execution status. A successful compilation is still not an installer lifecycle test. Current release acceptance must separately identify any Windows or Wine execution and whether an Authenticode signature was applied.
 
-The 0.12.1 installer uses a version-specific, empty destination and follows the [upgrade policy](../packaging/README.md#installation-and-removal-policy). A successful upgrade installs the new payload first and then retires the most recent older installation for that user. Start Menu entries are versioned and the desktop shortcut is optional. Uninstall is constrained by the compiled payload inventory and hashes: modified or extra files remain instead of being recursively deleted. Settings, recovery data and projects outside the installation remain. An interrupted installation can leave a partial version folder; automatic replacement or cleanup is refused. Inspect that folder before removing only its partial program payload, or choose another empty destination. Run the Windows lifecycle verifier with the previous release’s installer to exercise the upgrade before publication.
+The 0.13.0 installer uses a version-specific, empty destination and follows the [upgrade policy](../packaging/README.md#installation-and-removal-policy). A successful upgrade installs the new payload first and then retires the most recent older installation for that user. Start Menu entries are versioned and the desktop shortcut is optional. Uninstall is constrained by the compiled payload inventory and hashes: modified or extra files remain instead of being recursively deleted. Settings, recovery data and projects outside the installation remain. An interrupted installation can leave a partial version folder; automatic replacement or cleanup is refused. Inspect that folder before removing only its partial program payload, or choose another empty destination. Run the Windows lifecycle verifier with the previous release’s installer to exercise the upgrade before publication.
 
 ## Regression and measurement gates
 
@@ -174,9 +173,9 @@ Use a disposable Windows 11 account for the installer lifecycle check. Put the p
 
 ```bash
 bash scripts/verify-installer-windows.sh \
-  --previous-installer /c/release/apophysis-reborn-0.12.0-windows-x64-setup.exe \
-  --installer /c/release/apophysis-reborn-0.12.1-windows-x64-setup.exe \
-  --payload /c/release/apophysis-reborn-0.12.1-windows-x64 \
+  --previous-installer /c/release/apophysis-reborn-0.12.1-windows-x64-setup.exe \
+  --installer /c/release/apophysis-reborn-0.13.0-windows-x64-setup.exe \
+  --payload /c/release/apophysis-reborn-0.13.0-windows-x64 \
   --out /c/temp/apo-installer-check --no-open
 ```
 

@@ -315,6 +315,8 @@ void DocumentSession::loadBytes(std::string bytes, const QString &path,
   undo_.clear();
   if (modified)
     undo_.resetClean();
+  else
+    undo_.setClean(); // clear() is a no-op on an empty stack marked dirty by New.
   emit changed();
   emit modifiedChanged(isModified());
 }

@@ -185,3 +185,7 @@ Saved 0.11 render-queue jobs keep density estimation disabled when opened in 0.1
 ## 0.12.1 — Live Preview resizing
 
 Both vertical dock dividers have a wider grab area and a visible hover state. The Transform editor wraps its controls when the center column narrows. The inspector can scroll horizontally when the right panel is narrow. The lower divider gives more height to the preview, and the Transform editor can scroll if its controls exceed the available height. Resizing the preview reuses its current render when the fitted dimensions stay the same.
+
+## 0.13.0 — Starter flame library, recovery build
+
+Startup opens eight editable examples with matching thumbnails. A narrow dock displays the names below the thumbnails. File → Open starter library opens a fresh collection, and opening an existing project shows its own flames. The source and artwork were reconstructed after the original 0.13.0 packages became unavailable.

@@ -99,6 +99,141 @@ class EditorTests : public QObject {
         QCoreApplication::setApplicationName("EditorWorkflow");
         applyDarkTheme();
     }
+    void starterLibraryBrowsing() {
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        fastPreview(window);
+        QVERIFY(window.openStarterLibrary());
+        window.show();
+
+        const QStringList expected = {"Ember spiral", "Glass fern", "Ruby rosette", "Prism lace",
+                                      "Tidal filaments", "Copper dragon", "Violet nebula", "Golden nautilus"};
+        auto *list = widget<QListWidget>(window, "flameLibrary");
+        auto *search = widget<QLineEdit>(window, "librarySearch");
+        auto &session = window.session();
+        QCOMPARE(list->count(), int(expected.size()));
+        QCOMPARE(session.selectedFlame(), 0);
+        QVERIFY(!session.isModified());
+        QVERIFY(session.path().isEmpty());
+        for (int i = 0; i < list->count(); ++i) {
+            auto *item = list->item(i);
+            QCOMPARE(item->text(), expected[i]);
+            QVERIFY(item->toolTip().contains(expected[i]));
+            QVERIFY(!session.document().render_issue(i));
+            const QIcon embedded(QString(":/examples/starter/%1.png").arg(i + 1, 2, 10, QChar('0')));
+            const auto artwork = embedded.pixmap(64, 48);
+            QVERIFY(!artwork.isNull());
+            QCOMPARE(item->icon().pixmap(64, 48).toImage(), artwork.toImage());
+        }
+
+        search->setText("ROSETTE");
+        for (int i = 0; i < list->count(); ++i)
+            QCOMPARE(list->item(i)->isHidden(), i != 2);
+        auto *rosette = list->item(2);
+        QCoreApplication::processEvents();
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, list->visualItemRect(rosette).center());
+        QCOMPARE(session.selectedFlame(), 2);
+        QCOMPARE(widget<QLineEdit>(window, "flameName")->text(), expected[2]);
+        QVERIFY(!session.isModified());
+        search->clear();
+
+        const auto original = session.document().bytes();
+        enter(widget<QLineEdit>(window, "cameraScale"), "247.5");
+        QVERIFY(session.isModified());
+        QVERIFY(rosette->icon().isNull());
+        QVERIFY(!list->item(1)->icon().isNull());
+        widget<QAction>(window, "actionUndo")->trigger();
+        QCOMPARE(session.document().bytes(), original);
+        QVERIFY(!rosette->icon().isNull());
+        QVERIFY(!session.isModified());
+        widget<QAction>(window, "actionRedo")->trigger();
+        QVERIFY(rosette->icon().isNull());
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path = dir.filePath("edited.flame");
+        session.save(path);
+        QVERIFY(window.openFile(path));
+        QCOMPARE(list->item(2)->text(), expected[2]);
+        QVERIFY(list->item(2)->icon().isNull());
+        QVERIFY(!list->item(7)->icon().isNull());
+        list->setCurrentRow(2);
+        window.previewController().setPaused(false);
+        QTRY_VERIFY_WITH_TIMEOUT(!list->item(2)->icon().isNull(), 10000);
+    }
+
+    void compactLibraryKeepsNamesAndSelection() {
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        QVERIFY(window.openStarterLibrary());
+        window.resize(1420, 900);
+        window.show();
+        auto *dock = widget<QDockWidget>(window, "libraryDock");
+        auto *list = widget<QListWidget>(window, "flameLibrary");
+        auto *last = list->item(7);
+        auto rowRect = [&] {
+            list->scrollToItem(last);
+            QCoreApplication::processEvents();
+            return list->visualItemRect(last);
+        };
+
+        window.resizeDocks({dock}, {100}, Qt::Horizontal);
+        QCoreApplication::processEvents();
+        const auto compact = rowRect();
+        QVERIFY(list->viewport()->width() < 110);
+        QCOMPARE(list->horizontalScrollBarPolicy(), Qt::ScrollBarAlwaysOff);
+        QVERIFY(compact.height() >= 39 + list->fontMetrics().height() * 2);
+        QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          QPoint(compact.center().x(), compact.bottom() - list->fontMetrics().height()));
+        QCOMPARE(window.session().selectedFlame(), 7);
+        window.resizeDocks({dock}, {250}, Qt::Horizontal);
+        QCoreApplication::processEvents();
+        QVERIFY(rowRect().height() < compact.height());
+        QCOMPARE(list->currentItem(), last);
+        window.resizeDocks({dock}, {100}, Qt::Horizontal);
+        QCoreApplication::processEvents();
+        QCOMPARE(rowRect().height(), compact.height());
+        QCOMPARE(list->currentItem(), last);
+    }
+
+    void starterLibraryProtectsUnsavedWork() {
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        QVERIFY(window.openStarterLibrary());
+        window.show();
+        auto *dock = widget<QDockWidget>(window, "libraryDock");
+        auto *list = widget<QListWidget>(window, "flameLibrary");
+        auto *search = widget<QLineEdit>(window, "librarySearch");
+        auto &session = window.session();
+
+        search->setText("rosette");
+        widget<QAction>(window, "actionNew")->trigger();
+        QCOMPARE(list->count(), 1);
+        QVERIFY(search->text().isEmpty());
+        QVERIFY(session.isModified());
+        const auto unsaved = session.document().bytes();
+        search->setText("mine");
+        dock->hide();
+        QVERIFY(throughAction<QMessageBox>(window, "actionOpenStarterLibrary", [](QMessageBox &box) {
+            box.button(QMessageBox::Cancel)->click();
+        }));
+        QCOMPARE(session.document().bytes(), unsaved);
+        QCOMPARE(list->count(), 1);
+        QVERIFY(session.isModified());
+        QVERIFY(dock->isHidden());
+        QCOMPARE(search->text(), QString("mine"));
+
+        QVERIFY(throughAction<QMessageBox>(window, "actionOpenStarterLibrary", [](QMessageBox &box) {
+            box.button(QMessageBox::Discard)->click();
+        }));
+        QCOMPARE(list->count(), 8);
+        QCOMPARE(session.selectedFlame(), 0);
+        QVERIFY(!session.isModified());
+        QVERIFY(session.path().isEmpty());
+        QVERIFY(dock->isVisible());
+        QVERIFY(search->text().isEmpty());
+    }
+
     void resizeLivePreviewFromEitherSide() {
         // This state comes from 0.12.0's 1420 x 900 workspace with narrow side panels.
         const QByteArray oldState = QByteArray::fromBase64(

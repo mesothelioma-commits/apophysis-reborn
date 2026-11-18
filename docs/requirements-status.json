@@ -1,8 +1,8 @@
 {
   "schema": "apophysis-reborn.requirements-status",
   "schema_version": 1,
-  "release": "0.12.1",
-  "baseline_commit": "5abc7cc08e7943a84f8966d53b81d87b02b0dd16",
+  "release": "0.13.0",
+  "baseline_commit": "7e1071aa25c7b4f67c61fa7d70725d5440a48b4a",
   "source_brief": {
     "title": "PROJECT: APOPHYSIS REBORN — Complete Modernization of the Original Apophysis Fractal Flame Editor",
     "sha256": "ab3ddda6d1dc5d7c7de8349650b217484ba5dc02118837724d466058ce45fd61",

@@ -1,8 +1,10 @@
-# Release compatibility report — 0.12.1
+# Release compatibility report — 0.13.0
 
 ## Release decision
 
-**0.12.1 fixes Live Preview resizing.**
+**0.13.0 opens an embedded collection of eight editable flames.** The collection is also available in `examples/starter-library.flame`. Ember spiral and Tidal filaments use the existing project definitions. The other six designs were recreated for this recovery build.
+
+0.12.1 fixed Live Preview resizing.
 
 **0.12.0 adds FLAM3 density estimation. All 40 named starting variations from 0.11.0 are included.** The native editor, renderer, source-preserving files, creative tools, Vulkan implementation, large-image pipeline, scripting/plugins and animation workflows are real implementations. The original brief also requires capabilities that remain missing. Completing Milestone 10’s packaging and documentation work does not waive those requirements.
 

@@ -1,0 +1,107 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<flames name="Starter flame library">
+  <flame name="Ember spiral" size="768 576" center="0 0" scale="192" quality="18" gamma="2.2" brightness="4" vibrancy="0.85" background="0.008 0.012 0.025" palette_mode="linear">
+    <xform weight="2.6" color="0.18" color_speed="0.27" linear="0.87" swirl="0.13" coefs="0.69 0.45 -0.45 0.69 0.35 0.21" />
+    <xform weight="1.1" color="0.78" color_speed="0.49" julia="0.94" coefs="0.52 -0.35 0.35 0.52 -0.33 0.49" post="1 0 0 1 -0.12 -0.21" />
+    <xform weight="0.6" color="0.97" color_speed="0.73" sinusoidal="0.8" linear="0.25" coefs="-0.46 0.5 -0.5 -0.46 0.27 -0.61" />
+    <color index="0" rgb="25 12 73" />
+    <color index="46" rgb="51 60 138" />
+    <color index="96" rgb="40 183 169" />
+    <color index="146" rgb="249 215 138" />
+    <color index="209" rgb="255 101 62" />
+    <color index="255" rgb="134 29 85" />
+  </flame>
+  <flame name="Glass fern" size="768 576" center="1.15881 -5.00495" scale="68.729" quality="18" gamma="2.6" brightness="8" vibrancy=".95" background="0.003 0.004 0.009" palette_mode="linear" rotate="31">
+    <xform weight="0.012" color="0.92" color_speed="0.86" coefs="0 0 0 0.16 0 0" linear="1" />
+    <xform weight="0.83" color="0.63" color_speed="0.22" coefs="0.85 0.04 -0.04 0.85 0 -1.6" linear="1" />
+    <xform weight="0.079" color="0.97" color_speed="0.86" coefs="0.2 -0.23 0.26 0.22 0 -1.6" linear="1" />
+    <xform weight="0.079" color="0.08" color_speed="0.86" coefs="-0.15 -0.26 -0.28 0.24 0 -0.44" linear="1" />
+    <color index="0" rgb="23 91 80" />
+    <color index="48" rgb="19 161 140" />
+    <color index="98" rgb="67 193 137" />
+    <color index="158" rgb="132 203 71" />
+    <color index="211" rgb="232 216 65" />
+    <color index="255" rgb="246 248 161" />
+  </flame>
+  <flame name="Ruby rosette" size="768 576" center="0 0.0693" scale="260.494" quality="18" gamma="2.2" brightness="3" vibrancy=".95" background="0.003 0.004 0.009" palette_mode="linear">
+    <xform weight="1" color="0.28" color_speed="0.6" coefs="0.27367596 0.1039301 -0.33470334 0.46666227 3.2808288e-17 -0.5358" linear="1" />
+    <xform weight="1" color="0.44" color_speed="0.6" coefs="0.51605627 0.2559492 -0.18268424 0.22428197 0.50957608 -0.16557131" linear="1" />
+    <xform weight="1" color="0.6" color_speed="0.6" coefs="0.2306119 0.27543074 -0.1632027 0.50972634 0.31493533 0.43347131" linear="1" />
+    <xform weight="1" color="0.28" color_speed="0.6" coefs="0.45009029 0.091889852 -0.34674359 0.29024795 -0.31493533 0.43347131" linear="1" />
+    <xform weight="1" color="0.44" color_speed="0.6" coefs="0.38041117 0.36938371 -0.069249734 0.35992707 -0.50957608 -0.16557131" linear="1" />
+    <xform weight="3" color="0.96" color_speed="0.38" coefs="0.61819253 -0.16564419 0.16564419 0.61819253 0 0" linear="1" />
+    <color index="0" rgb="65 5 36" />
+    <color index="48" rgb="125 9 42" />
+    <color index="94" rgb="191 21 49" />
+    <color index="157" rgb="236 68 72" />
+    <color index="204" rgb="255 125 153" />
+    <color index="255" rgb="255 216 199" />
+  </flame>
+  <flame name="Prism lace" size="768 576" center="0.00483 -0.01269" scale="262.47" quality="18" gamma="2.2" brightness="3" vibrancy=".95" background="0.003 0.004 0.009" palette_mode="linear">
+    <xform weight="1" color="0" color_speed="0.78" coefs="0.5 0 0 0.5 -0.54 0.46" linear="1" />
+    <xform weight="1" color="0.59" color_speed="0.78" coefs="0.5 0 0 0.5 0.54 0.46" linear="1" />
+    <xform weight="1" color="0.99" color_speed="0.78" coefs="0.5 0 0 0.5 0 -0.475" linear="1" />
+    <color index="0" rgb="34 63 184" />
+    <color index="48" rgb="53 93 212" />
+    <color index="112" rgb="56 164 216" />
+    <color index="169" rgb="83 214 219" />
+    <color index="224" rgb="151 241 221" />
+    <color index="255" rgb="222 249 237" />
+  </flame>
+  <flame name="Tidal filaments" version="FLAM3-LNX-3.1.1" size="384 256" center="0.05 0.02" scale="113" quality="10" oversample="1" filter="0" filter_shape="gaussian" brightness="2.1" gamma="2.2" vibrancy="1" background="0 0 0" palette_mode="step" estimator_radius="3.5" estimator_minimum="0.25" estimator_curve="0.4">
+    <xform weight="1.75" color="0.17" linear="1" coefs="0.73 0.29 -0.29 0.73 -0.22 0.14" />
+    <xform weight="1.1" color="0.84" linear="0.76" sinusoidal="0.24" coefs="0.53 -0.5 0.5 0.53 0.42 -0.17" />
+    <xform weight="0.47" color="0.54" swirl="0.24" linear="0.76" coefs="-0.52 0.23 0.27 0.61 0.31 0.38" />
+    <palette count="256" format="RGB">
+    10173a10193c111c3e111e40122042122343132545132847142a49142c4b152f4d15314f163351163652163854173a56
+    173d58183f5a18425c19445e1946601a49621a4b631b4d651b50671c52691c546b1c576d1d596f1d5c711e5e731e6074
+    1f63761f657820677a206a7c216c7e216f80227182227384227685237887237a89247d8b247f8d25818f258491268693
+    268994278b96278d9828909a28929c2b949d2d959e30979f3399a0359aa1389ca23a9ea43d9fa540a1a642a3a745a4a8
+    48a6a94aa8aa4da9ab50abac52adad55aeae58b0af5ab2b05db3b160b5b262b7b465b8b567bab66abcb76dbdb86fbfb9
+    72c0ba75c2bb77c4bc7ac5bd7dc7be7fc9bf82cac084ccc287cec38acfc48cd1c58fd3c692d4c794d6c897d8c99ad9ca
+    9cdbcb9fddcca2decda4e0cea7e2cfaae3d0ace5d2afe7d3b1e8d4b4ead5b7ecd6b9edd7bcefd8bdeed6bfedd3c0ebd1
+    c2eacec3e9ccc5e8c9c6e6c7c7e5c4c9e4c2cae3bfcce1bdcde0bacfdfb8d0deb5d1dcb3d3dbb1d4daaed6d9acd7d8a9
+    d9d6a7dad5a4dbd4a2ddd39fded19de0d09ae1cf98e2ce95e4cc93e5cb90e7ca8ee8c98beac889ebc687ecc584eec482
+    efc37ff1c17df2c07af4bf78f5be75f6bc73f8bb70f9ba6efbb96bfcb769feb666ffb564fdb364fbb165f9af65f7ad66
+    f5ab66f3a966f1a767efa567eda368eba168e99f69e79d69e59b69e3996ae1976adf956bdd936bdb916bd98f6cd78d6c
+    d58b6dd3896dd1876ecf856ecd836ecb816fc97f6fc77d70c57c70c37a70c17871bf7671bd7472bb7272b97072b76e73
+    b56c73b36a74b16874af6675ad6475ab6275a96076a75e76a55c77a35a77a158779f56789d54789b5279995079974e7a
+    954c7a934a7a91487b8f467b8d447c8b427c88417b864079833f78813e767e3d757c3c74793b72773a7174397072386e
+    6f376d6c366b6a356a6734696533676232666031655d30635b2f62582e60562c5f532b5e502a5c4e295b4b2859492758
+    4626574425554124543f23533c225139215037204e341f4d321e4c2f1d4a2d1c492a1b48281a46251945231843201742
+  </palette>
+  </flame>
+  <flame name="Copper dragon" size="768 576" center="0.37647 0.10789" scale="399.35" quality="18" gamma="2.2" brightness="1.2" vibrancy=".95" background="0.003 0.004 0.009" palette_mode="linear" rotate="-24">
+    <xform weight="1" color="0.18" color_speed="0.81" coefs="0.483 0.483 -0.483 0.483 0 0" linear="1" />
+    <xform weight="1" color="0.83" color_speed="0.81" coefs="-0.483 0.483 -0.483 -0.483 1 0" linear="1" />
+    <color index="0" rgb="72 30 18" />
+    <color index="40" rgb="129 61 29" />
+    <color index="101" rgb="208 99 40" />
+    <color index="158" rgb="238 144 65" />
+    <color index="211" rgb="252 190 112" />
+    <color index="255" rgb="255 230 162" />
+  </flame>
+  <flame name="Violet nebula" version="Apophysis Reborn 0.5.0" time="0" size="768 576" center="-0.2203608963366237 0.024027505785527481" scale="164.73949644779546" rotate="0" zoom="0" quality="10" palette_mode="linear" oversample="1" brightness="4" gamma="2.2000000000000002" vibrancy="1" background="0 0 0">
+    <xform weight="1.2232251219557959" color="0.13441115606379647" color_speed="0.54930226752543954" opacity="1" coefs="-0.50950962902231556 -0.29335380748012341 0.25916658377815582 -0.45013177463100112 0.42891147748246833 -0.142593559790644" post="1 0 0 1 0 0" linear="0.66080622883494122" swirl="0.33919377116505878" />
+    <xform weight="0.86172718267332371" color="0.27688707595441847" color_speed="0.54561850918017396" opacity="1" coefs="-0.48405600289011297 0.17286148794047393 -0.18469692665370874 -0.5171982326848269 -0.098474055411136671 0.68522333959548931" post="1 0 0 1 0 0" linear="0.49949340642359374" spherical="0.50050659357640626" />
+    <xform weight="1.2374006870122669" color="0.63964047656270262" color_speed="0.46442177237851534" opacity="1" coefs="0.15566057641379283 0.32537065736732013 -0.51841593941998054 0.24801536993273199 -0.90123352002264312 0.019726285319263636" post="1 0 0 1 0 0" linear="0.58092671298143994" bubble="0.41907328701856006" />
+    <xform weight="1.1928604409092229" color="0.89968907786293872" color_speed="0.4524554643516871" opacity="1" coefs="0.27830966050485056 -0.21290812392477429 0.35418410138067841 0.46298307079301682 -0.1189987505718651 -0.80632829172704346" post="1 0 0 1 0 0" linear="1" />
+    <color index="0" rgb="42 18 83" />
+    <color index="45" rgb="87 39 135" />
+    <color index="96" rgb="119 67 196" />
+    <color index="153" rgb="191 117 226" />
+    <color index="208" rgb="157 165 241" />
+    <color index="255" rgb="214 213 255" />
+  </flame>
+  <flame name="Golden nautilus" version="Apophysis Reborn 0.5.0" time="0" size="768 576" center="0.043185505875100949 0.21736625692274303" scale="165.3043267457964" rotate="0" zoom="0" quality="10" palette_mode="linear" oversample="1" brightness="4" gamma="2.2000000000000002" vibrancy="1" background="0 0 0">
+    <xform weight="0.78195485905142204" color="0.18555241592353602" color_speed="0.40881469868149789" opacity="1" coefs="-0.62955253894789043 -0.14674534940105044 0.097658909771500699 -0.41896669876402309 0.76826828964810656 0.047243396510936543" post="1 0 0 1 0 0" linear="0.57508606589407263" swirl="0.42491393410592737" />
+    <xform weight="1.1627308092111734" color="0.56108502903619806" color_speed="0.46769022722072995" opacity="1" coefs="-0.63841774702995957 0.027670112860065849 -0.023331489457230105 -0.53831500469357496 -0.44572020785396549 0.67559227256313603" post="1 0 0 1 0 0" linear="0.63189944918939445" spherical="0.36810055081060555" />
+    <xform weight="1.1910409782014297" color="0.70986264714155045" color_speed="0.56146207877913601" opacity="1" coefs="-0.43976233142456189 -0.25672353507741885 0.32222041791588185 -0.55195719462398718 -0.41648182560618008 -0.44820472881733386" post="1 0 0 1 0 0" linear="0.46391258848222294" bubble="0.53608741151777706" />
+    <color index="0" rgb="84 26 10" />
+    <color index="41" rgb="151 66 16" />
+    <color index="104" rgb="217 118 25" />
+    <color index="168" rgb="242 177 63" />
+    <color index="218" rgb="249 214 131" />
+    <color index="255" rgb="255 241 197" />
+  </flame>
+</flames>

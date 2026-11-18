@@ -1,5 +1,9 @@
 # Verification record
 
+## 0.13.0 starter library
+
+The editor tests exercise startup with eight flames, opening and filtering the starter collection, switching flames, editing and saving a copy, and discarding or retaining unsaved work. They also cover thumbnail updates and selection as the Flame library dock changes width. To check the packaged Windows application manually, launch without a file, select each thumbnail, narrow and widen the dock, and reopen a saved edit.
+
 ## 0.10.0 Release Hardening — gate definitions and evidence
 
 M10 retains the existing mathematical, historical-source, file, renderer, editor, extension and animation regressions and adds release/tooling coverage. This section is part of the source freeze: **registered tests, a compiled development build and a passed focused check are not substituted for a final release run.** Exact final outcomes, source/executable identities, pass/skip/failure counts, timings and audit totals are stored with the distributed binaries. This lets the source remain unchanged while those final measurements are collected.

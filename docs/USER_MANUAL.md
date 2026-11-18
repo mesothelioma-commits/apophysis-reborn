@@ -1,4 +1,4 @@
-# Apophysis Reborn 0.12.1 — User manual
+# Apophysis Reborn 0.13.0 — User manual
 
 Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
@@ -29,7 +29,7 @@ The primary target is Windows 11 x64. Choose one of these distributions:
 | Windows setup EXE | Run the supplied setup EXE. | Install for the current Windows user with versioned shortcuts and an uninstall entry. |
 | Complete source/history ZIP | Open `bin/windows-x64/apophysis-reborn.exe` after extraction, or build the source. | Development, complete verification tools, source history and release evidence. |
 
-The installer is `apophysis-reborn-0.12.1-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.12.1`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.12.1 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
+The installer is `apophysis-reborn-0.13.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.13.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.13.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
 
 Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application's per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.
 
@@ -37,7 +37,7 @@ No separate Lua installation, video encoder or Vulkan SDK is needed to run the a
 
 ## Your first image
 
-1. Start the application. With no filename supplied, it opens the Ember Spiral example.
+1. Start the application. With no filename supplied, it opens eight editable starters in the Flame library. Select a thumbnail to preview its flame. Use File → Open starter library to reopen the collection, and File → Save as… to save your changes.
 2. Use **File → Open project or library…** (`Ctrl+O`) to open your own file or an example from the `examples` folder. Select an entry in **Flame library** and wait for its preview.
 3. Open **Gradient editor** (`Ctrl+G`), select a preset and choose **Use preset**. Choose **Apply gradient** to keep the change, or **Cancel** to leave the flame unchanged.
 4. Use **File → Save as…** to save your work as `.apoproject`. This retains the flame collection and native project settings.
@@ -48,7 +48,7 @@ Useful starting files include `examples/ember-spiral.flame`, `examples/variation
 
 ## Workspace and preview
 
-The **Flame library** panel searches entry names. The central preview displays the selected flame. Transform controls, output/camera fields and the Activity log occupy resizable docks. Drag dock titles to arrange them; **View** toggles panels and **Reset workspace** restores the default arrangement. **F11** toggles full screen. Window geometry and panel layout are saved in normal sessions. The current theme is dark; a light-theme selector and named/classic workspace profiles are not supplied.
+The **Flame library** panel searches entry names. In narrow panels the name wraps beneath the thumbnail. The central preview displays the selected flame. Transform controls, output/camera fields and the Activity log occupy resizable docks. Drag dock titles to arrange them; **View** toggles panels and **Reset workspace** restores the default arrangement. **F11** toggles full screen. Window geometry and panel layout are saved in normal sessions. The current theme is dark; a light-theme selector and named/classic workspace profiles are not supplied.
 
 The preview runs in the background. A quick pass refines toward the selected final sample limit. **Draft**, **Standard** and **Fine** presets trade speed for sample quality; a custom limit can be set in **Edit → Preferences**. Editing replaces stale work, so an older selection cannot overwrite the latest preview.
 

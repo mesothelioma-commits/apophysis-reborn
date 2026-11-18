@@ -677,7 +677,7 @@ int main(int argc, char **argv) {
       if (!args.isEmpty())
         window.openFile(args.front());
       else {
-        window.openExample();
+        window.openStarterLibrary();
         QTimer::singleShot(0, &window,
                            &apo::editor::MainWindow::recoverPreviousSession);
       }

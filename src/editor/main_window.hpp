@@ -45,6 +45,7 @@ public:
   void showRenderQueue();
   bool openFile(const QString &path);
   void openExample();
+  bool openStarterLibrary();
   void recoverPreviousSession();
   void applyAnimation(const AnimationClip &);
   std::vector<QString> queueAnimation(const AnimationClip &,

@@ -1,6 +1,15 @@
 <RCC>
   <qresource prefix="/examples">
     <file alias="ember-spiral.flame">../../examples/ember-spiral.flame</file>
+    <file alias="starter-library.flame">../../examples/starter-library.flame</file>
+    <file alias="starter/01.png">../../preview/starter/01-ember-spiral.png</file>
+    <file alias="starter/02.png">../../preview/starter/02-glass-fern.png</file>
+    <file alias="starter/03.png">../../preview/starter/03-ruby-rosette.png</file>
+    <file alias="starter/04.png">../../preview/starter/04-prism-lace.png</file>
+    <file alias="starter/05.png">../../preview/starter/05-tidal-filaments.png</file>
+    <file alias="starter/06.png">../../preview/starter/06-copper-dragon.png</file>
+    <file alias="starter/07.png">../../preview/starter/07-violet-nebula.png</file>
+    <file alias="starter/08.png">../../preview/starter/08-golden-nautilus.png</file>
     <file alias="variation-studies.flame">../../examples/variation-studies.flame</file>
     <file alias="ember-spiral.png">../../preview/ember-spiral.png</file>
   </qresource>

@@ -13,6 +13,7 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -26,6 +27,7 @@
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QHash>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
@@ -48,6 +50,7 @@
 #include <QStatusBar>
 #include <QStorageInfo>
 #include <QStyle>
+#include <QStyledItemDelegate>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTimer>
@@ -66,6 +69,66 @@ namespace {
 QString text(std::string_view value) {
   return QString::fromUtf8(value.data(), qsizetype(value.size()));
 }
+// Narrow library docks put the artwork above the name. Wide docks use the
+// standard Qt list layout. Both modes share the same items and selection.
+class FlameLibraryDelegate final : public QStyledItemDelegate {
+public:
+  using QStyledItemDelegate::QStyledItemDelegate;
+
+  QSize sizeHint(const QStyleOptionViewItem &option,
+                 const QModelIndex &index) const override {
+    auto size = QStyledItemDelegate::sizeHint(option, index);
+    if (option.decorationPosition == QStyleOptionViewItem::Top &&
+        option.rect.width() > 0) {
+      const int textWidth = std::max(1, option.rect.width() - 22);
+      const auto text = index.data(Qt::DisplayRole).toString();
+      const auto bounds = option.fontMetrics.boundingRect(
+          QRect(0, 0, textWidth, 0), Qt::TextWordWrap | Qt::AlignCenter, text);
+      const int imageHeight = index.data(Qt::DecorationRole).isNull()
+                                  ? 0 : option.decorationSize.height();
+      size.setHeight(std::max(size.height(), imageHeight + bounds.height() + 18));
+    }
+    return size;
+  }
+};
+
+class FlameLibraryList final : public QListWidget {
+protected:
+  void initViewItemOption(QStyleOptionViewItem *option) const override {
+    QListWidget::initViewItemOption(option);
+    if (viewport()->width() < iconSize().width() + 14 * option->fontMetrics.averageCharWidth() + 8) {
+      option->decorationPosition = QStyleOptionViewItem::Top;
+      option->decorationAlignment = Qt::AlignHCenter | Qt::AlignTop;
+      option->displayAlignment = Qt::AlignCenter;
+      option->decorationSize = iconSize().scaled(
+          std::max(1, viewport()->width() - 8), 39, Qt::KeepAspectRatio);
+    }
+  }
+};
+
+constexpr auto starterPath = ":/examples/starter-library.flame";
+
+QByteArray thumbnailKey(std::string_view entry) {
+  return QCryptographicHash::hash(QByteArrayView(entry.data(), qsizetype(entry.size())),
+                                  QCryptographicHash::Sha256);
+}
+
+QString starterThumbnail(const QByteArray &key) {
+  // Matching source bytes also handles edited, reordered and saved collections.
+  static const auto paths = [] {
+    QHash<QByteArray, QString> result;
+    QFile file(starterPath);
+    if (file.open(QIODevice::ReadOnly)) {
+      const auto document = LegacyDocument::parse(file.readAll().toStdString());
+      for (std::size_t i = 0; i < document.entries().size(); ++i)
+        result.insert(thumbnailKey(document.element_bytes(i)),
+                      QString(":/examples/starter/%1.png").arg(i + 1, 2, 10, QChar('0')));
+    }
+    return result;
+  }();
+  return paths.value(key);
+}
+
 QString number(double value) {
   char buffer[128];
   const auto result =
@@ -679,6 +742,14 @@ void MainWindow::makeActions() {
                               &MainWindow::chooseOpen);
   open->setShortcut(QKeySequence::Open);
   open->setObjectName("actionOpen");
+  file->addAction("Open starter library", this, [this] {
+    run([this] {
+      if (openStarterLibrary()) {
+        libraryDock_->show();
+        libraryDock_->raise();
+      }
+    });
+  })->setObjectName("actionOpenStarterLibrary");
   auto recent = file->addMenu("Recent files");
   connect(recent, &QMenu::aboutToShow, this, [this, recent] {
     recent->clear();
@@ -969,7 +1040,11 @@ void MainWindow::makeLibrary() {
   librarySearch_->setPlaceholderText("Find a flame…");
   librarySearch_->setClearButtonEnabled(true);
   layout->addWidget(librarySearch_);
-  library_ = new QListWidget;
+  library_ = new FlameLibraryList;
+  library_->setItemDelegate(new FlameLibraryDelegate(library_));
+  library_->setWordWrap(true);
+  library_->setResizeMode(QListView::Adjust);
+  library_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   library_->setObjectName("flameLibrary");
   library_->setIconSize({64, 48});
   layout->addWidget(library_);
@@ -1543,9 +1618,15 @@ void MainWindow::refresh() {
     item->setText(entry.name.empty() ? QString("Untitled %1").arg(i + 1)
                                      : text(entry.name));
     const auto issue = session_.document().render_issue(i);
-    item->setToolTip(
-        text(entry.version) +
-        (issue ? "\nPreserved · " + text(*issue) : "\nPreview available"));
+    const auto key = issue ? QByteArray{} : thumbnailKey(session_.document().element_bytes(i));
+    if (item->data(Qt::UserRole).toByteArray() != key) {
+      item->setData(Qt::UserRole, key);
+      const auto path = starterThumbnail(key);
+      item->setIcon(path.isEmpty() ? QIcon{} : QIcon(path));
+    }
+    const auto version = entry.version.empty() ? QString{} : "\n" + text(entry.version);
+    item->setToolTip(item->text() + version +
+                     (issue ? "\nPreserved · " + text(*issue) : "\nPreview available"));
     item->setForeground(issue ? QColor("#d3af89")
                               : palette().color(QPalette::Text));
   }
@@ -1945,8 +2026,6 @@ bool MainWindow::openFile(const QString &path) {
     } else
       session_.load(path);
     restoreProjectState();
-    for (int i = 0; i < library_->count(); ++i)
-      library_->item(i)->setIcon({});
     librarySearch_->clear();
     triangles_->fit();
     previewCanvas_->fit();
@@ -1982,6 +2061,20 @@ void MainWindow::openExample() {
   restoreProjectState();
   triangles_->fit();
 }
+bool MainWindow::openStarterLibrary() {
+  if (closing_ || saving_ || !confirmDiscard())
+    return false;
+  QFile file(starterPath);
+  if (!file.open(QIODevice::ReadOnly))
+    throw std::runtime_error("The built-in starter library is missing");
+  session_.loadBytes(file.readAll().toStdString());
+  restoreProjectState();
+  librarySearch_->clear();
+  triangles_->fit();
+  previewCanvas_->fit();
+  return true;
+}
+
 void MainWindow::newDocument() {
   if (!confirmDiscard())
     return;
@@ -1990,6 +2083,7 @@ void MainWindow::newDocument() {
     flame.name = "Untitled flame";
     session_.loadBytes(serialize_flame(flame), {}, true);
     restoreProjectState();
+    librarySearch_->clear();
     triangles_->fit();
     previewCanvas_->fit();
   });
