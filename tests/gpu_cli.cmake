@@ -111,7 +111,9 @@ run_preserved_failure(--backend auto --memory-mib 1)
 run_preserved_failure(--device)
 
 if(NOT selected_index STREQUAL "")
-    run_preserved_failure(--backend vulkan --device "${selected_index}" --gpu-memory-mib 1 --no-fallback)
+    # A small stream can fit where the old dense histogram could not. This
+    # chunk alone needs more than 1 MiB of device hit storage.
+    run_preserved_failure(--backend vulkan --device "${selected_index}" --gpu-memory-mib 1 --samples 65536 --no-fallback)
     run_ok(--no-fallback --flame "${SAMPLE}" --output "${output}" --samples 16387 --seed 48
         --backend vulkan --device "${selected_index}" --gpu-memory-mib 128)
     file(READ "${output}" magic LIMIT 2 HEX)

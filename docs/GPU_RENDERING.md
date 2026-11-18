@@ -1,4 +1,4 @@
-# CPU and Vulkan rendering — 0.6.0
+# CPU and Vulkan rendering — 0.7.0
 
 The desktop editor and command-line renderer can select the existing CPU reference path or the new Vulkan compute path. Vulkan performs transform selection, orbit calculations, camera projection, palette/opacity sampling and histogram accumulation. Orbit calculations use 32-bit floating point, while histogram totals use 64-bit integers. The existing CPU reconstruction applies density scaling, spatial filtering, gamma, brightness, vibrancy, background and RGB image output.
 
@@ -86,6 +86,12 @@ It exits unsuccessfully if Vulkan was not the actual backend, a preview fails, a
 
 ## Scope
 
-Vulkan here is a compute sampling backend with the existing CPU reconstruction. CUDA is not included in this checkpoint. The renderer still checks dense-buffer storage and working-memory limits; GPU selection does not imply tiled 16K support, a render queue, checkpointing or high-bit-depth output. Those remain subsequent high-resolution work.
+Vulkan is a compute sampling backend with shared CPU reconstruction. CUDA is not included. Preview rendering retains dense-buffer limits. Version 0.7.0 file rendering uses bounded global-coordinate hit buffers and disk-backed strip reconstruction, with a persistent queue, checkpoints and PNG/TIFF16 output. The file path does not require a full GPU histogram. [GPU streaming](GPU_STREAMING.md) · [High-resolution controls](HIGH_RES_RENDERING.md)
 
 See [TEST_PLAN.md](TEST_PLAN.md) for executed results and remaining platform acceptance, [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) for the creative workflow, and [VARIATIONS.md](VARIATIONS.md) for the CPU variation definitions.
+
+## Checkpointed GPU file jobs in 0.7.0
+
+The file renderer uses absolute compute-chain ranges and the same global camera and shader formulas as dense sampling. Completed hit chunks are committed before progress is published. If Vulkan cannot start and fallback is enabled, the result records CPU and its reason. Once GPU samples have committed, resume requires the saved device, driver and shader identity; a later error preserves the checkpoint instead of mixing CPU samples into it. Resource budgets and CPU worker count may change when the saved geometry still fits. The queue records the actual backend/device throughout the job.
+
+`gpu-stream-tests` checks exact dense/stream hits and counts, split ranges and bounded global 16K geometry. `file-render-tests --require-vulkan --device ID` checks streamed pixels and GPU resume on the selected device. Those executed here on software Vulkan. Full 16K output acceptance was separately CPU-based; see [HIGH_RES_ACCEPTANCE.md](HIGH_RES_ACCEPTANCE.md). The ordinary and strict Windows scripts include the relevant new tests.

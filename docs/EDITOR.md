@@ -1,4 +1,4 @@
-# Native Editor guide — 0.6.0
+# Native Editor guide — 0.7.0
 
 Extract the complete portable package and open `bin/windows-x64/apophysis-reborn.exe`. The editor uses the same CPU/Vulkan rendering paths and legacy document model as the command-line tools. It starts with Ember Spiral when a file has not been supplied. Build and platform verification instructions are in [QT_BUILD.md](QT_BUILD.md); device selection and backend behavior are described in [GPU_RENDERING.md](GPU_RENDERING.md).
 
@@ -76,9 +76,17 @@ While a library has unsaved edits, the editor writes a recovery copy every 45 se
 
 ## Render an image
 
-Choose **File → Render image** or press **Ctrl+R**. The dialog shows the saved output dimensions and accepts a sample count, CPU worker count, system buffer budget, renderer, preferred device, GPU working budget and CPU fallback policy. Renderer controls start with the current preview preferences; changing them here applies to this export. The default sample count derives from the flame's quality and zoom. Select a `.bmp` or `.ppm` destination after accepting the settings.
+Choose **File → Render image** or press **Ctrl+R**. Select an output preset from 1920 × 1080 through 16384 × 16384, or enter custom dimensions up to 16384 per side. **Keep current aspect ratio** links the dimension fields. The dialog scales a render copy of the camera to the chosen dimensions; the open document remains unchanged.
 
-The render runs in the background. **Activity** shows its status and progress and provides **Cancel render**. Output is staged and replaces the destination after rendering and writing complete. System and GPU working budgets are checked separately, along with each device's storage-buffer limits. Increasing output dimensions or oversampling can require a larger budget. A strict Vulkan error or cancellation leaves an existing destination intact. Vulkan cancellation waits for already submitted bounded compute work to finish.
+Set sample density or disable automatic calculation to enter an exact sample count. Oversampling, spatial filter and radius, random seed, CPU worker count, system buffer budget, and working disk budget are independent controls. Renderer, preferred device, GPU working budget, and CPU fallback start with the preview preferences and apply to this queued export. The estimate shows planned buffers, conservative storage allowance, strip count, and strip height. Phase time estimates become available after the queue measures actual progress.
+
+Choose the destination in the same dialog. **PNG** and **TIFF** support 8- or 16-bit output with optional transparent backgrounds using straight alpha. **PPM** supports 8- or 16-bit RGB, and **BMP** supports 8-bit RGB. The filename extension must match the selected format. Choose **Add to queue** to leave the new job pending, or **Add and start queue** to start queued and paused jobs in their current order.
+
+Open **Render queue** from the File menu or toolbar to inspect and manage jobs. Each job keeps an immutable flame snapshot and its output settings while one background worker processes the list. You can keep editing, reorder pending jobs, pause the queue, cancel a job, retry or resume a stopped job, or start the selected snapshot over. The table and details show progress, elapsed time, measured phase ETA, actual backend and device, fallback reasons, and errors; **Activity** also reports the active export.
+
+The queue saves automatically in the application's per-user local data directory and can also be saved or restored as a JSON file. Restored queues wait for an explicit **Start / resume** action. Pausing first requests a safe stop; a saved-checkpoint status appears only after the worker returns and the committed checkpoint is verified. Closing the editor pauses active work before exiting. Checkpoint samples stay in their referenced working directories when a queue JSON is saved elsewhere; removing a queue entry does not delete its output or checkpoint files.
+
+High-resolution output uses bounded reconstruction strips with global sampling and filter overlap. Images are staged and replace the destination only after rendering and writing complete, so a failed or cancelled render preserves an existing destination. A resumed reconstruction starts its output again from saved samples. System, GPU, and disk budgets are checked separately. See [RENDER_QUEUE.md](RENDER_QUEUE.md) for queue controls, persistence, and recovery, and [HIGH_RES_RENDERING.md](HIGH_RES_RENDERING.md) for memory planning, file formats, and command-line rendering.
 
 ## Preferences and workspace
 

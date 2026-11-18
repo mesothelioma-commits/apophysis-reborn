@@ -11,6 +11,23 @@
 #include <sstream>
 #include <utility>
 
+namespace apo::gpu {
+namespace {
+std::uint64_t validate_hit_range(const RenderOptions &options, std::uint64_t first,
+                                 std::uint32_t count) {
+    if (options.stop_token.stop_requested())
+        throw RenderCancelled();
+    constexpr std::uint64_t max_samples = UINT64_MAX / ((1u << 24) - 1u);
+    if (!options.samples || options.samples > max_samples)
+        throw std::invalid_argument("Sample count exceeds the supported accumulator range");
+    const auto chains = 1 + (options.samples - 1) / samples_per_chain;
+    if (!count || count > 1024 || first >= chains || count > chains - first)
+        throw std::invalid_argument("Vulkan hit range must select 1–1024 existing sample chains");
+    return chains;
+}
+} // namespace
+} // namespace apo::gpu
+
 #if APO_ENABLE_VULKAN
 #define VK_NO_PROTOTYPES
 #include "generated/orbit_spv.hpp"
@@ -153,9 +170,9 @@ struct Instance {
             throw Unavailable("Vulkan loader cannot create an instance");
         VkApplicationInfo application{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         application.pApplicationName = "Apophysis Reborn";
-        application.applicationVersion = VK_MAKE_VERSION(0, 6, 0);
+        application.applicationVersion = VK_MAKE_VERSION(0, 7, 0);
         application.pEngineName = "Reborn compute";
-        application.engineVersion = VK_MAKE_VERSION(0, 6, 0);
+        application.engineVersion = VK_MAKE_VERSION(0, 7, 0);
         application.apiVersion = api;
         VkInstanceCreateInfo createInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         createInfo.pApplicationInfo = &application;
@@ -679,6 +696,25 @@ void storage_size(const Context &context, std::uint64_t bytes) {
 std::uint64_t read64(const std::uint32_t *words) {
     return std::uint64_t(words[0]) | (std::uint64_t(words[1]) << 32);
 }
+std::string hit_identity(const Physical &device) {
+    // This identifies sampling compatibility; checkpoint file integrity is
+    // checked separately by the file renderer. Hash every SPIR-V byte in its
+    // specified little-endian order rather than using host object padding.
+    static const std::uint64_t kernel = [] {
+        std::uint64_t hash = UINT64_C(14695981039346656037);
+        for (auto word : gpu::orbit_spv)
+            for (unsigned byte = 0; byte < 4; ++byte)
+                hash = (hash ^ ((word >> (byte * 8)) & 255u)) * UINT64_C(1099511628211);
+        return hash;
+    }();
+    std::ostringstream result;
+    result << "reborn-0.7.0/vulkan-hit-v1|" << device.info.id << "|api=" << device.info.api_version
+           << "|driver=" << device.info.driver_version << "|pipeline=" << std::hex << std::setfill('0');
+    for (auto byte : device.properties.pipelineCacheUUID)
+        result << std::setw(2) << unsigned(byte);
+    result << "|spirv-fnv1a64=" << std::setw(16) << kernel;
+    return result.str();
+}
 } // namespace
 
 ComputeInfo compute_devices() {
@@ -813,6 +849,108 @@ SampledHistogram sample(const Flame &flame, const RenderOptions &options, const 
     }
 }
 
+SampledHits sample_hits(const Flame &flame, const RenderOptions &options, const Geometry &geometry,
+                        std::uint64_t first_chain, std::uint32_t chain_count,
+                        std::uint64_t host_reserved_bytes) {
+    const auto chains = validate_hit_range(options, first_chain, chain_count);
+    if (const auto reason = support_reason(flame); !reason.empty())
+        throw Unavailable(reason);
+    PackedFlame packed;
+    try {
+        packed = pack_flame(flame, geometry, true);
+    } catch (const std::invalid_argument &error) {
+        throw Unavailable(error.what());
+    }
+    try {
+        auto owner = context(options);
+        auto &ctx = *owner;
+        if (chain_count >
+            std::uint64_t(ctx.physical.properties.limits.maxComputeWorkGroupCount[0]) * workgroup_size)
+            throw Unavailable("Vulkan hit range exceeds the device dispatch limit");
+        using Hit = std::array<std::uint32_t, 6>;
+        static_assert(sizeof(Hit) == 24);
+        const auto capacity = std::uint64_t(chain_count) * samples_per_chain;
+        const auto hit_bytes = capacity * sizeof(Hit);
+        storage_size(ctx, hit_bytes);
+        storage_size(ctx, packed.words.size() * sizeof(std::uint32_t));
+        Budget budget{mib(options.memory_mib), mib(options.gpu_memory_mib), 0};
+        budget.reserve(host_reserved_bytes, true, false);
+        budget.reserve(hit_bytes, true, false); // Returned vector capacity.
+        budget.reserve(packed.words.capacity() * sizeof(std::uint32_t), true, false);
+        Buffer model(ctx, packed.words.size() * sizeof(std::uint32_t),
+                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, budget);
+        Buffer hits(ctx, hit_bytes,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    false, budget);
+        Buffer counters(ctx, 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                        true, budget);
+        Buffer probes(ctx, 16, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, budget);
+        Buffer readback(ctx, hit_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, budget);
+        std::memcpy(model.mapped, packed.words.data(), packed.words.size() * sizeof(std::uint32_t));
+        model.flush();
+        Bindings bindings(ctx, {&model, &hits, &counters, &probes});
+        PushConstants push;
+        push.mode = 2;
+        push.chain_base_low = std::uint32_t(first_chain);
+        push.chain_base_high = std::uint32_t(first_chain >> 32);
+        push.chain_count = chain_count;
+        push.last_chain_samples =
+            first_chain + chain_count == chains
+                ? std::uint32_t(options.samples - (chains - 1) * samples_per_chain)
+                : samples_per_chain;
+        push.seed_low = std::uint32_t(options.seed);
+        push.seed_high = std::uint32_t(options.seed >> 32);
+        cancelled(options.stop_token);
+        ctx.begin();
+        ctx.CmdFillBuffer(ctx.command, hits.buffer, 0, VK_WHOLE_SIZE, UINT32_MAX);
+        ctx.CmdFillBuffer(ctx.command, counters.buffer, 0, VK_WHOLE_SIZE, 0);
+        barrier(ctx, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        bindings.bind(push);
+        barrier(ctx, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_HOST_READ_BIT);
+        VkBufferCopy copy{0, 0, hit_bytes};
+        ctx.CmdCopyBuffer(ctx.command, hits.buffer, readback.buffer, 1, &copy);
+        barrier(ctx, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
+        ctx.submit(options.stop_token);
+        readback.invalidate();
+        counters.invalidate();
+        SampledHits result;
+        result.device_name =
+            ctx.physical.info.name + (ctx.physical.info.software ? " (software Vulkan)" : "");
+        result.checkpoint_identity = hit_identity(ctx.physical);
+        const auto *totals = static_cast<const std::uint32_t *>(counters.mapped);
+        result.plotted = read64(totals);
+        result.invalid = read64(totals + 2);
+        const auto range_samples =
+            std::uint64_t(chain_count - 1) * samples_per_chain + push.last_chain_samples;
+        if (result.plotted > range_samples || result.invalid > range_samples + chain_count * burn_in)
+            throw Unavailable("Vulkan hit stream returned invalid sample counters");
+        result.hits.reserve(static_cast<std::size_t>(capacity));
+        const auto *words = static_cast<const std::uint32_t *>(readback.mapped);
+        for (std::uint64_t slot = 0; slot < capacity; ++slot) {
+            if ((slot & 16383u) == 0)
+                cancelled(options.stop_token);
+            const auto *record = words + slot * 6;
+            if (record[0] == UINT32_MAX)
+                continue;
+            if (record[0] >= geometry.width || record[1] >= geometry.height)
+                throw Unavailable("Vulkan hit stream returned an invalid global coordinate");
+            result.hits.push_back({record[0], record[1], record[2], record[3], record[4], record[5]});
+        }
+        if (result.hits.size() != result.plotted)
+            throw Unavailable("Vulkan hit stream counter does not match its valid records");
+        cancelled(options.stop_token);
+        return result;
+    } catch (const Unavailable &) {
+        cached.reset();
+        throw;
+    }
+}
+
 std::vector<std::uint32_t> run_probes(const PackedFlame &flame, std::span<const std::uint32_t> words,
                                       const RenderOptions &options) {
     cancelled(options.stop_token);
@@ -880,6 +1018,12 @@ namespace gpu {
 SampledHistogram sample(const Flame &, const RenderOptions &, const Geometry &, std::uint64_t) {
     throw Unavailable("Vulkan support is disabled in this build");
 }
+SampledHits sample_hits(const Flame &, const RenderOptions &options, const Geometry &,
+                        std::uint64_t first_chain, std::uint32_t chain_count, std::uint64_t) {
+    validate_hit_range(options, first_chain, chain_count);
+    throw Unavailable("Vulkan support is disabled in this build");
+}
+
 std::vector<std::uint32_t> run_probes(const PackedFlame &, std::span<const std::uint32_t>,
                                       const RenderOptions &) {
     throw Unavailable("Vulkan support is disabled in this build");

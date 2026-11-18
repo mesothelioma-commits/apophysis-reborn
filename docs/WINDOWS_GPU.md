@@ -1,4 +1,4 @@
-# Windows Vulkan verification — 0.6.0
+# Windows Vulkan verification — 0.7.0
 
 The portable application includes the Vulkan compute backend, its compiled shader and the existing CPU renderer. The Vulkan loader and graphics driver come from the Windows installation. The application loads the system `vulkan-1.dll` dynamically; it does not bundle a replacement loader or require the Vulkan SDK to run. CPU operation remains available when the loader or a suitable GPU is absent.
 
@@ -89,4 +89,10 @@ To require a specific Vulkan device and report any failure:
   --output ember-vulkan.bmp --backend vulkan --device 0 --no-fallback
 ```
 
-The compute path currently uses FP32 sampling and the existing CPU image reconstruction. The supported model/range limits, deterministic compute streams and expected CPU/device differences are documented in [GPU_KERNEL.md](GPU_KERNEL.md). CUDA, tiled high-resolution rendering and 16K acceptance remain separate work.
+The compute path currently uses FP32 sampling and the existing CPU image reconstruction. The supported model/range limits, deterministic compute streams and expected CPU/device differences are documented in [GPU_KERNEL.md](GPU_KERNEL.md). CUDA remains unimplemented. The 0.7.0 file path supplies bounded hit streaming, checkpointed queues and high-depth output. Full 16K acceptance was CPU-based on Linux; Windows and physical GPU high-resolution acceptance remain separate. [Streaming contract](GPU_STREAMING.md) · [Measured 16K evidence](HIGH_RES_ACCEPTANCE.md)
+
+## High-resolution checks in 0.7.0
+
+The strict script also runs `gpu-stream-tests --require-vulkan --device ID` and `file-render-tests --require-vulkan --device ID` using the selected device, then exercises streamed 16-bit image output. A skip or CPU fallback cannot satisfy a strict GPU gate. The normal CPU/editor verification includes the persistent queue and small PNG16/TIFF16 jobs without requiring a Vulkan device.
+
+For the separately opt-in CPU full-resolution queue workflow on Windows, run `bash scripts/verify-editor-windows.sh --large-render --no-open`. It produces and measures a native 16384 × 16384 PNG16 RGBA image, commits and resumes a checkpoint, and records UI heartbeats. It requires sufficient free storage for the sampled hits and image. Read [RENDER_QUEUE.md](RENDER_QUEUE.md) and [HIGH_RES_RENDERING.md](HIGH_RES_RENDERING.md) for the test's settings and checkpoint retention.

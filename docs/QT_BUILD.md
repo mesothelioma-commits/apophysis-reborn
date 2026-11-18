@@ -1,17 +1,17 @@
 # Native Qt desktop build
 
-The 0.6.0 editor and its creative tools use Qt 6 Widgets and the same C++20 CPU/Vulkan rendering and legacy-document library as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ runtime. Keep the complete executable directory together.
+The 0.7.0 editor, creative tools and persistent render queue use Qt 6 Widgets and the same C++20 CPU/Vulkan rendering and legacy-document library as the CLI. The milestone binaries use Qt 6.8.2. The Windows editor and Qt test programs dynamically link their GUI runtime. The core CLI remains available and shares the packaged C++ and zlib runtimes. Keep the complete executable directory together.
 
 ## Build with an installed Qt development kit
 
-Install a Qt 6 desktop development kit, a matching C++20 compiler, CMake 3.20 or newer, and Expat development files. Qt Core, Gui, Widgets and Test are required for a build with tests enabled. On Windows, use the compiler shipped or supported by that Qt kit. Open Git Bash in the source directory and supply the kit prefix if CMake cannot discover it automatically.
+Install a Qt 6 desktop development kit, a matching C++20 compiler, CMake 3.20 or newer, and Expat and zlib development files. Qt Core, Gui, Widgets and Test are required for a build with tests enabled. PNG export uses zlib directly; both editor and core-only builds require its headers and library, independently of Qt's own PNG support. On Windows, use the compiler shipped or supported by that Qt kit. Open Git Bash in the source directory and supply the kit prefix if CMake cannot discover it automatically.
 
 ```bash
 export APO_QT_PREFIX=/path/to/Qt/6.8.2/your-desktop-kit
 bash scripts/build-editor.sh
 ```
 
-The script invokes the normal source build with `APO_BUILD_EDITOR=ON`, builds the editor and tests, and runs CTest. The Qt directory can also be supplied as `-DCMAKE_PREFIX_PATH=...`. Expat installed through vcpkg can use the existing `VCPKG_ROOT` handling in `scripts/build.sh`. A core-only build uses `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF`.
+The script invokes the normal source build with `APO_BUILD_EDITOR=ON`, builds the editor and tests, and runs CTest. The Qt directory can also be supplied as `-DCMAKE_PREFIX_PATH=...`. Expat and zlib installed through vcpkg can use the existing `VCPKG_ROOT` handling in `scripts/build.sh`; install both for the selected target triplet. CMake links the core to `ZLIB::ZLIB`. A core-only build uses `bash scripts/build.sh -DAPO_BUILD_EDITOR=OFF` and still requires Expat and zlib.
 
 ## Vulkan build and runtime
 
@@ -36,7 +36,7 @@ The script targets Vulkan 1.0, runs `spirv-val` and records source/module hashes
 
 ## Packaged Windows toolchain
 
-The release cross-build combines the LLVM-MinGW 20261104 UCRT x86-64 toolchain, static Expat 2.10.0, and MSYS2's clang64 Qt 6.8.2 package. Native Linux Qt 6.8.2 supplies the matching `moc`, `uic` and `rcc` host tools. Windows Qt headers, import libraries and DLLs come from `mingw-w64-clang-x86_64-qt6-base-6.8.2-1-any.pkg.tar.zst`. The source package and all MSYS2 build patches are included in the release's `third-party-sources` directory. The prior toolchain and Expat provenance are in WINDOWS_BUILD.md. [Qt cross-compilation documentation](https://doc.qt.io/qt-6.8/cross-compiling-qt.html) · [Windows Qt package](https://repo.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-qt6-base-6.8.2-1-any.pkg.tar.zst)
+The release cross-build combines the LLVM-MinGW 20261104 UCRT x86-64 toolchain, static Expat 2.10.0, and MSYS2's clang64 Qt 6.8.2 package. The zlib development files and `zlib1.dll` come from `mingw-w64-clang-x86_64-zlib-1.3.1-1-any.pkg.tar.zst`, already part of the Qt dependency prefix. Native Linux Qt 6.8.2 supplies the matching `moc`, `uic` and `rcc` host tools. Windows Qt headers, import libraries and DLLs come from `mingw-w64-clang-x86_64-qt6-base-6.8.2-1-any.pkg.tar.zst`. The Qt source package and all MSYS2 build patches are included in the release's `third-party-sources` directory. The prior toolchain and Expat provenance are in WINDOWS_BUILD.md. [Qt cross-compilation documentation](https://doc.qt.io/qt-6.8/cross-compiling-qt.html) · [Windows Qt package](https://repo.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-qt6-base-6.8.2-1-any.pkg.tar.zst)
 
 The Windows GUI DLLs use MSYS2 libc++ 23.1.5. Its exported unwind entry points are required by the distributed Qt build. The staging script checks each imported non-system symbol against the chosen DLL's exports. It also resolves the recursive dependencies of the Windows platform, offscreen testing, Windows style and JPEG plugins.
 
@@ -90,11 +90,13 @@ export QT_QPA_PLATFORM_PLUGIN_PATH=/path/to/native-qt/usr/lib/x86_64-linux-gnu/q
 ctest --test-dir build --output-on-failure
 ```
 
-The Linux editor was compiled with Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. The final Release build passed all **20 CTest entries** in 3.42 seconds; the ASan/UBSan Debug build passed the same 20 in 18.37 seconds. Leak detection was disabled for the sanitizer run. A separate core-only build with Vulkan disabled had 15 CTest entries: 13 passed and the two device-execution checks were explicitly skipped.
+The Linux editor uses Qt 6.8.2 from Debian's `6.8.2+dfsg-9+deb13u2` packages. M7 registers **25 CTest entries**, including file rendering/checkpoints, streaming image codecs, bounded Vulkan hit streaming, CLI file workflows and the render queue. The final Release and ASan/UBSan execution records accompany the distribution; leak detection is disabled for the sanitizer run. The core-only build with Vulkan disabled has **19 CTest entries**: 16 pass and three device-execution checks explicitly skip. A skipped check does not establish GPU execution.
 
-The compute tests executed through llvmpipe software Vulkan on this GPU-less host. Native desktop interaction switched CPU → Vulkan with the complete capability/precision description and buttons visible, applied the selection, previewed a gradient edit and saved `examples/gpu-palette-study.flame`. The strict GPU smoke mode reported actual Vulkan execution without fallback. These results verify the compute/API path; physical GPU performance and driver acceptance remain separate checks.
+For historical comparison, the M6 Release build passed its 20 entries in 3.42 seconds and the M6 ASan/UBSan build passed the same 20 in 18.37 seconds. Its core-only Vulkan-disabled configuration had 15 entries: 13 passed and two skipped.
 
-The Windows editor and fourteen console executables cross-compiled against the matched Qt headers and import libraries: **15 executables** in total. The staged runtime contains **48 files**, including **46 PE modules**. Import inspection resolved all **13,232 non-system imported symbols** against the exact copied libraries, with zero missing. All staged executables match the final build. The Windows programs were compiled and audited, not executed. The system Vulkan loader is loaded dynamically, so the static import audit does not itself verify a Windows Vulkan driver.
+The compute tests execute through llvmpipe software Vulkan on this host. M7 compares dense and streamed GPU histograms and final pixels, tests partial GPU checkpoint resume and rejects an incompatible shader identity. Native acceptance also renders an actual 16384×16384 PNG RGBA16 through the queue, pauses with a committed checkpoint, resumes and records responsive event-loop heartbeats. These results verify the algorithms, compute/API path and bounded rendering workflow; physical GPU performance and Windows driver acceptance remain separate checks. The M6 native desktop interaction and `examples/gpu-palette-study.flame` remain part of the earlier verification history.
+
+The M7 Windows editor and eighteen console executables cross-compile against the matched Qt headers and import libraries: **19 executables** in total. The staged runtime contains **52 files**, including **50 PE modules**. Its dependency audit resolves all **14,948 non-system imported symbols** against the exact copied libraries, with zero missing; `verification/windows-runtime-record.json` records the source/executable fingerprints. All staged executables match the final build. The Windows programs were compiled and audited, not executed. The system Vulkan loader is loaded dynamically, so the static import audit does not itself verify a Windows Vulkan driver. The prior M6 stage contained 15 executables, 48 files and 46 PE modules, with 13,232 resolved non-system symbols.
 
 When ready to run that check on Windows 11, extract the complete milestone ZIP and run from Git Bash.
 
@@ -102,7 +104,17 @@ When ready to run that check on Windows 11, extract the complete milestone ZIP a
 bash scripts/verify-editor-windows.sh
 ```
 
-The script records the OS version and Vulkan discovery, runs the CPU/core and Qt tests, checks a reported CPU fallback, and launches the editor's creative smoke workflow explicitly with the CPU backend. It verifies every required output and inspects the saved original, random batch and mutation flame through the CLI. It keeps a log and artifacts under the project's `logs` and `out` directories. A GPU is not required. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+The script records the OS version and Vulkan discovery, runs the CPU/core and Qt tests, checks CPU fallback and checkpoint resume, then launches both the creative and queue smoke workflows explicitly with the CPU backend. The core script covers BMP, PPM, PNG and TIFF, true 16-bit output and transparent PNG/TIFF; the queue smoke writes PNG RGBA16 and TIFF RGB16 and checks UI heartbeats. It verifies every required output and inspects the saved original, random batch and mutation flame through the CLI. It keeps a log and artifacts under the project's `logs` and `out` directories. A GPU is not required, and the CPU script does not claim Vulkan execution. Add `--no-open` to suppress opening Explorer. The normal desktop program is `bin/windows-x64/apophysis-reborn.exe`.
+
+The ordinary gate includes a 16K storage estimate. Request the actual 16K render and pause/resume acceptance explicitly when ready:
+
+```bash
+bash scripts/verify-editor-windows.sh --large-render --no-open
+./bin/windows-x64/apophysis-reborn.exe --queue-smoke-test out/queue-smoke --backend cpu
+./bin/windows-x64/apophysis-reborn.exe --large-render-smoke-test out/16k-smoke --backend cpu
+```
+
+The large workflow renders 16384×16384 PNG RGBA16 with 8,388,611 samples and a 128 MiB working-buffer budget. It retains checkpoint chunks and uses an 8 GiB disk budget; the planner checks free space before rendering. The `16k-report.json` records pause/checkpoint preservation, resumed completion and event-loop measurements. Its screenshots show the paused and completed queue and the editor. Working-buffer limits do not represent a cap on the entire Qt process or driver memory.
 
 The creative workflow can also be invoked directly:
 
@@ -127,7 +139,7 @@ When ready to execute the Windows GPU gate, run:
 bash scripts/verify-gpu-windows.sh
 ```
 
-This optional script selects a usable physical GPU by default and requires actual Vulkan execution from the formula tests, rendering comparisons, CLI export and native GPU smoke mode. `--device ID` or a zero-based index selects a specific device; an explicitly selected software implementation remains labeled as software. A skipped compute test, missing device or fallback fails the strict gate. The [Windows GPU guide](WINDOWS_GPU.md) lists its outputs, memory option and device-selection details.
+This optional script selects a usable physical GPU by default and requires actual Vulkan execution from the formula tests, dense rendering comparisons, bounded hit-stream tests, exact file reconstruction and partial checkpoint resume. The same selected device ID is passed to every test, CLI export and desktop/queue smoke. It also writes PNG RGBA16 and queued PNG/TIFF 16-bit exports. `--device ID` or a zero-based index selects a specific device; an explicitly selected software implementation remains labeled as software. A skipped compute test, missing device or fallback fails the strict gate. The [Windows GPU guide](WINDOWS_GPU.md) lists its outputs, memory option and device-selection details.
 
 The native GPU smoke mode can also run directly:
 
@@ -135,4 +147,4 @@ The native GPU smoke mode can also run directly:
 ./bin/windows-x64/apophysis-reborn.exe --gpu-smoke-test out/gpu-smoke --device 0
 ```
 
-Choose `0` from your actual discovery inventory, or supply its ID. The mode requires Vulkan without fallback and writes `editor.png`, `preview.png`, `saved-example.flame`, `render-device.json` and `render-settings.png`. It checks actual backend identity and has a 120-second timeout. The package includes the final Linux screenshots in `preview/gpu-editor-0.6.0.png` and `preview/gpu-settings-0.6.0.png`; their device is software Vulkan. CUDA and tiled 16K acceptance are not included in this checkpoint.
+Choose `0` from your actual discovery inventory, or supply its ID. The mode requires Vulkan without fallback and writes `editor.png`, `preview.png`, `saved-example.flame`, `render-device.json` and `render-settings.png`. It checks actual backend identity and has a 120-second timeout. The M7 queue and 16K acceptance evidence is recorded separately from the historical M6 GPU screenshots. CUDA is not included. Windows execution and physical GPU acceptance remain pending until the corresponding scripts run on that hardware.

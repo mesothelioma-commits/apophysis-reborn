@@ -305,13 +305,31 @@ void sampleChain(uint invocation) {
             y = min(float(model[8] - 1u), roundEven(y * (1.0 - 0.5 / float(model[8]))));
         }
         vec3 color = paletteColor(samplePoint.z, historical);
-        uint first = (uint(y) * model[7] + uint(x)) * 8u;
-        if (historical) {
-            for (uint c = 0u; c < 3u; ++c) addHistogram(first + 2u * c, uint(roundEven(color[c] * 255.0)) * 200u / 256u);
-            addHistogram(first + 6u, 200u);
+        if (command.mode == 2u) {
+            // Each chain owns 256 records. Unwritten records retain the host's
+            // 0xffffffff x sentinel. Global projection and all random draws are
+            // identical to dense sampling; storage partitioning is done later.
+            uint first = (invocation * 256u + plotted) * 6u;
+            histogram[first] = uint(x);
+            histogram[first + 1u] = uint(y);
+            if (historical) {
+                for (uint c = 0u; c < 3u; ++c)
+                    histogram[first + 2u + c] = uint(roundEven(color[c] * 255.0)) * 200u / 256u;
+                histogram[first + 5u] = 200u;
+            } else {
+                for (uint c = 0u; c < 3u; ++c)
+                    histogram[first + 2u + c] = fixedValue(visibility * color[c]);
+                histogram[first + 5u] = fixedValue(visibility);
+            }
         } else {
-            for (uint c = 0u; c < 3u; ++c) addHistogram(first + 2u * c, fixedValue(visibility * color[c]));
-            addHistogram(first + 6u, fixedValue(visibility));
+            uint first = (uint(y) * model[7] + uint(x)) * 8u;
+            if (historical) {
+                for (uint c = 0u; c < 3u; ++c) addHistogram(first + 2u * c, uint(roundEven(color[c] * 255.0)) * 200u / 256u);
+                addHistogram(first + 6u, 200u);
+            } else {
+                for (uint c = 0u; c < 3u; ++c) addHistogram(first + 2u * c, fixedValue(visibility * color[c]));
+                addHistogram(first + 6u, fixedValue(visibility));
+            }
         }
         ++plotted;
     }

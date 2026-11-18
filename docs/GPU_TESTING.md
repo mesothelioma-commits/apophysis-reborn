@@ -1,4 +1,7 @@
-# CPU and Vulkan verification — 0.6.0
+# CPU and Vulkan verification — 0.7.0
+
+Version 0.7.0 retains the M6 numerical and dense-image comparison methods below and adds exact GPU hit-stream, streamed file reconstruction and checkpoint tests. `gpu_stream` compares global hit/counter results with the dense path across split ranges and 16K coordinates; `file_render` includes six exact GPU dense/strip RGB8 cases and device/shader-bound resume. Both accept an explicitly selected device through their executable options. The complete M7 Release and sanitizer suites each pass 25 entries. Full 16K execution, independent decoding and CPU strip/queue equality are detailed in [HIGH_RES_ACCEPTANCE.md](HIGH_RES_ACCEPTANCE.md). The original M6 image measurements below remain labeled by their executed scope.
+
 
 The Vulkan renderer has two distinct comparison paths. The established CPU
 renderer keeps its original MT19937-64 streams and 8,192-sample batches. A

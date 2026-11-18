@@ -15,7 +15,7 @@ file(READ "${output}" signature LIMIT 2 HEX)
 file(READ "${output}" dims OFFSET 18 LIMIT 8 HEX)
 file(SIZE "${output}" size)
 if(NOT single STREQUAL parallel OR NOT signature STREQUAL "424d" OR
-   NOT dims STREQUAL "0003000040020000" OR NOT size EQUAL 1327158)
+   NOT dims STREQUAL "00030000c0fdffff" OR NOT size EQUAL 1327158)
     message(FATAL_ERROR "BMP header, length, or deterministic overwrite failed")
 endif()
 foreach(bad IN ITEMS "--index;0" "--samples;-1" "--seed;2junk" "--memory-mib;1")

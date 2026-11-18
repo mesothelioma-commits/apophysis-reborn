@@ -123,11 +123,11 @@ std::string support_reason(const Flame &flame) {
     return {};
 }
 
-PackedFlame pack_flame(const Flame &flame, const Geometry &geometry) {
+PackedFlame pack_flame(const Flame &flame, const Geometry &geometry, bool hit_stream) {
     if (auto reason = support_reason(flame); !reason.empty())
         throw std::invalid_argument(reason);
     if (!geometry.width || !geometry.height || !(geometry.ppu > 0) ||
-        std::uint64_t(geometry.width) * geometry.height > UINT32_MAX / 8u)
+        (!hit_stream && std::uint64_t(geometry.width) * geometry.height > UINT32_MAX / 8u))
         throw std::invalid_argument("Vulkan histogram addressing exceeds its 32-bit word range");
     for (double value : {geometry.ppu, geometry.cosine, geometry.sine})
         if (!representable(value))

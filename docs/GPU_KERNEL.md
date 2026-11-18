@@ -1,4 +1,4 @@
-# Vulkan compute kernel — 0.6.0
+# Vulkan compute kernel — 0.7.0
 
 The Vulkan backend computes orbit sampling, transform selection, variation evaluation, palette lookup and histogram accumulation in a compute shader. The existing CPU image reconstruction then applies the flame's filtering, density, gamma, vibrancy and background conventions to that histogram. This is a hybrid renderer: the sampling work runs through Vulkan, while image development and file encoding retain the established CPU implementation.
 
@@ -46,7 +46,7 @@ This preserves the exact integer sum without requiring a 64-bit atomic operation
 
 Generic color and opacity contributions use the existing 24-bit fixed-point scale, `2²⁴ − 1`. The binary32 conversion is clamped to that maximum after rounding, preventing an all-white contribution from rounding up to `2²⁴`. Historical inputs use the existing integer channel quantization and opacity mass of 200. Histogram addition is exact for the contributions produced by a given shader run. Floating-point variation and color calculations before that quantization can still differ between CPU and devices.
 
-Each bin occupies **32 bytes**. Dense histogram storage, readback staging, model buffers, output pixels and reconstruction storage remain subject to the applicable host and device budgets. The Vulkan runtime also checks the selected device's storage-buffer and dispatch limits. This milestone does not add tiled histograms or establish 16K rendering acceptance.
+Each bin occupies **32 bytes**. Dense histogram storage, readback staging, model buffers, output pixels and reconstruction storage remain subject to the applicable host and device budgets. The Vulkan runtime also checks the selected device's storage-buffer and dispatch limits. These dense-bin costs apply to previews and direct dense rendering. The 0.7.0 file path uses a separate bounded hit-output mode, avoiding that full GPU allocation; actual full 16K execution was verified separately on CPU. [Hit streaming](GPU_STREAMING.md) · [16K acceptance](HIGH_RES_ACCEPTANCE.md)
 
 ## Precision admission and fallback
 
@@ -69,3 +69,7 @@ The compute kernel was executed through **Mesa llvmpipe, LLVM 19.1.7**, a softwa
 All probes passed. The maximum observed normalized coordinate error was **1.7820791 × 10⁻⁵**, against a bound of **2 × 10⁻⁴ × max(1, |CPU reference|)** for each coordinate. Every subsequent random draw matched exactly. The companion CPU-only checks verify packing, geometry and probability admission, zero-probability destinations, and **16,384 portable random draws**, including nonzero high seed and chain bits. These are bounded formula and stream tests, not a claim of bit-identical full-render output across arbitrary devices.
 
 The full rendering, cancellation, fallback, accumulator-carry and distribution checks are recorded with the milestone's [verification report](TEST_PLAN.md). Physical GPU speed, Windows execution and broader driver equivalence remain separately reported acceptance work.
+
+## Bounded file-output mode in 0.7.0
+
+Shader mode 2 emits global x/y and quantized R/G/B/mass records into at most 256 slots per invocation. Absolute chain indices, RNG draws, formulas and final partial-chain handling match the dense mode. The host compacts valid slots and validates counters; disk grouping occurs afterward. The returned hits and model, mapped/readback/device buffers are charged to the caller's host/GPU budgets. Preview accumulation and direct variation-probe modes retain their existing contracts. The validated embedded payload is 49,728 bytes. [Full contract and tests](GPU_STREAMING.md)

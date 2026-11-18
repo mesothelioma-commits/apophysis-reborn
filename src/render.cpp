@@ -1,4 +1,5 @@
 #include "render.hpp"
+#include "render_internal.hpp"
 #include "gpu.hpp"
 #include "vulkan_runtime.hpp"
 
@@ -20,7 +21,7 @@ constexpr std::uint64_t max_samples = UINT64_MAX / quantum;
 constexpr std::uint64_t legacy_batch_size = 8192;
 constexpr int burn_in = 32;
 using Bin = std::array<std::uint64_t, 4>; // R, G, B, opacity
-struct Hit { std::size_t bin; std::array<std::uint32_t, 4> value; };
+using Hit = detail::SampleHit;
 
 void check_cancelled(std::stop_token stop) {
     if (stop.stop_requested()) throw RenderCancelled();
@@ -65,16 +66,63 @@ bool finite(Orbit s) {
     return std::isfinite(s.point.x) && std::isfinite(s.point.y) && std::isfinite(s.color);
 }
 
+std::uint64_t sample_batch(const Flame& f, const RenderOptions& opt,
+                           const gpu::Geometry& g, const TransformChooser& choose,
+                           const std::vector<double>& visibility, std::uint64_t batch,
+                           std::uint64_t n, bool portable, std::vector<Hit>& pending) {
+    const bool apophysis = is_apophysis(f.source_version);
+    const auto os = static_cast<std::uint64_t>(f.oversample);
+    const auto width = g.width, height = g.height;
+    const double cs = g.cosine, sn = g.sine, ppu = g.ppu;
+    Rng rng = portable ? Rng(opt.seed, batch) : Rng(opt.seed + batch * UINT64_C(0x9e3779b97f4a7c15));
+    Orbit orbit = start(rng);
+    std::optional<std::size_t> previous;
+    std::uint64_t bad = 0;
+    int warmup = burn_in;
+    pending.clear();
+    for (std::uint64_t i = 0; i < n + burn_in; ++i) {
+        if ((i & 255u) == 0) check_cancelled(opt.stop_token);
+        const auto idx = choose.pick(rng.unit(), previous);
+        orbit = apply_transform(f.transforms[idx], orbit, rng);
+        if (!finite(orbit)) {
+            ++bad;
+            orbit = start(rng);
+            previous.reset();
+            warmup = burn_in;
+            continue;
+        }
+        previous = idx;
+        if (warmup > 0) { --warmup; continue; }
+        if (visibility[idx] == 0) continue;
+        if (apophysis && visibility[idx] < 1 && rng.unit() >= visibility[idx]) continue;
+        Orbit sample = orbit;
+        if (f.final_transform) {
+            const auto& final = *f.final_transform;
+            if (apophysis || final.opacity == 1 || (final.opacity > 0 && rng.unit() < final.opacity))
+                sample = apply_transform(final, orbit, rng);
+            if (!finite(sample)) { ++bad; continue; }
+        }
+        const double dx = sample.point.x - f.center.x, dy = sample.point.y - f.center.y;
+        double x = ((cs * dx - sn * dy) * ppu + f.width * 0.5) * os + g.padding;
+        double y = ((sn * dx + cs * dy) * ppu + f.height * 0.5) * os + g.padding;
+        if (!(x >= 0 && x < double(width) && y >= 0 && y < double(height))) continue;
+        if (apophysis) {
+            x = std::min(double(width-1), std::nearbyint(x * (1 - .5 / double(width))));
+            y = std::min(double(height-1), std::nearbyint(y * (1 - .5 / double(height))));
+        }
+        const auto value = bucket_value(color_at(f, sample.color, apophysis), visibility[idx], apophysis);
+        pending.push_back({std::uint32_t(x), std::uint32_t(y), value[0], value[1], value[2], value[3]});
+    }
+    return bad;
+}
+
 double log_one_plus_exp(double x) { // Stable log-density for extreme camera scales.
     return std::max(x, 0.0) + std::log1p(std::exp(-std::abs(x)));
 }
 
 // Keep the historical even/odd alignment at subpixel resolution. When the
 // kernel is narrower than a pixel, its first tap starts inside that pixel.
-struct Footprint {
-    unsigned taps, padding, inset;
-    double coordinate_step;
-};
+using Footprint = detail::Footprint;
 
 Footprint footprint(const Flame& f, bool apophysis) {
     const auto os = static_cast<unsigned>(f.oversample);
@@ -190,6 +238,8 @@ RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable
     const Footprint kernel = footprint(f, apophysis);
     const auto width = checked_product(f.width, os) + 2ull * kernel.padding;
     const auto height = checked_product(f.height, os) + 2ull * kernel.padding;
+    if (width > UINT32_MAX || height > UINT32_MAX)
+        throw std::invalid_argument("Histogram dimensions exceed the supported coordinate range");
     const auto bin_count = checked_product(width, height);
     const auto hist_bytes = checked_product(bin_count, sizeof(Bin));
     const auto image_bytes = checked_product(checked_product(f.width, f.height), 3);
@@ -252,50 +302,13 @@ RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable
                 if (batch >= batch_count) break;
                 const auto n = std::min(batch_size, opt.samples - batch * batch_size);
                 // The stream belongs to the batch. Scheduling never selects a seed.
-                Rng rng = portable ? Rng(opt.seed, batch) : Rng(opt.seed + batch * UINT64_C(0x9e3779b97f4a7c15));
-                Orbit orbit = start(rng);
-                std::optional<std::size_t> previous;
-                std::uint64_t bad = 0;
-                int warmup = burn_in;
-                pending.clear();
-                for (std::uint64_t i = 0; i < n + burn_in; ++i) {
-                    if ((i & 255u) == 0) check_cancelled(opt.stop_token);
-                    const auto idx = choose.pick(rng.unit(), previous);
-                    orbit = apply_transform(f.transforms[idx], orbit, rng);
-                    if (!finite(orbit)) {
-                        ++bad;
-                        orbit = start(rng);
-                        previous.reset();
-                        warmup = burn_in;
-                        continue;
-                    }
-                    previous = idx;
-                    if (warmup > 0) { --warmup; continue; }
-                    if (visibility[idx] == 0) continue;
-                    if (apophysis && visibility[idx] < 1 && rng.unit() >= visibility[idx]) continue;
-                    Orbit sample = orbit;
-                    if (f.final_transform) {
-                        const auto& final = *f.final_transform;
-                        if (apophysis || final.opacity == 1 || (final.opacity > 0 && rng.unit() < final.opacity))
-                            sample = apply_transform(final, orbit, rng);
-                        if (!finite(sample)) { ++bad; continue; }
-                    }
-                    const double dx = sample.point.x - f.center.x, dy = sample.point.y - f.center.y;
-                    double x = ((cs * dx - sn * dy) * ppu + f.width * 0.5) * os + kernel.padding;
-                    double y = ((sn * dx + cs * dy) * ppu + f.height * 0.5) * os + kernel.padding;
-                    if (!(x >= 0 && x < double(width) && y >= 0 && y < double(height))) continue;
-                    if (apophysis) {
-                        x = std::min(double(width-1), std::nearbyint(x * (1 - .5 / double(width))));
-                        y = std::min(double(height-1), std::nearbyint(y * (1 - .5 / double(height))));
-                    }
-                    const RGB color = color_at(f, sample.color, apophysis);
-                    pending.push_back({std::size_t(y) * std::size_t(width) + std::size_t(x),
-                        bucket_value(color, visibility[idx], apophysis)});
-                }
+                const gpu::Geometry geometry{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
+                                             kernel.padding, ppu, cs, sn};
+                const auto bad = sample_batch(f, opt, geometry, choose, visibility, batch, n, portable, pending);
                 std::lock_guard lock(merge);
                 for (const auto& hit : pending) {
-                    auto& bin = bins[hit.bin];
-                    for (unsigned c = 0; c < 4; ++c) bin[c] += hit.value[c];
+                    auto& bin = bins[std::size_t(hit[1]) * width + hit[0]];
+                    for (unsigned c = 0; c < 4; ++c) bin[c] += hit[c + 2];
                 }
                 plotted += pending.size();
                 invalid += bad;
@@ -342,4 +355,133 @@ std::string_view backend_name(RenderBackend backend) {
     }
     return "unknown";
 }
+
+namespace detail {
+RenderGeometry render_geometry(const Flame& f, const RenderOptions& opt) {
+    validate(f);
+    if (!opt.samples || opt.samples > max_samples)
+        throw std::invalid_argument("Sample count exceeds the supported positive fixed-point accumulator range");
+    const double ppu = f.scale * std::exp2(f.zoom);
+    if (!(ppu > 0 && std::isfinite(ppu))) throw std::invalid_argument("Invalid effective camera scale");
+    const bool historical = is_apophysis(f.source_version);
+    const auto kernel = footprint(f, historical);
+    const auto width = checked_product(f.width, f.oversample) + 2ull * kernel.padding;
+    const auto height = checked_product(f.height, f.oversample) + 2ull * kernel.padding;
+    if (width > UINT32_MAX || height > UINT32_MAX)
+        throw std::invalid_argument("Histogram dimensions exceed the supported coordinate range");
+    const double angle = std::remainder(f.rotate, 360.0) * (std::numbers::pi / 180.0);
+    return {{std::uint32_t(width), std::uint32_t(height), kernel.padding, ppu,
+             std::cos(angle), std::sin(angle)}, kernel, historical};
+}
+
+CpuHits sample_cpu_hits(const Flame& f, const RenderOptions& opt, const RenderGeometry& geometry,
+                       std::uint64_t first_batch, unsigned count) {
+    check_cancelled(opt.stop_token);
+    const auto batches = (opt.samples + legacy_batch_size - 1) / legacy_batch_size;
+    if (!count || count > 128 || first_batch >= batches || count > batches - first_batch)
+        throw std::invalid_argument("Invalid CPU streaming batch range");
+    const unsigned hardware = std::max(1u, std::thread::hardware_concurrency());
+    const unsigned workers = std::min(count, opt.threads ? opt.threads : hardware);
+    TransformChooser chooser(f);
+    std::vector<double> visibility;
+    for (const auto& t : f.transforms)
+        visibility.push_back(geometry.historical ? t.opacity : std::pow(t.opacity, std::log2(10.0)));
+    std::vector<std::vector<Hit>> blocks(count);
+    std::vector<std::uint64_t> bad(count);
+    std::atomic<unsigned> next{0};
+    std::mutex failure;
+    std::exception_ptr error;
+    const auto run = [&] {
+        try {
+            for (;;) {
+                const auto i = next.fetch_add(1);
+                if (i >= count) break;
+                const auto batch = first_batch + i;
+                const auto n = std::min(legacy_batch_size, opt.samples - batch * legacy_batch_size);
+                blocks[i].reserve(static_cast<std::size_t>(n));
+                bad[i] = sample_batch(f, opt, geometry.gpu, chooser, visibility, batch, n, false, blocks[i]);
+            }
+        } catch (...) {
+            std::lock_guard lock(failure);
+            if (!error) error = std::current_exception();
+            next.store(count);
+        }
+    };
+    {
+        std::vector<std::jthread> threads;
+        for (unsigned i = 1; i < workers; ++i) threads.emplace_back(run);
+        run();
+    }
+    if (error) std::rethrow_exception(error);
+    CpuHits result;
+    result.workers = workers;
+    result.hits.reserve(static_cast<std::size_t>(std::min(std::uint64_t(count) * legacy_batch_size,
+                                                        opt.samples - first_batch * legacy_batch_size)));
+    for (unsigned i = 0; i < count; ++i) {
+        result.hits.insert(result.hits.end(), blocks[i].begin(), blocks[i].end());
+        result.invalid += bad[i];
+    }
+    check_cancelled(opt.stop_token);
+    return result;
+}
+
+void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const Bin> bins,
+                 std::uint32_t first_row, int y, std::uint64_t samples,
+                 std::span<std::array<double, 4>> rgba, bool sixteen_bit, bool transparent,
+                 std::stop_token stop) {
+    check_cancelled(stop);
+    const auto& kernel = geometry.kernel;
+    const auto os = static_cast<std::size_t>(f.oversample);
+    const auto stride = std::size_t(geometry.gpu.width);
+    if (y < 0 || y >= f.height || rgba.size() != std::size_t(f.width) ||
+        std::size_t(y) * os + kernel.inset < first_row ||
+        (std::size_t(y) * os + kernel.inset + kernel.taps - first_row) * stride > bins.size())
+        throw std::invalid_argument("Reconstruction strip does not contain the complete filter footprint");
+    const auto filter = f.filter_radius ? gaussian_weights(kernel) : std::vector<double>{};
+    const double box_weight = 1.0 / double(os * os);
+    const bool historical = geometry.historical;
+    const double log_gain = 2 * (std::log(double(os)) + std::log(geometry.gpu.ppu)) - std::log(double(samples));
+    const double exposure = (268.0 / 256) * (historical ? 2.3 / std::log(10.0) : 1.0);
+    const double gamma = 1 / f.gamma;
+    const double vibrancy = historical ? std::nearbyint(f.vibrancy * 256) / 256 : f.vibrancy;
+    const double mass_unit = historical ? apophysis_white : quantum;
+    const std::array bg{f.background.r, f.background.g, f.background.b};
+    for (std::size_t x = 0; x < rgba.size(); ++x) {
+        if ((x & 255u) == 0) check_cancelled(stop);
+        std::array<double, 4> sum{};
+        for (std::size_t dy = 0; dy < kernel.taps; ++dy) {
+            if ((dy & 31u) == 0) check_cancelled(stop);
+            const auto row = (std::size_t(y) * os + kernel.inset + dy - first_row) * stride + x * os + kernel.inset;
+            for (std::size_t dx = 0; dx < kernel.taps; ++dx) {
+                const auto& bin = bins[row + dx];
+                if (!bin[3]) continue;
+                const double mass = double(bin[3]) / mass_unit;
+                const double weight = filter.empty() ? box_weight : filter[dy] * filter[dx];
+                const double light = (exposure * weight) * log_one_plus_exp(std::log(mass) + log_gain);
+                sum[3] += light;
+                for (unsigned c = 0; c < 3; ++c) sum[c] += light * (double(bin[c]) / double(bin[3]));
+            }
+        }
+        const double alpha = gamma_alpha(sum[3] * f.brightness, gamma, f.gamma_threshold);
+        const double a = std::clamp(alpha, 0.0, 1.0);
+        rgba[x][3] = transparent ? a : 1;
+        for (unsigned c = 0; c < 3; ++c) {
+            const double average = sum[3] > 0 ? sum[c] / sum[3] : 0;
+            double foreground = 0;
+            if (vibrancy > 0 && average > 0) foreground += vibrancy * alpha * average;
+            if (vibrancy < 1) foreground += (1 - vibrancy) * std::pow(sum[c] * f.brightness, gamma);
+            if (transparent) {
+                rgba[x][c] = a > 0 ? std::clamp(foreground / a, 0.0, 1.0) : 0;
+            } else if (historical && !sixteen_bit) {
+                const auto bg8 = static_cast<unsigned>(std::floor(bg[c] * 255));
+                const auto alpha8 = static_cast<unsigned>(std::clamp(std::nearbyint(alpha * 256), 0.0, 255.0));
+                const double channel = std::nearbyint(foreground * 256) + ((255 - alpha8) * bg8 / 256);
+                rgba[x][c] = (sum[3] * f.brightness == 0 ? double(bg8) : std::clamp(channel, 0.0, 255.0)) / 255;
+            } else {
+                rgba[x][c] = std::clamp(foreground + (1 - a) * bg[c], 0.0, 1.0);
+            }
+        }
+    }
+}
+} // namespace detail
 }

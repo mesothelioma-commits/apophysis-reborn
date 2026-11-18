@@ -1,4 +1,4 @@
-# Creative tools guide — 0.6.0
+# Creative tools guide — 0.7.0
 
 The desktop editor provides native gradient, adjustment, random-generation and mutation workflows. Each tool previews its own working copy. Applying a result changes the flame library through the document session, so the committed operation can be undone from the main window. Cancel leaves the loaded flame unchanged.
 
@@ -65,7 +65,7 @@ The Adjustment editor groups supported flame settings into **Camera**, **Tone / 
 
 **Frame visible orbit** estimates a useful center and scale from a deterministic orbit sample, excluding extreme outliers. It includes the effect of the final transform without feeding that final transform back into the orbit. The estimate covers the central 98% of the sampled geometry; use the numeric controls to refine the composition or include more distant structures. Degenerate or insufficiently finite orbits produce a diagnostic instead of replacing the camera.
 
-The size list includes 16,384 × 16,384 as a stored output setting. The current renderer still uses a dense image buffer and checks its memory budget. Selecting that preset is not a completed 16K rendering acceptance test; tiled rendering and its acceptance work remain later milestones.
+The size list includes 16,384 × 16,384 as a stored output setting. Interactive previews remain viewport-sized. Version 0.7.0 file rendering uses bounded sampling and reconstruction strips, with separate RAM/disk budgets and full 16K acceptance. Use the main Render image dialog and queue for final output. [Rendering guide](HIGH_RES_RENDERING.md) · [Measured acceptance](HIGH_RES_ACCEPTANCE.md)
 
 ### Tone and background
 
@@ -163,6 +163,6 @@ Palette libraries and exported GPL files are independent saved files. Canceling 
 
 ## Current scope
 
-The RGB channel curves in the Gradient editor are baked into the embedded palette. They do not implement the legacy `curves` reconstruction parameter. Non-default legacy reconstruction curves, active density estimation, additional filter families, direct-color extensions and alpha/transparency output remain outside this checkpoint. The background and existing BMP/PPM image output are opaque RGB.
+The RGB channel curves in the Gradient editor are baked into the embedded palette. They do not implement the legacy `curves` reconstruction parameter. Non-default legacy reconstruction curves, active density estimation, additional filter families and direct-color extensions remain open. Version 0.7.0 final file exports support straight alpha in PNG/TIFF and true 16-bit channels; these are separate from the creative preview's opaque display. [Output semantics](IMAGE_FORMATS.md)
 
 The tools can preview through the multithreaded CPU renderer or the Vulkan compute backend, with an explicit fallback policy. Physical GPU/platform acceptance, tiled high-resolution output and native 16K acceptance are recorded separately. See [GPU_RENDERING.md](GPU_RENDERING.md), [FEATURE_MATRIX.md](FEATURE_MATRIX.md) and [COMPATIBILITY.md](COMPATIBILITY.md) for the broader inventory.

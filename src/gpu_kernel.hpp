@@ -45,7 +45,9 @@ static_assert(sizeof(PushConstants) == 32);
 // Returns an empty string when the current FP32 kernel admits the model.
 // Validation failures in the Flame itself still throw std::invalid_argument.
 std::string support_reason(const Flame &flame);
-PackedFlame pack_flame(const Flame &flame, const Geometry &geometry);
+// Hit streaming addresses individual x/y coordinates instead of a dense
+// histogram word index. All FP32/model checks still apply in that mode.
+PackedFlame pack_flame(const Flame &flame, const Geometry &geometry, bool hit_stream = false);
 
 // Mode 1 numerical probes execute one transform repeatedly, keeping its
 // historical pre-blur ring between applications. Each record is independent.

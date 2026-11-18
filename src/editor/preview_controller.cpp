@@ -1,4 +1,5 @@
 #include "preview_controller.hpp"
+#include "../render_file.hpp"
 
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -148,7 +149,29 @@ struct PreviewController::Worker {
                 post(job.generation,
                      [controller = owner, percent] { emit controller->progressChanged(percent); });
             };
-            auto result = render(job.flame, options);
+            RenderResult result;
+            if (file) {
+                FileRenderOptions fileOptions;
+                fileOptions.image.format = image_format_for_path(nativePath(job.output));
+                options.progress = {};
+                fileOptions.status = [this, &job, &lastPercent](const FileRenderProgress& state) {
+                    const int percent = state.phase == "Sampling"
+                        ? int(state.completed_samples * 70 / state.total_samples)
+                        : 70 + int(std::uint64_t(state.completed_strips) * 29 / state.total_strips);
+                    if (lastPercent == percent) return;
+                    lastPercent = percent;
+                    post(job.generation, [controller = owner, percent] { emit controller->progressChanged(percent); });
+                };
+                const auto saved = render_to_file(job.flame, options, nativePath(job.output), fileOptions);
+                result.plotted = saved.plotted;
+                result.invalid = saved.invalid;
+                result.workers = saved.workers;
+                result.backend = saved.backend;
+                result.device_name = saved.device_name;
+                result.fallback_reason = saved.fallback_reason;
+            } else {
+                result = render(job.flame, options);
+            }
             if (options.stop_token.stop_requested())
                 throw RenderCancelled();
             const QString backend = result.backend == RenderBackend::vulkan ? QStringLiteral("Vulkan")
@@ -159,10 +182,6 @@ struct PreviewController::Worker {
             const bool finalPass = pass + 1 == passes.size();
             const qint64 duration = elapsed.elapsed();
             if (file) {
-                const QString suffix = QFileInfo(job.output).suffix().toLower();
-                if (suffix != "bmp" && suffix != "ppm")
-                    throw std::invalid_argument("Choose a BMP or PPM file for the render");
-                write_image(nativePath(job.output), result.image, suffix == "bmp", options.stop_token);
                 post(job.generation,
                      [controller = owner, path = job.output, backend, device, fallback, execution] {
                          controller->setBusy(false);
