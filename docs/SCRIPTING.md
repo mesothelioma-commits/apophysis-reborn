@@ -126,6 +126,8 @@ y' = b*x + d*y + f
 
 Transform fields are `pre`, `post`, `weight`, `color`, `color_speed`, `opacity`, `julian_power`, `julian_dist`, `chaos` and `variations`. `chaos` is an array of per-destination weights; omitted trailing entries equal 1. A final transform has no chaos row. Its selection weight is not used.
 
+Built-in terms can set their parameters by local name, for example `{name='perspective', weight=1, parameters={angle=0.25, dist=2}}`. The [variation guide](VARIATIONS.md) lists the available fields.
+
 Variation arrays preserve their explicit order. A shorthand map such as `{linear=0.7, swirl=0.3}` is also accepted; map terms are sorted by name for deterministic evaluation. For effects whose operation order matters, use an array. JuliaN's built-in parameters remain transform fields. Built-in terms reject arbitrary per-term parameters.
 
 An enabled native plugin accepts its declared parameter names:

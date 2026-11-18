@@ -34,8 +34,9 @@ struct Affine {
 enum class Variation : unsigned {
     linear, sinusoidal, spherical, swirl, horseshoe, polar, handkerchief, heart,
     disc, spiral, hyperbolic, diamond, ex, julia, bent, waves, fisheye, popcorn,
-    exponential, power, cosine, rings, fan, eyefish = 27, bubble = 28,
-    cylinder = 29, noise = 31, julian = 32, blur = 34, foci = 64, pre_blur = 67, plugin = 0xffff
+    exponential, power, cosine, rings, fan, blob, pdj, fan2, rings2, eyefish, bubble,
+    cylinder, perspective, noise, julian, juliascope, blur, gaussian_blur, radial_blur,
+    pie, ngon, curl, rectangles, foci = 64, pre_blur = 67, plugin = 0xffff
 };
 struct VariationInfo { Variation id; std::string_view name; };
 std::span<const VariationInfo> variation_registry();
@@ -46,7 +47,36 @@ struct VariationParameters {
     double julian_dist = 1;
     bool apophysis_math = false;
     bool separate_blur_angle = false; // 7X Pascal pre-blur draws a separate angle.
+    double blob_low = 0, blob_high = 1, blob_waves = 1;
+    double pdj_a = 0, pdj_b = 0, pdj_c = 0, pdj_d = 0;
+    double fan2_x = 0, fan2_y = 0;
+    double rings2_val = 0;
+    double perspective_angle = 0, perspective_dist = 0;
+    double juliascope_power = 1, juliascope_dist = 1;
+    double radial_blur_angle = 0;
+    double pie_slices = 6, pie_rotation = 0, pie_thickness = .5;
+    double ngon_sides = 5, ngon_power = 3, ngon_circle = 1, ngon_corners = 2;
+    double curl_c1 = 1, curl_c2 = 0;
+    double rectangles_x = 1, rectangles_y = 1;
 };
+struct VariationParameterInfo {
+    Variation variation;
+    std::string_view name;
+    bool integer;
+    constexpr VariationParameterInfo(Variation id, std::string_view key, double VariationParameters::*member)
+        : variation(id), name(key), integer(false), real_(member) {}
+    constexpr VariationParameterInfo(Variation id, std::string_view key, int VariationParameters::*member)
+        : variation(id), name(key), integer(true), integral_(member) {}
+    bool is_integer(const VariationParameters& parameters) const;
+    double get(const VariationParameters& parameters) const;
+    void set(VariationParameters& parameters, double value) const;
+    void validate(const VariationParameters& parameters, double value) const;
+private:
+    double VariationParameters::*real_ = nullptr;
+    int VariationParameters::*integral_ = nullptr;
+};
+std::span<const VariationParameterInfo> variation_parameter_registry();
+const VariationParameterInfo* find_variation_parameter(std::string_view name);
 class PluginVariation;
 struct Term {
     Variation id = Variation::linear;
@@ -89,6 +119,7 @@ public:
     // construction retains the original MT19937-64 sequence and golden images.
     Rng(std::uint64_t seed, std::uint64_t stream);
     Point pre_blur_offset(const VariationParameters& transform);
+    double radial_blur_sample(const VariationParameters& transform);
     double unit(); // Exactly 53 random bits, in [0,1).
 private:
     struct BlurHistory {
@@ -96,8 +127,10 @@ private:
         std::array<double, 4> ring;
         unsigned cursor = 0;
     };
+    BlurHistory& history(std::vector<BlurHistory>& histories, const VariationParameters& transform);
     std::mt19937_64 engine_;
     std::optional<std::uint32_t> portable_state_;
+    std::vector<BlurHistory> radial_histories_;
     std::vector<BlurHistory> blur_histories_; // Per transform, private to this orbit stream.
 };
 

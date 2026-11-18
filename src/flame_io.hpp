@@ -6,6 +6,9 @@
 
 namespace apo {
 
+// Certain historical constructors randomized defaults that can only be recovered from a saved field.
+bool needs_explicit_variation_parameter(const VariationParameterInfo& field, Producer producer);
+
 // Functional XML subset for static flames. Parse errors report a line and column.
 // Documents are accepted as a unit, so a bad sibling cannot go unnoticed.
 std::vector<Flame> parse_flames(std::string_view xml);

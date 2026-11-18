@@ -147,6 +147,43 @@ void test_producer_import() {
           "canonical save retains non-canonical additive order");
     rejects(document("<xform weight='1' julian='1'/>"+colors,opts), "explicit julian_power");
     rejects(document("<xform weight='1' var1='2'/>"+colors,opts), "original");
+    const auto classic = "version='Apophysis 2.09'";
+    auto gaussian = parse_flames(document("<xform weight='1' var1='28'/>" + colors, classic))[0];
+    check(gaussian.transforms[0].variations[0].id == Variation::gaussian_blur, "2.09 gaussian ID");
+    rejects(document("<xform weight='1' var1='40'/>" + colors, classic), "ID 40");
+    rejects(document("<xform weight='1' var1='30'/>" + colors, "version='Apophysis 2.08'"), "ID 30");
+    const auto stock = parse_flames(document("<xform weight='1' var1='38' curl_c1='-.4' curl_c2='.125'/>"
+        "<finalxform var1='37' juliascope_power='4'/>" + colors, classic));
+    check(stock[0].transforms[0].variations[0].id == Variation::curl &&
+          stock[0].final_transform->variations[0].id == Variation::juliascope, "stock 2.09 registered module IDs");
+    const auto mixed = parse_flames(document("<xform weight='1' juliascope='1' juliascope_power='4' "
+        "radial_blur='.4' radial_blur_angle='.2' blur='.2'/>" + colors, classic))[0];
+    check(mixed.transforms[0].variations[0].id == Variation::blur &&
+          mixed.transforms[0].variations[1].id == Variation::radial_blur &&
+          mixed.transforms[0].variations[2].id == Variation::juliascope, "stock 2.09 iteration order");
+    rejects(document("<xform weight='1' pdj='1' pdj_a='.5'/>" + colors, classic), "explicit pdj_b");
+    const auto historical = parse_flames(document(
+        "<xform weight='1' juliascope='1' juliascope_power='-2.8'/>"
+        "<finalxform blob='1' blob_low='.25' blob_high='.9' blob_waves='4.5'/>" + colors, classic))[0];
+    close(-3, historical.transforms[0].parameters.juliascope_power, "historical rounded JuliaScope");
+    close(4, historical.final_transform->parameters.blob_waves, "historical ties-to-even blob");
+    const auto defaults7 = parse_flames(document("<xform weight='1' curl='1' ngon='1'/>" + colors,
+                                                  "version='Apophysis 7x' new_linear='1'"))[0];
+    const auto &p7 = defaults7.transforms[0].parameters;
+    check(p7.curl_c1 == 0 && p7.curl_c2 == 0 && p7.ngon_sides == 4 &&
+          p7.ngon_power == 2 && p7.ngon_corners == 1, "7X deterministic defaults");
+    for (auto id : {Variation::blob, Variation::pdj, Variation::fan2, Variation::rings2,
+                    Variation::perspective, Variation::juliascope, Variation::gaussian_blur,
+                    Variation::radial_blur, Variation::pie, Variation::ngon, Variation::curl,
+                    Variation::rectangles}) {
+        std::string weights;
+        for (unsigned n = 0; n < static_cast<unsigned>(id); ++n) weights += "0 ";
+        const auto flame = parse_flames(document("<xform weight='1' var1='" +
+            std::to_string(static_cast<unsigned>(id)) + "'/><finalxform var='" + weights + ".4'/>" +
+            std::string(white)))[0];
+        check(flame.transforms[0].variations[0].id == id && flame.final_transform->variations[0].id == id &&
+              flame.final_transform->variations[0].weight == .4, "generic numbered variation IDs");
+    }
     rejects(document("<xform weight='1' julian='1' julian_power='0'/>"+colors,opts), "julian_power");
     rejects(document("<xform weight='1' blur='1' noise='1' var_order='blur'/>"+colors,opts), "cover every");
     rejects(document(std::string(transform)+colors,opts + " enable_de='1' estimator_radius='9'"), "density");

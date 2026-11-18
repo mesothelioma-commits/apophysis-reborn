@@ -23,9 +23,11 @@ const float EPSILON = 1e-10;
 const float QUANTUM = 16777215.0;
 const uint NONE = 0xffffffffu;
 uint rngState;
-vec4 blurRing[65];
-uint blurCursor[65];
-bool blurInitialized[65];
+// Historical Gaussian and pre-blur share one ring per transform. Radial
+// blur has independent state for the same transform. The final slot is 64.
+vec4 blurRing[130];
+uint blurCursor[130];
+uint blurInitialized[5];
 
 float value(uint offset) { return uintBitsToFloat(model[offset]); }
 uint transformBase(uint index) { return model[2] + index * 24u; }
@@ -47,7 +49,7 @@ float unit() {
     return float(word >> 8u) * (1.0 / 16777216.0);
 }
 void resetBlur() {
-    for (uint i = 0u; i < 65u; ++i) blurInitialized[i] = false;
+    for (uint i = 0u; i < 5u; ++i) blurInitialized[i] = 0u;
 }
 vec3 startOrbit() {
     float x = 2.0 * unit() - 1.0;
@@ -68,19 +70,28 @@ float historicalAngle(float x, float y) {
 float remainderTowardZero(float numerator, float denominator) {
     return numerator - denominator * trunc(numerator / denominator);
 }
+float historyRadius(uint index) {
+    uint word = index / 32u, mask = 1u << (index % 32u);
+    if ((blurInitialized[word] & mask) == 0u) {
+        for (uint j = 0u; j < 4u; ++j) blurRing[index][j] = unit();
+        blurCursor[index] = 0u;
+        blurInitialized[word] |= mask;
+    }
+    float radius = -2.0;
+    for (uint j = 0u; j < 4u; ++j) radius += blurRing[index][j];
+    return radius;
+}
+void advanceHistory(uint index, float draw) {
+    blurRing[index][blurCursor[index]] = draw;
+    blurCursor[index] = (blurCursor[index] + 1u) % 4u;
+}
 vec2 preBlur(uint index, uint flags) {
     float radius = -2.0;
     float direction;
     if ((flags & 1u) != 0u) {
-        if (!blurInitialized[index]) {
-            for (uint j = 0u; j < 4u; ++j) blurRing[index][j] = unit();
-            blurCursor[index] = 0u;
-            blurInitialized[index] = true;
-        }
-        for (uint j = 0u; j < 4u; ++j) radius += blurRing[index][j];
+        radius = historyRadius(index);
         direction = unit();
-        blurRing[index][blurCursor[index]] = (flags & 2u) != 0u ? unit() : direction;
-        blurCursor[index] = (blurCursor[index] + 1u) % 4u;
+        advanceHistory(index, (flags & 2u) != 0u ? unit() : direction);
     } else {
         for (uint j = 0u; j < 4u; ++j) radius += unit();
         direction = unit();
@@ -88,7 +99,22 @@ vec2 preBlur(uint index, uint flags) {
     float angle = 2.0 * PI * direction;
     return radius * vec2(cos(angle), sin(angle));
 }
-vec2 variation(uint kind, vec2 p, uint base, uint flags) {
+vec2 radialBlur(vec2 p, float weight, uint constants, uint flags, uint index) {
+    float gaussian = -2.0;
+    if ((flags & 1u) != 0u) {
+        gaussian = historyRadius(65u + index);
+        advanceHistory(65u + index, unit());
+    } else {
+        for (uint j = 0u; j < 4u; ++j) gaussian += unit();
+    }
+    float sampleValue = weight * gaussian;
+    float spin = value(constants) * sampleValue, zoom = value(constants + 1u) * sampleValue;
+    if (spin == 0.0) return zoom * p;
+    float angle = historicalAngle(p.y, p.x) + spin;
+    return length(p) * vec2(cos(angle), sin(angle)) + (zoom - 1.0) * p;
+}
+
+vec2 variation(uint kind, vec2 p, uint base, uint flags, uint constants, uint index) {
     float x = p.x, y = p.y;
     float r2 = x * x + y * y;
     bool historical = (flags & 1u) != 0u;
@@ -189,9 +215,38 @@ vec2 variation(uint kind, vec2 p, uint base, uint flags) {
         }
         return sqrt(r2) * vec2(cos(a), sin(a));
     }
+    case 23u: {
+        if (!historical && r2 == 0.0) return invalidPoint();
+        float wave = sin(value(constants + 2u) * historicalAngle(x, y));
+        return p * (value(constants) + value(constants + 1u) * (0.5 + 0.5 * wave));
+    }
+    case 24u:
+        return vec2(sin(value(constants) * y) - cos(value(constants + 1u) * x),
+                    sin(value(constants + 2u) * x) - cos(value(constants + 3u) * y));
+    case 25u: {
+        float a = historicalAngle(x, y), period = value(constants);
+        float t = a + value(constants + 1u), turns = t / period;
+        bool upper = historical ? turns - trunc(turns) > 0.5
+                                : remainderTowardZero(t, period) > 0.5 * period;
+        a += (upper ? -0.5 : 0.5) * period;
+        vec2 direction = vec2(sin(a), cos(a));
+        return sqrt(r2) * (historical && (flags & 2u) != 0u ? direction.yx : direction);
+    }
+    case 26u: {
+        if (r2 == 0.0) return invalidPoint();
+        float r = sqrt(r2), d = value(constants);
+        float n = trunc((r + d) / (2.0 * d));
+        return (2.0 - d - 2.0 * d * n / r) * p;
+    }
     case 27u: return (2.0 / (sqrt(r2) + 1.0)) * p;
     case 28u: return p / (1.0 + r2 / 4.0);
     case 29u: return vec2(sin(x), y);
+    case 30u: {
+        if (historical && value(constants + 3u) != 0.0) return p;
+        float d = value(constants + 1u);
+        float scale = d / (d - y * value(constants));
+        return vec2(scale * x, (scale * value(constants + 2u)) * y);
+    }
     case 31u:
     case 34u: {
         float direction = unit() * 2.0 * PI;
@@ -205,6 +260,54 @@ vec2 variation(uint kind, vec2 p, uint base, uint flags) {
         float theta = (historicalAngle(y, x) + 2.0 * PI * branch) / power;
         float r = pow(r2, value(base + 17u) / (2.0 * power));
         return r * vec2(cos(theta), sin(theta));
+    }
+    case 33u: {
+        float power = value(constants);
+        if (historical && value(constants + 2u) != 0.0) {
+            if (power == 1.0) return p;
+            if (power == -1.0) return vec2(x, -y) / r2;
+        }
+        float n = floor(unit() * abs(power));
+        float phase = historicalAngle(y, x);
+        if ((uint(n) & 1u) != 0u) phase = -phase;
+        float a = (2.0 * PI * n + phase) / power;
+        float exponent = value(constants + 1u);
+        float r = r2 == 0.0 && exponent == 0.0 ? 1.0 : pow(r2, exponent);
+        return r * vec2(cos(a), sin(a));
+    }
+    case 35u: {
+        if (historical) return preBlur(index, flags);
+        float angle = 2.0 * PI * unit(), radius = -2.0;
+        for (uint j = 0u; j < 4u; ++j) radius += unit();
+        return radius * vec2(cos(angle), sin(angle));
+    }
+    case 37u: {
+        float slices = value(constants);
+        float slice = trunc(unit() * slices + 0.5);
+        float angle = value(constants + 1u) + 2.0 * PI * (slice + unit() * value(constants + 2u)) / slices;
+        float radius = unit();
+        return radius * vec2(cos(angle), sin(angle));
+    }
+    case 38u: {
+        if (historical && r2 == 0.0) return vec2(0);
+        float sector = value(constants), exponent = value(constants + 1u);
+        float theta = historicalAngle(y, x);
+        float phi = theta - sector * floor(theta / sector);
+        if (phi > 0.5 * sector) phi -= sector;
+        float amp = value(constants + 2u) * (1.0 / (cos(phi) + guard) - 1.0) + value(constants + 3u);
+        if (historical) return (amp * pow(r2, -exponent)) * p;
+        float radial = r2 == 0.0 && exponent == 0.0 ? 1.0 : pow(r2, exponent);
+        return (amp / (radial + EPSILON)) * p;
+    }
+    case 39u: {
+        float c1 = value(constants), c2 = value(constants + 1u);
+        float re = 1.0 + c1*x + c2*(x*x - y*y), im = c1*y + 2.0*c2*x*y;
+        return vec2(x*re + y*im, y*re - x*im) / (re*re + im*im);
+    }
+    case 40u: {
+        float dx = value(constants), dy = value(constants + 1u);
+        return vec2(dx == 0.0 ? x : (2.0 * floor(x/dx) + 1.0) * dx - x,
+                    dy == 0.0 ? y : (2.0 * floor(y/dy) + 1.0) * dy - y);
     }
     case 64u: {
         float e = 0.5 * exp(x), inverse = 0.25 / e;
@@ -224,8 +327,12 @@ vec3 applyTransform(uint index, vec3 previous) {
     precise vec2 sum = vec2(0.0);
     uint first = model[base + 19u];
     for (uint i = 0u; i < model[base + 20u]; ++i) {
-        uint term = first + 2u * i;
-        sum += value(term + 1u) * variation(model[term], inputPoint, base, flags);
+        uint term = first + model[base + 22u] * i;
+        float weight = value(term + 1u);
+        if (model[term] == 36u)
+            sum += radialBlur(inputPoint, weight, term + 2u, flags, index);
+        else
+            sum += weight * variation(model[term], inputPoint, base, flags, term + 2u, index);
     }
     precise vec2 result = vec2(value(base + 6u) * sum.x + value(base + 8u) * sum.y + value(base + 10u),
                               value(base + 7u) * sum.x + value(base + 9u) * sum.y + value(base + 11u));

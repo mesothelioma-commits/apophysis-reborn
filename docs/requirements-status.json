@@ -1,8 +1,8 @@
 {
   "schema": "apophysis-reborn.requirements-status",
   "schema_version": 1,
-  "release": "0.10.0",
-  "baseline_commit": "f07f12127fb55e36a0b9670bd27b4f4f50437a34",
+  "release": "0.11.0",
+  "baseline_commit": "24da7bf23c8fd27baacd429e334c2f0f549c1b91",
   "source_brief": {
     "title": "PROJECT: APOPHYSIS REBORN — Complete Modernization of the Original Apophysis Fractal Flame Editor",
     "sha256": "ab3ddda6d1dc5d7c7de8349650b217484ba5dc02118837724d466058ce45fd61",
@@ -17,27 +17,14 @@
   "counting_note": "Rows group related requirements; counts are not a percentage of completion, a priority ranking or a complete catalog of every historical plugin.",
   "named_starting_variations": {
     "requested": 40,
-    "implemented_from_starting_list": 28,
-    "missing_from_starting_list": [
-      "blob",
-      "pdj",
-      "fan2",
-      "rings2",
-      "perspective",
-      "juliascope",
-      "gaussian_blur",
-      "radial_blur",
-      "pie",
-      "ngon",
-      "curl",
-      "rectangles"
-    ],
+    "implemented_from_starting_list": 40,
+    "missing_from_starting_list": [],
     "additional_implemented": [
       "noise",
       "foci",
       "pre_blur"
     ],
-    "total_builtin_registry": 31
+    "total_builtin_registry": 43
   },
   "requirements": [
     {
@@ -729,11 +716,14 @@
       "requirements": [
         "blob"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -742,11 +732,14 @@
       "requirements": [
         "pdj"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -755,11 +748,14 @@
       "requirements": [
         "fan2"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -768,11 +764,14 @@
       "requirements": [
         "rings2"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -781,11 +780,14 @@
       "requirements": [
         "perspective"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -794,11 +796,14 @@
       "requirements": [
         "juliascope"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -807,11 +812,14 @@
       "requirements": [
         "gaussian_blur"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -820,11 +828,14 @@
       "requirements": [
         "radial_blur"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -833,11 +844,14 @@
       "requirements": [
         "pie"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -846,11 +860,14 @@
       "requirements": [
         "ngon"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -859,11 +876,14 @@
       "requirements": [
         "curl"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -872,11 +892,14 @@
       "requirements": [
         "rectangles"
       ],
-      "status": "missing",
-      "scope_and_limit": "Named in the original brief but not present in the built-in registry. Unknown source data can be preserved; the operation is not silently substituted.",
+      "status": "delivered",
+      "scope_and_limit": "Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks.",
       "evidence": [
         "docs/VARIATIONS.md",
-        "src/flame.cpp"
+        "src/flame.cpp",
+        "shaders/orbit.comp",
+        "tests/starting-variation-vectors.tsv",
+        "examples/variation-studies.flame"
       ]
     },
     {
@@ -886,7 +909,7 @@
         "All variations in the definitive original-source inventory"
       ],
       "status": "partial",
-      "scope_and_limit": "The registry has 31 built-ins: 28 from the brief’s 40-name starting list plus noise, foci and pre_blur. The starting list is not the complete historical inventory, so the twelve named omissions are not the entire remaining backlog.",
+      "scope_and_limit": "All 40 variations named in the brief are implemented. Noise, foci and pre_blur bring the registry to 43. Historical plugins and full producer-specific inventories extend beyond that list.",
       "evidence": [
         "docs/VARIATIONS.md",
         "docs/RESEARCH.md"
@@ -903,7 +926,7 @@
         "Variation samples and tests"
       ],
       "status": "delivered",
-      "scope_and_limit": "Implemented names accept signed finite weights; pre_blur has a defined pre-stage and supported explicit order is retained. JuliaN exposes its parameters; native modules register their own parameters. The claim applies only to implemented names.",
+      "scope_and_limit": "Implemented names accept signed finite weights; pre_blur has a defined pre-stage and supported explicit order is retained. Registered built-in parameters are editable; native modules register their own parameters. The claim applies only to implemented names.",
       "evidence": [
         "docs/VARIATIONS.md",
         "docs/PLUGINS.md",
@@ -1010,7 +1033,7 @@
         "Accurate numeric display"
       ],
       "status": "delivered",
-      "scope_and_limit": "Current controls support admitted models; structural edits remap both Xaos axes and retain source identities. The variable UI covers JuliaN and enabled native-module parameters.",
+      "scope_and_limit": "Current controls support admitted models; structural edits remap both Xaos axes and retain source identities. The parameter controls cover registered built-ins and enabled native modules.",
       "evidence": [
         "docs/EDITOR.md",
         "tests/editor_tests.cpp",

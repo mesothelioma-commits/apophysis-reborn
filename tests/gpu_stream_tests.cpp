@@ -227,6 +227,15 @@ int main(int argc, char **argv) {
                   << (device->software ? " [software Vulkan]" : " [hardware Vulkan]") << '\n';
         for (const auto &source : {"", "Apophysis 2.09", "Apophysis 7x"})
             compare(fixture(source), options);
+        auto mixed = fixture("Apophysis 7x");
+        auto &ordinary = mixed.transforms.front();
+        ordinary.parameters.radial_blur_angle = .375;
+        ordinary.variations = {{Variation::pre_blur, .02}, {Variation::linear, .9},
+                               {Variation::gaussian_blur, -.03}, {Variation::radial_blur, -.2}};
+        mixed.final_transform->parameters.curl_c1 = .25;
+        mixed.final_transform->parameters.curl_c2 = -.125;
+        mixed.final_transform->variations = {{Variation::curl, .8}, {Variation::pie, .05}};
+        compare(mixed, options);
         auto invalid = fixture();
         invalid.transforms.resize(1);
         invalid.transforms[0].chaos.clear();

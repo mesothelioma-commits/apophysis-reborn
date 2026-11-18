@@ -58,8 +58,9 @@ void modern_edit_and_preserve() {
         local settings=apo.flame(); settings.gamma=2.7; settings.name='Script & study'
         apo.set_flame(settings)
         local t=apo.transform(1);t.pre[5]=0.375;t.color=.25
-        t.variations={{name='julian',weight=.8},{name='linear',weight=.2}}
+        t.variations={{name='julian',weight=.8},{name='curl',weight=.2,parameters={c1=.375,c2=.1}}}
         t.julian_power=3;t.julian_dist=.6;apo.set_transform(1,t)
+        assert(apo.transform(1).variations[2].parameters.c1==.375)
         apo.palette_from_stops({{0,0,0,0},{255,1,.5,.25}})
         print('done',apo.transform_count())
     )LUA");
@@ -68,6 +69,7 @@ void modern_edit_and_preserve() {
   near(f.transforms[0].pre.e, .375, "affine edit");
   require(f.name == "Script & study", "escaped name edit");
   require(f.transforms[0].parameters.julian_power == 3, "parameter edit");
+  near(f.transforms[0].parameters.curl_c1, .375, "script builtin parameter");
   near(f.palette[128].g, 128. / 510, "palette interpolation");
   require(r.document_bytes.find("<!-- keep library annotation -->") !=
               std::string::npos,

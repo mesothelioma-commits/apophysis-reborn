@@ -6,6 +6,8 @@
 
 namespace apo::creative {
 
+// Starting shapes for newly authored terms. File readers use producer defaults.
+VariationParameters authoring_parameters();
 struct ColorStop {
     int index = 0;
     RGB color;

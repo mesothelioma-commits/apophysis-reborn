@@ -1,10 +1,62 @@
-# Variation coverage — 0.5.0
+# Variation coverage — 0.11.0
 
-The CPU registry contains **31 implemented variations**. Every entry appears in the editor's variation-weight table, accepts signed finite weights, imports and exports by its historical name, and has a study in `examples/variation-studies.flame`. A zero-weight entry contributes nothing and consumes no random numbers. This is an explicit supported subset; the complete historical plugin and variation inventory remains open.
+The CPU registry contains **43 implemented variations**. Every entry appears in the editor's variation-weight table, accepts signed finite weights, imports and exports by its historical name, and has a study in `examples/variation-studies.flame`. A zero-weight entry contributes nothing and consumes no random numbers. This is an explicit supported subset; the complete historical plugin and variation inventory remains open.
 
-## Additions in this checkpoint
+## Milestone 11 additions
 
-The ten new functions come from the original Apophysis 2.09 and FLAM3 implementations. They execute between the pre-affine and post-affine matrices, alongside other active variation weights.
+Each of the following built-ins supports a signed weight in ordinary transforms and the final transform. Attribute names use the variation name as a prefix, for example `perspective_dist`.
+
+| Name in a flame file | Effect | Parameter suffixes |
+| --- | --- | --- |
+| `blob` | Modulates radius by angular waves | `low`, `high`, `waves` |
+| `pdj` | Combines four sine and cosine terms | `a`, `b`, `c`, `d` |
+| `fan2` | Splits the angle into rotating sectors | `x`, `y` |
+| `rings2` | Folds the radius into rings | `val` |
+| `perspective` | Projects the plane with a tilt and viewing distance | `angle`, `dist` |
+| `juliascope` | Chooses a Julia branch and reflects alternating branches | `power`, `dist` |
+| `gaussian_blur` | Draws a random direction and a four-sample blur radius | None |
+| `radial_blur` | Combines spin and radial displacement | `angle` |
+| `pie` | Samples angular slices | `slices`, `rotation`, `thickness` |
+| `ngon` | Scales points around a polygon | `sides`, `power`, `circle`, `corners` |
+| `curl` | Warps the plane through a quadratic complex denominator | `c1`, `c2` |
+| `rectangles` | Reflects points in a rectangular grid. A zero cell size passes that axis through. | `x`, `y` |
+
+The final twelve entries in `examples/variation-studies.flame` use explicit parameter values. The third transform in each study contains its named variation. In radial blur the signed weight enters the spin calculation, so changing its sign can change the visible shape.
+
+The normal test suite reads 432 expected point and RNG results from `tests/starting-variation-vectors.tsv`. They cover six input points, two signed weights and three seeds for each operation. The optional generator compiles the separate upstream FLAM3 functions and precomputations. It feeds them the same uniform random stream used for the comparison. These checks establish formula and draw-order agreement for the tested cases. They do not compare FLAM3’s native ISAAC seed sequence to Reborn’s generator.
+
+```bash
+python3 tests/starting_variation_generate.py /path/to/flam3 /tmp/starting-variation-vectors.tsv
+diff -u tests/starting-variation-vectors.tsv /tmp/starting-variation-vectors.tsv
+```
+
+### Producer-specific settings and render checks
+
+Files with generic FLAM3 parameters use the pinned FLAM3 initial values. The historical Delphi implementations randomly initialized some settings in their constructors. Importing an active variation in a tagged file requires its saved values when that producer's defaults depend on randomness. When editing such a file, retain the parameters from the source. The studies supply explicit settings, including a nonzero viewing distance for perspective. A singular projection can produce an invalid orbit step. The Random and Mutate tools use deterministic authoring values when introducing effects.
+
+In FLAM3, Gaussian blur draws its direction first and accumulates four fresh draws for its radius. Apophysis 2.09's x87 Gaussian shares its four-value history with pre-blur. The 7X Pascal version draws a separate replacement value after drawing the direction. Historical radial blur maintains its own history. The main and final transforms keep independent histories. Other producer-specific checks cover the 7X fan2 axis order, the JuliaScope single-branch shortcuts and origin cases for blob, ngon and zero-angle perspective.
+
+The seven steps below run `pre_blur` at 0.2, `linear` at 0.3, `gaussian_blur` at 0.7 and `radial_blur` at −0.61 with angle 0.37. Each step starts at (0.63, −0.47) and carries its random histories forward. The normal suite checks the full-precision X and Y values as well as the next uniform draw, 0.37532764673233032. The table rounds coordinates to six decimal places.
+
+| Step | Uniform draws consumed through this step | X | Y |
+| ---: | ---: | ---: | ---: |
+| 1 | 13 | 0.025105 | 0.122804 |
+| 2 | 18 | −0.355424 | −0.088719 |
+| 3 | 23 | 0.526688 | −0.083155 |
+| 4 | 28 | −0.063467 | 0.098141 |
+| 5 | 33 | 0.239409 | −0.175681 |
+| 6 | 38 | 0.431094 | 0.322800 |
+| 7 | 43 | 0.735344 | −0.343177 |
+
+The reference driver compiles the original Apophysis 7X `TXForm.PreBlur`, `TXForm.Gaussian` and `TVariationRadialBlur.CalcFunction` methods. It substitutes a fixed stream for Delphi's global random generator and initializes the radial history on its first use. The generator verifies both upstream file hashes before compilation. The reference run used Free Pascal 3.2.2 on Linux. Set `FPC` to use a different compiler or unit paths. [Original 7X transform methods](https://github.com/xyrus02/apophysis-7x/blob/1cefa4099927e296d365412bd0b91b96f85606ca/src/Flame/XForm.pas) · [Original radial blur method](https://github.com/xyrus02/apophysis-7x/blob/1cefa4099927e296d365412bd0b91b96f85606ca/src/Variations/varRadialBlur.pas)
+
+```bash
+python3 tests/producer_blur_generate.py /path/to/apophysis-7x
+```
+
+## Classic formulas added in Milestone 5
+
+These ten functions come from the original Apophysis 2.09 and FLAM3 implementations. They execute between the pre-affine and post-affine matrices, alongside other active variation weights.
 
 | Name | FLAM3/model ID | Original 2.09 ID | Behavior and controls |
 | --- | ---: | ---: | --- |
@@ -25,11 +77,11 @@ The pre-affine values are passed explicitly into the variation evaluator. They a
 
 ## Producer interpretation
 
-Named weights retain their names when a legacy document is edited. The canonical model uses FLAM3 variation IDs internally. Numbered `var` and `var1` input from original Apophysis 2.x uses that producer's registry: its first 23 IDs agree with FLAM3, while eyefish is 23 and cylinder is 25. Previously implemented bubble, noise, blur and pre-blur retain their original 2.x mappings. A numeric identifier in a 3D-hack, 7X or AV document remains rejected because its reordered/plugin-dependent registry cannot be inferred safely from the version label.
+The model uses FLAM3 variation IDs. For original Apophysis 2.x, numbered `var` and `var1` records use the 2.x registry, including `gaussian_blur` at 28 and `pre_blur` at 29. With the exact stock `Apophysis 2.09` version string, the Delphi 7 project's unit initialization order also identifies IDs 30–39 as `radial_blur`, `rings2`, `fan2`, `blob`, `pdj`, `perspective`, `julian`, `juliascope`, `curl` and `rectangles`, respectively. The reader applies that order to stock 2.09 mixtures unless the source specifies `var_order`. Later indices depend on DLLs installed at export. The reader requires named weights for these and for the reordered 3D-hack, 7X and AV registries. Original source references are `Source/XFormMan.pas`, `Source/XForm.pas` and `Project/delphi7/Apophysis.dpr`.
 
-For the new formulas, unidentified/FLAM3 documents use epsilon `1e-10`; identified Apophysis documents use the existing `1e-300` historical path. Original 2.09's guarded radius, truncated ring expression and fractional fan comparison are retained on that path. FLAM3's remainder expression is retained on the generic path. Fisheye and eyefish deliberately differ by an axis exchange. [FLAM3 variations and precomputation](https://github.com/scottdraves/flam3/blob/1cdfc77275821182ad3c057e629c75a240dd52d3/variations.c) · [Original Apophysis 2.09 source archive](https://downloads.sourceforge.net/project/apophysis/apophysis/Apophysis%202.09/Apophysis-2.09-src.7z)
+For the Milestone 5 formulas, unidentified/FLAM3 documents use epsilon `1e-10`; identified Apophysis documents use the existing `1e-300` historical path. Original 2.09's guarded radius, truncated ring expression and fractional fan comparison are retained on that path. FLAM3's remainder expression is retained on the generic path. Fisheye and eyefish deliberately differ by an axis exchange. [FLAM3 variations and precomputation](https://github.com/scottdraves/flam3/blob/1cdfc77275821182ad3c057e629c75a240dd52d3/variations.c) · [Original Apophysis 2.09 source archive](https://downloads.sourceforge.net/project/apophysis/apophysis/Apophysis%202.09/Apophysis-2.09-src.7z)
 
-The new source-level numerical comparison covers FLAM3 and original 2.09. It does not establish pixel equivalence with every 7X/AV plugin bearing a similar name, Delphi's x86 assembly branches, or every extreme floating-point input. In particular, singular generic power/rings inputs at the origin and overflowing exponential/hyperbolic functions can produce an invalid orbit step; the renderer's existing recovery and invalid-step reporting handle those cases. No singular result is silently replaced with another variation.
+The Milestone 5 source-level numerical comparison covers FLAM3 and original 2.09. It does not establish pixel equivalence with every 7X/AV plugin bearing a similar name, Delphi's x86 assembly branches, or every extreme floating-point input. In particular, singular generic power/rings inputs at the origin and overflowing exponential/hyperbolic functions can produce an invalid orbit step; the renderer's existing recovery and invalid-step reporting handle those cases. No singular result is silently replaced with another variation.
 
 ## Complete supported names
 
@@ -38,10 +90,9 @@ The new source-level numerical comparison covers FLAM3 and original 2.09. It doe
 | Original IDs 0–14 | `linear`, `sinusoidal`, `spherical`, `swirl`, `horseshoe`, `polar`, `handkerchief`, `heart`, `disc`, `spiral`, `hyperbolic`, `diamond`, `ex`, `julia`, `bent` |
 | Added classic formulas | `waves`, `fisheye`, `popcorn`, `exponential`, `power`, `cosine`, `rings`, `fan`, `eyefish`, `cylinder` |
 | Earlier compatibility additions | `bubble`, `noise`, `julian`, `blur`, `foci`, `pre_blur` |
+| Milestone 11 formulas | `blob`, `pdj`, `fan2`, `rings2`, `perspective`, `juliascope`, `gaussian_blur`, `radial_blur`, `pie`, `ngon`, `curl`, `rectangles` |
 
-JuliaN continues to expose integer `julian_power` and finite `julian_dist`. All other entries in this subset have no independent named numeric variables. The applicable affine coefficients, producer-specific stochastic behavior and pre-blur ordering still matter.
-
-Gaussian blur, JuliaScope, blob, PDJ, fan2, rings2, perspective, radial blur, pie, ngon, curl, rectangles and the broader plugin inventory remain unimplemented. Gaussian blur was not added in this checkpoint: its historical implementations differ in their random draw order, cached ring state and sharing with pre-blur. Treating those paths as interchangeable would overstate compatibility. GPU execution of every variation remains subsequent work.
+JuliaN exposes an integer `julian_power` and finite `julian_dist`. The Milestone 11 table above lists the additional named parameters. The built-in registry now covers all 40 variations named in the initial brief plus `noise`, `foci` and `pre_blur`.
 
 ## Independent numerical evidence
 

@@ -1,4 +1,4 @@
-# Apophysis Reborn 0.10.2 — User manual
+# Apophysis Reborn 0.11.0 — User manual
 
 Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
@@ -29,7 +29,7 @@ The primary target is Windows 11 x64. Choose one of these distributions:
 | Windows setup EXE | Run the supplied setup EXE. | Install for the current Windows user with versioned shortcuts and an uninstall entry. |
 | Complete source/history ZIP | Open `bin/windows-x64/apophysis-reborn.exe` after extraction, or build the source. | Development, complete verification tools, source history and release evidence. |
 
-The installer is `apophysis-reborn-0.10.2-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.2`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Its destination must be empty; a different release uses a separate version directory and does not automatically remove older releases. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
+The installer is `apophysis-reborn-0.11.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.11.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Its destination must be empty; a different release uses a separate version directory and does not automatically remove older releases. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
 
 Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application's per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.
 
@@ -97,7 +97,7 @@ The **Pre-affine / Post-affine** selector controls both the triangle and numeric
 
 Use **Transform** to add, duplicate, delete, reorder, copy/paste or add a final transform. Structural changes preserve valid Xaos destination mapping. At least one ordinary transform remains. The final transform applies to the plotting copy and has no ordinary selection weight or Xaos row.
 
-**Variations** supports the 31 implemented built-ins. Search by name and edit signed weights; zero disables that contribution. JuliaN exposes its power and distance parameters. **Plugin variations…** supplies fields declared by an explicitly enabled module. Unknown variations remain blockers rather than being replaced with linear or another formula.
+**Variations** supports the 43 implemented built-ins. Search by name and edit signed weights; zero disables that contribution. Selecting a parameterized variation exposes its own controls, including JuliaN and JuliaScope power and distance. **Plugin variations…** supplies fields declared by an explicitly enabled module. Unknown variations remain blockers rather than being replaced with linear or another formula.
 
 **Color** changes palette coordinate, color speed and opacity. **Xaos** edits transition multipliers from the selected transform to its destinations. A positive-weight branch needs a positive reachable destination. Producer-specific field interpretation remains attached to the flame. Copying a transform between producer families can change how its values are interpreted.
 

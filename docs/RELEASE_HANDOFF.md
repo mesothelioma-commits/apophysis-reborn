@@ -1,17 +1,17 @@
-# Release handoff — 0.10.2
+# Release handoff — 0.11.0
 
 ## Scope and release identity
 
-Maintenance release 0.10.2 addresses the [Mutate and Save freezes](WINDOWS_DIALOG_FREEZE.md) and includes the earlier [responsiveness fixes](RESPONSIVENESS_REVIEW.md), retaining Milestone 10’s regression gates, portable and installer editions, offline help and build diagnostics. **0.10.2 remains a development checkpoint.** The original request for full Apophysis 2.x/7X/AV functionality is not complete. [RELEASE_COMPATIBILITY.md](RELEASE_COMPATIBILITY.md) and its [requirements register](requirements-status.json) identify the delivered subset, partial implementations, missing capabilities and unverified platforms against all 25 sections of the original brief.
+Milestone 11 implements the twelve remaining [named starting variations](VARIATIONS.md). It includes the 0.10.2 [Windows dialog and Save fixes](WINDOWS_DIALOG_FREEZE.md). The [compatibility report](RELEASE_COMPATIBILITY.md) and [requirements register](requirements-status.json) track the remaining project scope.
 
 Use the release records for the exact final source commit, executable hashes, test counts and measured timings. Earlier documents retain their original milestone measurements; a historical M7 large-image result is not a new M10 benchmark.
 
 | Distribution | Contents and entry point |
 | --- | --- |
-| `apophysis-reborn-0.10.2-windows-x64-portable.zip` | Extracted folder `apophysis-reborn-0.10.2-windows-x64`; open `apophysis-reborn.exe` at its root. Includes the CLI, runtime dependency closure, example native plugin, offline documents, examples, notices and corresponding dependency source archives. |
-| `apophysis-reborn-0.10.2-windows-x64-setup.exe` | Per-user installation of the runtime payload with versioned shortcuts and an uninstall entry. Default `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.2`; no administrator elevation or file-association takeover. |
-| `apophysis-reborn-0.10.2-dialog-freeze.zip` | Complete `apophysis-reborn` source tree, Git bundle, SDK/example sources, tests, build and verification scripts, Windows applications under `bin/windows-x64`, dependency sources and release evidence. Use this edition for the commands below. |
-| Git source | Extract `apophysis-reborn-0.10.2-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
+| `apophysis-reborn-0.11.0-windows-x64-portable.zip` | Extracted folder `apophysis-reborn-0.11.0-windows-x64`; open `apophysis-reborn.exe` at its root. Includes the CLI, runtime dependency closure, example native plugin, offline documents, examples, notices and corresponding dependency source archives. |
+| `apophysis-reborn-0.11.0-windows-x64-setup.exe` | Per-user installation of the runtime payload with versioned shortcuts and an uninstall entry. Default `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.11.0`; no administrator elevation or file-association takeover. |
+| `apophysis-reborn-0.11.0-starting-variations.zip` | Complete `apophysis-reborn` source tree, Git bundle, SDK/example sources, tests, build and verification scripts, Windows applications under `bin/windows-x64`, dependency sources and release evidence. Use this edition for the commands below. |
+| Git source | Extract `apophysis-reborn-0.11.0-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
 
 The complete edition contains `BUILD.txt`, `release-source.json`, `SOURCE_SHA256SUMS.txt`, `SHA256SUMS.txt` and `apophysis-reborn.bundle`. `release-source.json` identifies the release source commit; the tracked-source manifest lets configuration check the extracted source. `SHA256SUMS.txt` covers the packaged files according to its recorded inventory. Neither a checksum nor a successful dependency audit proves that an executable ran on Windows.
 
@@ -45,10 +45,10 @@ To create a new source/history-only ZIP from a clean, complete Git checkout with
 
 ```bash
 python3 scripts/package-source.py --repo /path/to/clean-checkout \
-  --output /path/to/new-source-history.zip --tag v0.10.2-dialog-freeze
+  --output /path/to/new-source-history.zip --tag v0.11.0-starting-variations
 ```
 
-The helper refuses a dirty or shallow checkout, a mismatched tag, unsafe/nonportable paths, existing output or output inside the checkout. It includes the tracked source, a Git bundle with history reachable from the local branches/tags, source identity and manifests. It does **not** add application binaries, SDK runtime staging or verification reports; assembling the complete maintenance edition adds those separately. Identical source/ref inputs and matching Git/Python/zlib versions define the helper's reproducibility scope. An optional `--version 0.10.2` asserts the committed CMake version.
+The helper refuses a dirty or shallow checkout, a mismatched tag, unsafe/nonportable paths, existing output or output inside the checkout. It includes the tracked source, a Git bundle with history reachable from the local branches/tags, source identity and manifests. It does **not** add application binaries, SDK runtime staging or verification reports; assembling the complete maintenance edition adds those separately. Identical source/ref inputs and matching Git/Python/zlib versions define the helper's reproducibility scope. An optional `--version 0.11.0` asserts the committed CMake version.
 
 ## Build and launch from source
 
@@ -112,15 +112,15 @@ The corresponding-source directory needs its supplied `SHA256SUMS.txt`; its arch
 
 ```bash
 python3 scripts/package-runtime.py --verify \
-  /path/to/new-runtime-release/apophysis-reborn-0.10.2-windows-x64
+  /path/to/new-runtime-release/apophysis-reborn-0.11.0-windows-x64
 ```
 
 The installer builder needs NSIS **3.13 or newer**, a MinGW-w64 C++20 compiler for its private Windows helper, and a PE-capable objdump. Its default compiler is `x86_64-w64-mingw32-g++`; select another compatible executable with `--compiler`. Select NSIS with `--makensis` or `MAKENSIS`, and objdump with `--objdump` or `APO_OBJDUMP`:
 
 ```bash
 bash scripts/build-installer.sh \
-  --payload /path/to/new-runtime-release/apophysis-reborn-0.10.2-windows-x64 \
-  --output /path/to/new-runtime-release/apophysis-reborn-0.10.2-windows-x64-setup.exe \
+  --payload /path/to/new-runtime-release/apophysis-reborn-0.11.0-windows-x64 \
+  --output /path/to/new-runtime-release/apophysis-reborn-0.11.0-windows-x64-setup.exe \
   --compiler /path/to/x86_64-w64-mingw32-g++ \
   --makensis /path/to/makensis \
   --objdump /path/to/llvm-objdump \
@@ -174,8 +174,8 @@ For the separate installer lifecycle gate, use the setup executable and its matc
 
 ```bash
 bash scripts/verify-installer-windows.sh \
-  --installer /c/release/apophysis-reborn-0.10.2-windows-x64-setup.exe \
-  --payload /c/release/apophysis-reborn-0.10.2-windows-x64 \
+  --installer /c/release/apophysis-reborn-0.11.0-windows-x64-setup.exe \
+  --payload /c/release/apophysis-reborn-0.11.0-windows-x64 \
   --out /c/temp/apo-installer-check --no-open
 ```
 
@@ -223,6 +223,6 @@ Program version directories are separate, but normal sessions use the same per-u
 
 When extending a supported file format, preserve unknown source/envelope data and supply explicit blockers for unsupported calculations. When extending animation or scripts, keep private evaluation and model commit separate from external files and admitted render jobs. Tests of these boundaries already protect real user work and remain required.
 
-The next implementation work should be selected from [RELEASE_COMPATIBILITY.md](RELEASE_COMPATIBILITY.md), not inferred from the milestone number. In particular, the brief's 40 named starting variations still have 12 omissions, and the complete historical inventory is larger. Active density estimation, broader filters/3D/direct-color behavior, additional image encoders and metadata/color management, fuller legacy scripting, preferences/workspace features and fault isolation remain open. Each addition needs original-source semantics, an explicit supported scope, examples and regression evidence before its requirement row is upgraded.
+The next implementation work should be selected from [RELEASE_COMPATIBILITY.md](RELEASE_COMPATIBILITY.md), not inferred from the milestone number. In particular, the brief’s 40 named starting variations are covered, and the complete historical inventory is larger. Active density estimation, broader filters/3D/direct-color behavior, additional image encoders and metadata/color management, fuller legacy scripting, preferences/workspace features and fault isolation remain open. Each addition needs original-source semantics, an explicit supported scope, examples and regression evidence before its requirement row is upgraded.
 
 Keep [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md), [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [TEST_PLAN.md](TEST_PLAN.md), the user manual and both compatibility records synchronized with implemented behavior. Retain historical reports with their original revision and hardware labels. Full-parity release acceptance requires closing or explicitly agreeing changes to the original requirements; completing packaging alone does not do that.

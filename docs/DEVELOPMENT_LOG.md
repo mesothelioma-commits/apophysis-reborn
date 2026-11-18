@@ -169,3 +169,9 @@ Investigated reports of intermittent freezes in 0.8/0.9 using the preserved 0.10
 Device discovery is lazy, cached and asynchronous. Periodic recovery preparation, thumbnail encoding, serialization and disk writes move to one coalescing worker with document-generation invalidation. The render queue now has a persistent worker and bounded progress delivery, retaining durable state transitions and checkpoints while removing repeated whole-queue progress saves. CPU chaos-selection tables are admitted within the dense rendering memory budget.
 
 Profiling led to zero-light reconstruction and repeated-pixel conversion optimizations that retain output precision, historical background semantics and PNG compression settings. Paired measurements retain executable/source/input identities and exact image comparisons. The full investigation, regressions, measurements and remaining platform limits are recorded in [RESPONSIVENESS_REVIEW.md](RESPONSIVENESS_REVIEW.md) and the distribution’s verification evidence. The reported user-machine freezes are not claimed to be conclusively reproduced.
+
+## 0.11.0 — Starting variation coverage
+
+The registry now contains the full list of 40 variations named in the project brief and three additional built-ins. The twelve additions have parameter-aware import and export, CPU and Vulkan evaluation, and individual entries in the study library. The [variation reference](VARIATIONS.md) records the formulas, producer conventions and test fixtures. The [compatibility register](requirements-status.json) tracks the wider historical inventory separately.
+
+The user reported that 0.10.2 completed their render and remained responsive during their session. Its Save and dialog-close regression checks continue to run with this milestone.

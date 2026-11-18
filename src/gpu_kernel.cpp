@@ -4,6 +4,7 @@
 #include <bit>
 #include <cmath>
 #include <limits>
+#include <numbers>
 #include <stdexcept>
 #include <string_view>
 
@@ -27,6 +28,45 @@ std::string field_reason(double value, std::string_view name) {
     return representable(value) ? std::string{} : std::string(name) + " is outside normal FP32 range";
 }
 
+// The optional four-word tail on a variation record holds its constants.
+// Precompute trigonometric and power coefficients once per packed transform.
+using Constants = std::array<double, 4>;
+std::optional<Constants> variation_constants(Variation id, const VariationParameters &p) {
+    constexpr double pi = std::numbers::pi;
+    switch (id) {
+    case Variation::blob:
+        return Constants{p.blob_low, p.blob_high - p.blob_low, p.blob_waves};
+    case Variation::pdj:
+        return Constants{p.pdj_a, p.pdj_b, p.pdj_c, p.pdj_d};
+    case Variation::fan2:
+        return Constants{pi * (p.fan2_x * p.fan2_x + 1e-10), p.fan2_y};
+    case Variation::rings2:
+        return Constants{p.rings2_val * p.rings2_val + 1e-10};
+    case Variation::perspective: {
+        const auto a = p.perspective_angle * (pi / 2);
+        return Constants{std::sin(a), p.perspective_dist, std::cos(a),
+                         double(p.perspective_angle == 0)};
+    }
+    case Variation::juliascope:
+        return Constants{p.juliascope_power, p.juliascope_dist / (2.0 * p.juliascope_power),
+                         double(p.juliascope_dist == 1)};
+    case Variation::radial_blur: {
+        const auto a = p.radial_blur_angle * (pi / 2);
+        return Constants{std::sin(a), std::cos(a)};
+    }
+    case Variation::pie:
+        return Constants{p.pie_slices, p.pie_rotation, p.pie_thickness};
+    case Variation::ngon:
+        return Constants{2 * pi / p.ngon_sides, p.ngon_power / 2, p.ngon_corners, p.ngon_circle};
+    case Variation::curl:
+        return Constants{p.curl_c1, p.curl_c2};
+    case Variation::rectangles:
+        return Constants{p.rectangles_x, p.rectangles_y};
+    default:
+        return std::nullopt;
+    }
+}
+
 std::string transform_reason(const Transform &t) {
     for (const auto &matrix : {t.pre, t.post})
         for (double value : {matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f})
@@ -42,6 +82,16 @@ std::string transform_reason(const Transform &t) {
             return "Native plugin variations require the CPU renderer";
         if (auto reason = field_reason(term.weight, "Variation weight"); !reason.empty())
             return reason;
+        if (term.weight) {
+            if (const auto constants = variation_constants(term.id, t.parameters))
+                for (const double v : *constants)
+                    if (!representable(v))
+                        return std::string(variation_name(term.id)) + " parameter is outside normal FP32 range";
+            if (term.id == Variation::juliascope && std::abs(t.parameters.juliascope_power) > 16777216)
+                return "JuliaScope branch count exceeds exact FP32 integer range";
+            if (term.id == Variation::pie && std::abs(t.parameters.pie_slices) > 16777216)
+                return "Pie slice count exceeds exact FP32 integer range";
+        }
         if (!term.weight || !t.parameters.apophysis_math)
             continue;
         // The historical 1e-300 guards cannot be expressed by this FP32 kernel.
@@ -176,6 +226,12 @@ PackedFlame pack_flame(const Flame &flame, const Geometry &geometry, bool hit_st
         data[base + 18] =
             (t.parameters.apophysis_math ? 1u : 0u) | (t.parameters.separate_blur_angle ? 2u : 0u);
         data[base + 19] = static_cast<std::uint32_t>(data.size());
+        // Leave compact two-word records in place for models without
+        // parameterized additions. Mixed transforms use a uniform stride.
+        const bool extended = std::any_of(t.variations.begin(), t.variations.end(), [&](const Term &term) {
+            return term.weight != 0 && variation_constants(term.id, t.parameters).has_value();
+        });
+        data[base + 22] = extended ? 6 : 2;
         for (const auto &term : t.variations) {
             if (!term.weight)
                 continue;
@@ -185,6 +241,11 @@ PackedFlame pack_flame(const Flame &flame, const Geometry &geometry, bool hit_st
             }
             data.push_back(static_cast<std::uint32_t>(term.id));
             data.push_back(bits(term.weight));
+            if (extended) {
+                const auto constants = variation_constants(term.id, t.parameters).value_or(Constants{});
+                for (double v : constants)
+                    data.push_back(bits(v));
+            }
             ++data[base + 20];
         }
     }

@@ -33,6 +33,8 @@ struct LegacyTransformEdits {
     std::optional<std::vector<Term>> variations;
     std::optional<int> julian_power;
     std::optional<double> julian_dist;
+    std::map<std::string, double> variation_parameters;
+    bool initialize_new_variations = false;
     std::optional<std::vector<double>> chaos;
 };
 

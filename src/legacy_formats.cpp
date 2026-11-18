@@ -1,4 +1,5 @@
 #include "legacy_formats.hpp"
+#include "flame_io.hpp"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -558,8 +559,9 @@ std::vector<UprEntry> import_upr(std::string_view text) {
               if (power < -1024 || power > 1024 || power == 0)
                 bad("julian power outside supported range");
               t.parameters.julian_power = static_cast<int>(power);
-            } else if (name == "julian_dist" && active.contains("julian"))
-              t.parameters.julian_dist = number(value, k);
+            } else if (const auto *field = find_variation_parameter(name);
+                       field && active.contains(std::string(variation_name(field->variation))))
+              field->set(t.parameters, number(value, k));
             else {
               bool affects = false;
               for (const auto &a : active)
@@ -572,6 +574,11 @@ std::vector<UprEntry> import_upr(std::string_view text) {
                 ignored_parameters = true;
             }
           }
+        for (const auto& field : variation_parameter_registry())
+          if (active.contains(std::string(variation_name(field.variation))) &&
+              needs_explicit_variation_parameter(field, Producer::classic) &&
+              !outside.contains(prefix + "_par_" + std::string(field.name)))
+            out.report.errors.push_back("UPR requires explicit parameter: " + std::string(field.name));
         return t;
       };
       for (std::int64_t i = 0; i < count; ++i)
@@ -704,13 +711,11 @@ UprExport export_upr(const Flame &f) {
       if (term.weight != 0)
         add(prefix + "_var_" + std::string(variation_name(term.id)),
             term.weight);
-    if (std::any_of(t.variations.begin(), t.variations.end(),
-                    [](const Term &term) {
-                      return term.id == Variation::julian && term.weight != 0;
-                    })) {
-      add(prefix + "_par_julian_power", t.parameters.julian_power);
-      add(prefix + "_par_julian_dist", t.parameters.julian_dist);
-    }
+    for (const auto &term : t.variations)
+      if (term.weight != 0)
+        for (const auto &field : variation_parameter_registry())
+          if (field.variation == term.id)
+            add(prefix + "_par_" + std::string(field.name), field.get(t.parameters));
   };
   for (std::size_t i = 0; i < f.transforms.size(); ++i)
     write_transform(f.transforms[i], "p_xf" + std::to_string(i));

@@ -1,6 +1,6 @@
 # Native variation plugins
 
-Milestone 8 adds a versioned native C ABI for **ordinary additive 2D variations**. A plugin contributes a named mathematical operation, metadata and real/integer parameters to the CPU renderer. It can run in ordinary or final transforms, alongside the existing 31 built-in variations. The built-in enum values, formulas and random stream remain unchanged.
+Milestone 8 adds a versioned native C ABI for **ordinary additive 2D variations**. A plugin contributes a named mathematical operation, metadata and real/integer parameters to the CPU renderer. It can run in ordinary or final transforms, alongside the 43 built-in variations in 0.11.0. Existing built-in numeric IDs retain their values.
 
 This increment does not expose native rendering-tool or automation-extension callbacks. Automation uses the separate Lua scripting interface. Native pre/post variation stages, direct color, 3D operations, GPU plugin kernels, legacy DLL execution and process isolation are not implemented.
 

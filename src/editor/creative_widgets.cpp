@@ -1477,10 +1477,9 @@ void applyCreativeFlame(LegacyDocument &document, std::size_t index, const Flame
             edit.opacity = next.opacity;
         if (!equal(old.variations, next.variations))
             edit.variations = next.variations;
-        if (old.parameters.julian_power != next.parameters.julian_power)
-            edit.julian_power = next.parameters.julian_power;
-        if (old.parameters.julian_dist != next.parameters.julian_dist)
-            edit.julian_dist = next.parameters.julian_dist;
+        for (const auto& field : variation_parameter_registry())
+            if (field.get(old.parameters) != field.get(next.parameters))
+                edit.variation_parameters.emplace(field.name, field.get(next.parameters));
         if (old.chaos != next.chaos)
             edit.chaos = next.chaos;
         document.edit_transform(index, transform, edit, final);

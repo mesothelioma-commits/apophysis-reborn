@@ -126,6 +126,14 @@ double uniform(Rng &rng, double low, double high) {
 std::size_t choose(Rng &rng, std::size_t count) {
     return std::min(count - 1, static_cast<std::size_t>(rng.unit() * double(count)));
 }
+void initialize_new_shape(Transform &transform, Variation id) {
+    if (id == Variation::julian) return;
+    const auto defaults = authoring_parameters();
+    for (const auto &field : variation_parameter_registry())
+        if (field.variation == id && field.get(transform.parameters) == field.get(VariationParameters{}))
+            field.set(transform.parameters, field.get(defaults));
+}
+
 std::vector<Variation> variation_choices(const std::vector<Variation> &requested) {
     std::vector<Variation> result = requested;
     if (result.empty()) {
@@ -210,8 +218,10 @@ void mutate_transform(Transform &transform, const MutationOptions &options,
         const auto id = choices[choose(rng, choices.size())];
         auto term = std::find_if(transform.variations.begin(), transform.variations.end(),
                                  [&](const Term &value) { return value.id == id; });
-        if (term == transform.variations.end())
+        if (term == transform.variations.end()) {
+            initialize_new_shape(transform, id);
             transform.variations.push_back({id, amount * uniform(rng, .15, .5)});
+        }
         else if (term->weight == 0)
             term->weight = amount * uniform(rng, .15, .5);
         std::sort(transform.variations.begin(), transform.variations.end(), [](Term a, Term b) {
@@ -242,9 +252,37 @@ void mutate_transform(Transform &transform, const MutationOptions &options,
             const double distance = transform.parameters.julian_dist + amount * .75 * delta();
             transform.parameters.julian_dist = finite_or_original(distance, transform.parameters.julian_dist);
         }
+        for (const auto &term : transform.variations) {
+            if (term.weight == 0 || term.id == Variation::julian) continue;
+            for (const auto &field : variation_parameter_registry()) {
+                if (field.variation != term.id) continue;
+                const auto previous = field.get(transform.parameters);
+                const double step = field.is_integer(transform.parameters) ? std::round(amount * 3 * delta())
+                                    : amount * .5 * delta() * std::max(1., std::abs(previous));
+                const auto proposed = previous + step;
+                try {
+                    field.set(transform.parameters, proposed);
+                } catch (const std::invalid_argument &) {
+                    // Keep the parent value if this step leaves the field's domain.
+                }
+            }
+        }
     }
 }
 } // namespace
+
+VariationParameters authoring_parameters() {
+    VariationParameters p;
+    p.blob_low = .35; p.blob_high = 1.1; p.blob_waves = 5;
+    p.pdj_a = 1.3; p.pdj_b = -1.8; p.pdj_c = 1.6; p.pdj_d = .9;
+    p.fan2_x = .55; p.fan2_y = .15; p.rings2_val = .6;
+    p.perspective_angle = .25; p.perspective_dist = 2;
+    p.juliascope_power = 3;
+    p.radial_blur_angle = .35;
+    p.ngon_power = 1; p.ngon_corners = .6;
+    p.curl_c1 = .3; p.curl_c2 = .15;
+    return p;
+}
 
 RGB blend_colors(RGB from, RGB to, double amount, GradientSpace space) {
     if (!valid_color(from) || !valid_color(to) || !(amount >= 0 && amount <= 1))
@@ -567,6 +605,7 @@ std::vector<Flame> random_flames(const RandomOptions &options, std::stop_token s
                                  -second_scale * std::sin(angle), second_scale * std::cos(angle),
                                  offset * std::cos(orbit_angle), offset * std::sin(orbit_angle)};
                 const auto id = ordinary[choose(rng, ordinary.size())];
+                initialize_new_shape(transform, id);
                 transform.variations = {{id, 1}};
                 if (id != Variation::linear && contains(ordinary, Variation::linear)) {
                     const double contribution = uniform(rng, .15, .55);

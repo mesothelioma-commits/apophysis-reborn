@@ -151,3 +151,7 @@ alone is not renderer-equivalence evidence.
 Physical-GPU execution on NVIDIA, AMD or Intel hardware and Windows driver
 acceptance remain separate checks. Software Vulkan results establish that the
 compute shader and API path execute; they establish no hardware speedup.
+
+## 0.11.0 numerical gate
+
+The current kernel coverage includes all 43 built-ins. The [kernel reference](GPU_KERNEL.md) describes direct coordinate probes, RNG comparisons and full-image checks. Run `gpu-kernel-tests`, `gpu-tests` and `gpu-stream-tests` on a Vulkan device to reproduce these checks.

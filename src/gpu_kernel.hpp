@@ -50,7 +50,7 @@ std::string support_reason(const Flame &flame);
 PackedFlame pack_flame(const Flame &flame, const Geometry &geometry, bool hit_stream = false);
 
 // Mode 1 numerical probes execute one transform repeatedly, keeping its
-// historical pre-blur ring between applications. Each record is independent.
+// historical Gaussian/pre-blur and radial-blur rings between applications. Each record is independent.
 // Inputs 0..7: transform index, x/y/color float bits, seed low/high, stream low/high.
 // Outputs 8..11: x/y/color float bits and the next RNG unit. Input 12: repetitions.
 using ProbeRecord = std::array<std::uint32_t, probe_words>;

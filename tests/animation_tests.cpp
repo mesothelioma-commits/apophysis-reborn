@@ -314,6 +314,23 @@ void interpolation_tests() {
   overflow.validateFrames(0,0); overflow.validateFrames(4,4);
   rejects([&] { overflow.validateFrames(0,4); }, "frame 1 is invalid");
 }
+void new_variation_interpolation() {
+  auto left = base(), right = base();
+  left.transforms[0].variations = {{Variation::pdj, .7}, {Variation::juliascope, .3}};
+  right.transforms[0].variations = left.transforms[0].variations;
+  right.transforms[0].variations.push_back({Variation::perspective, .5});
+  left.transforms[0].parameters.pdj_a = -2;
+  right.transforms[0].parameters.pdj_a = 4;
+  left.transforms[0].parameters.juliascope_power = 3.5;
+  right.transforms[0].parameters.juliascope_power = -3.5;
+  right.transforms[0].parameters.perspective_dist = 7;
+  const PreparedAnimation animation(clip_for(left, right));
+  const auto mid = animation.evaluate(2).flame.transforms[0];
+  near(mid.parameters.pdj_a, 1, "PDJ parameter interpolation");
+  near(mid.parameters.juliascope_power, 3.5, "JuliaScope power cannot interpolate through zero");
+  near(mid.parameters.perspective_dist, 7, "Newly fading variation preserves its shape");
+  near(animation.evaluate(4).flame.transforms[0].parameters.juliascope_power, -3.5, "exact endpoint power");
+}
 void polar_and_variation_tests() {
   auto a = base(), b = a;
   b.transforms[0].pre = {-1,0,0,-1,2,4};
@@ -541,7 +558,7 @@ int main(int argc, char **argv) {
   try {
     require(argc == 3, "Usage: animation-tests SAMPLE.apoplugin INTEGER_FIXTURE_MODULE");
     io_and_source_tests(); hostile_input_tests(); timeline_tests(); interpolation_tests();
-    polar_and_variation_tests(); topology_tests(); preset_and_legacy_time_tests();
+    new_variation_interpolation(); polar_and_variation_tests(); topology_tests(); preset_and_legacy_time_tests();
     plugin_tests(argv[1],argv[2]);
     std::cout << "Animation source, schema, timing, morph, numerical, and native-identity regressions passed\n";
     return 0;

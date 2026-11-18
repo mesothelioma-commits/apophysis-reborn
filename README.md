@@ -1,21 +1,33 @@
-# Apophysis Reborn 0.10.2
+# Apophysis Reborn 0.11.0
 
-This update addresses two freezes reported during ordinary editing on Windows. Closing Mutate or Random can return to the main window while a canceled render finishes. Saving a project after editing the preview seed runs file preparation and writing on a background thread. The editor keeps processing window messages during the save.
+Milestone 11 adds the twelve remaining variations from the original brief. All 40 named starting variations are now available in the editor and on the CPU and Vulkan renderers. The registry also includes noise, foci and pre_blur, for 43 built-ins.
 
-**0.10.2 is a maintenance checkpoint. Complete original Apophysis 2.x/7X/AV feature parity remains unfinished.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
+**0.11.0 completes the starting variation list. Complete original Apophysis 2.x/7X/AV feature parity remains unfinished.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
 
 ## Choose a distribution
 
 | Edition | Entry point and contents |
 | --- | --- |
-| Lean portable | Extract `apophysis-reborn-0.10.2-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.10.2-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
-| Per-user installer | Run `apophysis-reborn-0.10.2-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.2`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
-| Complete source/history and SDK | Extract `apophysis-reborn-0.10.2-dialog-freeze.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
-| Git source | Extract `apophysis-reborn-0.10.2-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
+| Lean portable | Extract `apophysis-reborn-0.11.0-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.11.0-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
+| Per-user installer | Run `apophysis-reborn-0.11.0-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.11.0`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
+| Complete source/history and SDK | Extract `apophysis-reborn-0.11.0-starting-variations.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
+| Git source | Extract `apophysis-reborn-0.11.0-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
 
 Setup requires an empty destination and keeps different versions side by side. Uninstall removes unchanged installed payload files and retains modified/extra files; external projects, settings and recovery data remain. An interrupted install can leave a partial folder; automatic repair or replacement is not provided. Portable and installed applications normally share per-user settings/data, so separate program directories are not isolated user profiles. Keep artwork outside the program folder and retain the original executable/plugins for in-progress checkpoints. [Getting started and recovery](docs/USER_MANUAL.md)
 
-## Changes in 0.10.2
+## New variations in 0.11.0
+
+Open **File → Open project or library** and choose `examples/variation-studies.flame`. The final twelve studies each demonstrate one addition. Select its third transform, then open **Variations** to edit the weight and available parameters.
+
+| Geometry | Angular and optical | Blur and sampling |
+| --- | --- | --- |
+| blob, PDJ, curl, rectangles | fan2, rings2, perspective, JuliaScope, ngon | Gaussian blur, radial blur, pie |
+
+![Twelve rendered variation studies showing the differences between the new transformations](preview/starting-variations-0.11.0.png)
+
+[Parameters, compatibility and numerical checks](docs/VARIATIONS.md)
+
+## Earlier responsiveness changes in 0.10.2
 
 - Mutate and Random cancel obsolete candidate and preview work when their windows close. Detail, thumbnail and main preview rendering reuse dedicated workers.
 - Native project Save captures the preview seed along with the document state. A successful save updates the file identity and clean state without regenerating the same preview.
@@ -126,7 +138,7 @@ Sixteen-bit values come directly from reconstruction, without expansion from RGB
 
 Extract the complete ZIP and open `bin/windows-x64/apophysis-reborn.exe`. Keep the accompanying DLLs and `platforms` folder beside it. The program starts with Ember Spiral and works offline. Use **Open project or library** to load a native project, `.flame`, `.xml`, historical `.temp` collection or a supported Apophysis `.upr` entry.
 
-Select a transform in the lower canvas, then drag its origin or its X/Y handles. The **Pre-affine / Post-affine** selector and the coefficient fields edit the same matrix. The right-hand tabs expose geometry, all 31 supported variation weights, JuliaN parameters, color controls, and Xaos. **Save** retains the original collection and unrelated XML. The [editor guide](docs/EDITOR.md) covers the controls and recovery behavior.
+Select a transform in the lower canvas, then drag its origin or its X/Y handles. The **Pre-affine / Post-affine** selector and the coefficient fields edit the same matrix. The right-hand tabs expose geometry, all 43 supported variation weights, their built-in parameters, color controls, and Xaos. **Save** retains the original collection and unrelated XML. The [editor guide](docs/EDITOR.md) covers the controls and recovery behavior.
 
 ## Choose the rendering device
 
@@ -209,7 +221,7 @@ Render a different file from the supported subset with:
 
 Replace device `0` with a zero-based index or ID from your own device inventory. The final command requires Vulkan; it cannot silently succeed through CPU fallback. `--backend auto` allows reported CPU fallback by default. Completion output includes the actual backend, device and stage timings.
 
-The 31 studies in `examples/variation-studies.flame` cover every registered variation. Use `inspect` to list their names, then select a study by its one-based `--index`. `examples/seeded-random.flame` contains a nine-candidate generated batch; `examples/creative-branches.flame` contains an original, parent and child saved through the native editor. `examples/gpu-palette-study.flame` was edited and saved during the native Vulkan desktop check.
+The 43 studies in `examples/variation-studies.flame` cover every registered variation. Use `inspect` to list their names, then select a study by its one-based `--index`. `examples/seeded-random.flame` contains a nine-candidate generated batch; `examples/creative-branches.flame` contains an original, parent and child saved through the native editor. `examples/gpu-palette-study.flame` was edited and saved during the native Vulkan desktop check.
 
 The CLI accepts the earlier seed, samples, threads and backend options plus `--size W H`, `--oversample`, `--filter-radius`, `--bit-depth`, `--alpha`, `--disk-mib`, `--strip-rows`, `--checkpoint`, `--resume` and `--estimate`. The foundation syntax `flame-cpu width height samples output.ppm` remains available.
 
@@ -302,6 +314,6 @@ The complete source/history ZIP also includes `apophysis-reborn.bundle`, `BUILD.
 
 ## Remaining work
 
-The original brief names 40 starting variations; **28 of those are implemented and 12 are missing**, alongside three additional built-ins for 31 total. That list is not the complete historical inventory. Active density estimation, broader filters/3D/direct-color behavior, JPEG/WebP/OpenEXR/HDR, ICC/embedded metadata, the full legacy script/animation surface, light theme and more workspace/preferences controls remain open. Native plugins are trusted in-process CPU code; local crash reporting and stronger isolation remain incomplete. CUDA is optional and not implemented.
+The original brief names 40 starting variations. All 40 are implemented, alongside three additional built-ins for 43 total. That list is not the complete historical inventory. Active density estimation, broader filters/3D/direct-color behavior, JPEG/WebP/OpenEXR/HDR, ICC/embedded metadata, the full legacy script/animation surface, light theme and more workspace/preferences controls remain open. Native plugins are trusted in-process CPU code; local crash reporting and stronger isolation remain incomplete. CUDA is optional and not implemented.
 
 Continue with targeted compatibility work and Windows/physical-GPU acceptance using [RELEASE_COMPATIBILITY.md](docs/RELEASE_COMPATIBILITY.md), [FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) and [RELEASE_HANDOFF.md](docs/RELEASE_HANDOFF.md). M10 packaging does not turn those outstanding requirements into completed product functionality.

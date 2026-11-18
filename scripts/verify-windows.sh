@@ -34,7 +34,7 @@ cmd.exe //c ver
 "$bin/renderer-tests.exe"
 "$bin/legacy-document-tests.exe"
 "$bin/creative-tests.exe"
-"$bin/extended-variation-tests.exe" tests/extended-variation-vectors.tsv examples/variation-studies.flame
+"$bin/extended-variation-tests.exe" tests/extended-variation-vectors.tsv examples/variation-studies.flame tests/starting-variation-vectors.tsv
 "$bin/gpu-kernel-tests.exe" --cpu-only
 "$bin/image-stream-tests.exe"
 "$bin/file-render-tests.exe" --cpu-only

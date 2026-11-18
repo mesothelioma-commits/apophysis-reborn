@@ -6,10 +6,13 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+
+void check_m11_producers();
 
 namespace {
 using namespace apo;
@@ -74,7 +77,7 @@ std::string document(const std::string &version, const std::string &term) {
 }
 
 void import_and_replay() {
-    check(variation_registry().size() == 31, "Expected 31 implemented registry entries");
+    check(variation_registry().size() == 43, "Expected 43 implemented registry entries");
     for (auto id : additions) {
         const std::string name(variation_name(id));
         check(find_variation(name) == id, "Registry lookup mismatch");
@@ -121,10 +124,49 @@ void import_and_replay() {
           "Historical fisheye and eyefish axes must differ");
 }
 
+// These fixtures come from separately compiled FLAM3 operations and precomputations.
+void starting_vectors(const char *filename) {
+    std::ifstream input(filename);
+    std::string row;
+    check(std::getline(input, row) && row ==
+          "name\tattributes\tx\ty\tweight\tseed\texpected_x\texpected_y\tnext_draw",
+          "Invalid starting-variation oracle header");
+    std::map<std::string, unsigned> counts;
+    while (std::getline(input, row)) {
+        std::istringstream fields(row);
+        std::string name, parameters, trailing;
+        std::getline(fields, name, '\t');
+        std::getline(fields, parameters, '\t');
+        Point point, expected;
+        double weight, nextDraw;
+        unsigned seed;
+        check((fields >> point.x >> point.y >> weight >> seed >> expected.x >> expected.y >> nextDraw) &&
+              !(fields >> trailing), "Malformed oracle row for " + name);
+        if (parameters == "-") parameters.clear();
+        const auto xml = "<flame><xform weight='1' " + name + "='" + std::to_string(weight) +
+                         "' " + parameters + "/><color index='0' rgb='0 0 0'/><color index='255' rgb='255 255 255'/></flame>";
+        const auto flame = parse_flames(xml).front();
+        Rng rng(seed);
+        const auto actual = apply_transform(flame.transforms.front(), {point, .4}, rng).point;
+        if (!close(actual.x, expected.x) || !close(actual.y, expected.y) || rng.unit() != nextDraw) {
+            std::ostringstream error;
+            error << std::setprecision(17) << "FLAM3 " << name << " at " << point.x << ',' << point.y
+                  << " weight " << weight << " seed " << seed << ": expected " << expected.x << ','
+                  << expected.y << " obtained " << actual.x << ',' << actual.y << " or random stream differs";
+            throw std::runtime_error(error.str());
+        }
+        ++counts[name];
+    }
+    check(input.eof() && counts.size() == 12, "Expected all 12 added variations");
+    for (const auto &[name, count] : counts) check(count == 36, "Incomplete oracle rows for " + name);
+    std::cout << "432 independent starting-variation geometry and RNG vectors matched\n";
+}
+
 void studies(const char *filename) {
     const auto flames = load_flames(filename);
     check(flames.size() == variation_registry().size(), "Every registered variation needs one sample");
-    for (const auto id : additions) {
+    for (const auto &entry : variation_registry()) {
+        const auto id = entry.id;
         auto found = std::find_if(flames.begin(), flames.end(),
             [&](const Flame &flame) { return flame.name == variation_name(id); });
         check(found != flames.end(), "Missing variation study");
@@ -141,16 +183,18 @@ void studies(const char *filename) {
         check(image.invalid == 0 && image.plotted > options.samples / 5 && *high > *low + 20,
               "Study did not produce a well-framed nonuniform image: " + flame.name);
     }
-    std::cout << "10 new variation studies rendered without invalid orbit steps\n";
+    std::cout << "All 43 variation studies rendered and passed picture-content checks\n";
 }
 } // namespace
 
 int main(int argc, char **argv) {
     try {
-        check(argc == 3, "Expected an oracle TSV and the variation-studies flame collection");
+        check(argc == 4, "Expected the classic and starting oracle TSVs and variation-studies collection");
         independent_vectors(argv[1]);
         import_and_replay();
         studies(argv[2]);
+        starting_vectors(argv[3]);
+        check_m11_producers();
         return 0;
     } catch (const std::exception &e) {
         std::cerr << "Extended variation tests: " << e.what() << '\n';

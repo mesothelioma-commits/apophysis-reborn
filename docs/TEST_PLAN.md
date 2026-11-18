@@ -296,3 +296,9 @@ Both outputs had identical bytes. BMP SHA-256: `82133ca765ddd8440d495c383c26da79
 - Expand XML and render fixtures using authentic 2.x, 7X and AV applications and their files. Exercise original readers on Reborn exports and document unknown-field handling.
 - Verify editor lifecycle, settings, queue/cancellation, GPU equivalence and image quality on actual hardware when those components exist.
 - Perform the separate native 16,384 × 16,384 acceptance test following implementation of memory-aware high-resolution rendering. No 16K acceptance test was attempted in this checkpoint.
+
+## 0.11.0 starting variations
+
+The extension test compares 432 FLAM3 operation results, verifies the following RNG draw, exercises the historical blur streams and renders all 43 studies. The GPU kernel test covers 2,304 direct comparisons. The GPU render tests put every addition in both an ordinary transform and the final transform with strict backend selection. The stream tests compare mixtures that use both historical blur histories.
+
+The desktop and file checks cover parameter edits, Save and reopen, 2.09 numeric IDs, native and legacy script access, and interpolation of parameters. The checked-in gallery uses the CPU renderer. Its twelve source flames can also be selected individually from the study library.

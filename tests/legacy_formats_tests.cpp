@@ -131,6 +131,17 @@ void upr_source_and_roundtrip() {
   require(second[0].flame.has_value(), "exported UPR reimports");
   require(serialize_flame(*second[0].flame) == serialize_flame(f),
           "UPR supported model roundtrip");
+  auto parametric = f;
+  auto &xf = parametric.transforms[0];
+  xf.variations = {{Variation::curl, 1}};
+  xf.parameters.curl_c1 = -.625;
+  xf.parameters.curl_c2 = .25;
+  const auto written = export_upr(parametric);
+  require(written.report.supported(), "UPR export with curl parameters");
+  const auto reloaded = import_upr(written.text);
+  require(reloaded[0].flame.has_value(), "UPR parameterized round trip");
+  near(reloaded[0].flame->transforms[0].parameters.curl_c1, -.625, "UPR retained curl_c1");
+  near(reloaded[0].flame->transforms[0].parameters.curl_c2, .25, "UPR retained curl_c2");
   auto wide = f;
   wide.width = 1600;
   wide.height = 500;

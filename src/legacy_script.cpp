@@ -277,7 +277,7 @@ class Parser {
         fail(a.token, "Incorrect index count for " + a.name);
       return true;
     }
-    if (a.name.starts_with("transform.") && find_variation(a.name.substr(10))) {
+    if (a.name.starts_with("transform.") && (find_variation(a.name.substr(10)) || find_variation_parameter(a.name.substr(10)))) {
       if (!a.indices.empty())
         fail(a.token, "Named variations have no indices");
       return true;

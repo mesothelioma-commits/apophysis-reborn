@@ -310,7 +310,19 @@ std::map<std::string, double> parameters(lua_State *L, int index) {
   }
   return out;
 }
-std::vector<Term> terms(lua_State *L, int index) {
+Term script_term(const std::string &name, double weight,
+                 const std::map<std::string, double> &values, VariationParameters &parameters) {
+  const auto id = find_variation(name);
+  if (!id) return make_variation_term(name, weight, values);
+  for (const auto &[key, value] : values) {
+    auto field = find_variation_parameter(name + "_" + key);
+    if (!field || field->variation != *id)
+      throw ScriptError("Unknown " + name + " parameter: " + key);
+    field->set(parameters, value);
+  }
+  return make_variation_term(name, weight);
+}
+std::vector<Term> terms(lua_State *L, int index, VariationParameters &variationParameters) {
   table(L, index);
   index = lua_absindex(L, index);
   std::vector<Term> out;
@@ -328,7 +340,7 @@ std::vector<Term> terms(lua_State *L, int index) {
       field(L, item, "name", [&](int k) { name = string(L, k); });
       field(L, item, "weight", [&](int k) { weight = number(L, k); });
       field(L, item, "parameters", [&](int k) { params = parameters(L, k); });
-      out.push_back(make_variation_term(name, weight, params));
+      out.push_back(script_term(name, weight, params, variationParameters));
       lua_pop(L, 1);
     }
   } else {
@@ -348,7 +360,7 @@ std::vector<Term> terms(lua_State *L, int index) {
         field(L, item, "weight", [&](int k) { weight = number(L, k); });
         field(L, item, "parameters", [&](int k) { params = parameters(L, k); });
       }
-      ordered.emplace(name, make_variation_term(name, weight, params));
+      ordered.emplace(name, script_term(name, weight, params, variationParameters));
       lua_pop(L, 1);
     }
     for (auto &[name, term] : ordered)
@@ -377,7 +389,7 @@ Transform read_transform(lua_State *L, int index, Transform t,
   field(L, index, "chaos", [&](int k) {
     t.chaos = array(L, k, c.options.limits.transforms_per_flame);
   });
-  field(L, index, "variations", [&](int k) { t.variations = terms(L, k); });
+  field(L, index, "variations", [&](int k) { t.variations = terms(L, k, t.parameters); });
   return t;
 }
 void push_transform(lua_State *L, const Transform &t) {
@@ -408,6 +420,13 @@ void push_transform(lua_State *L, const Transform &t) {
     lua_newtable(L);
     for (const auto &[key, val] : term_parameters(v))
       put(L, key.c_str(), val);
+    // JuliaN retains its existing top-level fields on a get/set round trip.
+    if (v.id != Variation::julian)
+      for (const auto &field : variation_parameter_registry())
+        if (field.variation == v.id) {
+          auto localName = std::string(field.name.substr(term_name(v).size() + 1));
+          put(L, localName.c_str(), field.get(t.parameters));
+        }
     lua_setfield(L, -2, "parameters");
     lua_rawseti(L, -2, static_cast<lua_Integer>(i + 1));
   }
@@ -715,10 +734,27 @@ void set_term(Transform &t, const std::string &name, double weight,
   else
     *it = std::move(term);
 }
+const std::vector<VariationInfo> &legacy_script_variations() {
+  // Earlier Reborn scripts may have stored these compact indices. The original
+  // 0..22 prefix matches FLAM3, followed by eight previously shipped shapes.
+  static const auto entries = [] {
+    std::vector<VariationInfo> result;
+    const auto add = [&](Variation id) { result.push_back({id, variation_name(id)}); };
+    for (const auto &entry : variation_registry())
+      if (entry.id <= Variation::fan) add(entry.id);
+    for (auto id : {Variation::eyefish, Variation::bubble, Variation::cylinder, Variation::noise,
+                    Variation::julian, Variation::blur, Variation::foci, Variation::pre_blur}) add(id);
+    for (const auto &entry : variation_registry())
+      if (std::none_of(result.begin(), result.end(), [&](const auto &v) { return v.id == entry.id; }))
+        add(entry.id);
+    return result;
+  }();
+  return entries;
+}
 std::string legacy_variation(lua_State *L, int index) {
   const auto n = integer(
       L, index, 0, static_cast<std::int64_t>(variation_registry().size() - 1));
-  return std::string(variation_registry()[static_cast<std::size_t>(n)].name);
+  return std::string(legacy_script_variations()[static_cast<std::size_t>(n)].name);
 }
 int legacy(lua_State *L, Context &c) {
   const auto op = string(L, 1), key = string(L, 2);
@@ -964,8 +1000,15 @@ int legacy(lua_State *L, Context &c) {
       }
       if (property == "julian_power")
         return int_scalar(t.parameters.julian_power, -100000, 100000);
-      if (property == "julian_dist")
-        return scalar(t.parameters.julian_dist);
+      if (const auto *field = find_variation_parameter(property)) {
+        if (write) {
+          field->set(t.parameters, number(L, value));
+          c.dirty = true;
+          return 0;
+        }
+        lua_pushnumber(L, field->get(t.parameters));
+        return 1;
+      }
       if (property == "a")
         return scalar(t.pre.a);
       if (property == "b")
@@ -1205,7 +1248,7 @@ int legacy(lua_State *L, Context &c) {
   }
   if (key == "variationindex") {
     const auto name = string(L, 3);
-    const auto entries = variation_registry();
+    const auto &entries = legacy_script_variations();
     const auto it = std::find_if(entries.begin(), entries.end(),
                                  [&](const auto &e) { return e.name == name; });
     if (it == entries.end())
@@ -1853,6 +1896,7 @@ apo.mutate{seed,strength,trend,geometry,variations,colors,parameters,palette,
   include_final,allowed_variations={names}}
 apo.random(), apo.random(max), apo.random(min,max), apo.randomseed(seed)
   Full uint64 seeds can be supplied as decimal strings.
+Built-in term parameters use local names, e.g. {name="perspective",weight=1,parameters={angle=0.25,dist=2}}.
 apo.variations() -> available built-in and enabled plugin names
 print(...), apo.print(...) -> bounded script console
 apo.render('relative.png', {samples,seed,width,height,format,alpha,threads,

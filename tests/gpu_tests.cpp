@@ -251,6 +251,36 @@ void cpu_and_policy_checks(const ComputeInfo &info) {
     std::cout << "CPU golden and backend policy checks passed\n";
 }
 
+void starting_variation_renders(RenderOptions options) {
+    options.samples = 2048;
+    options.allow_cpu_fallback = false;
+    const std::array additions{
+        Variation::blob, Variation::pdj, Variation::fan2, Variation::rings2, Variation::perspective,
+        Variation::juliascope, Variation::gaussian_blur, Variation::radial_blur, Variation::pie,
+        Variation::ngon, Variation::curl, Variation::rectangles};
+    for (auto id : additions) {
+        for (bool final : {false, true}) {
+            auto flame = impulse(false);
+            flame.width = 65;
+            flame.height = 49;
+            flame.scale = 6;
+            flame.final_transform = Transform{};
+            auto &active = final ? *flame.final_transform : flame.transforms.front();
+            active.variations = {{id, -.625}};
+            // Isolate variation math from accumulated chaotic divergence. Both
+            // entry points still execute burn-in, projection and reconstruction.
+            active.pre = {0, 0, 0, 0, .37890625, -.28515625};
+            auto &p = active.parameters;
+            p.perspective_dist = 2; p.perspective_angle = .4;
+            p.juliascope_power = -3; p.juliascope_dist = .75;
+            p.radial_blur_angle = .4; p.fan2_x = .45; p.rings2_val = .4;
+            p.blob_waves = 3; p.blob_low = .3; p.blob_high = 1.2;
+            p.curl_c1 = -.32; p.rectangles_x = .7; p.rectangles_y = .3;
+            compare(std::string(variation_name(id)) + (final ? "-final" : "-ordinary"), flame, options, false);
+        }
+    }
+}
+
 void device_checks(const ComputeDevice &device) {
     gpu::ContextScope contextScope;
     RenderOptions options{65539, UINT64_C(0x9f123456abcdef01), 2};
@@ -259,6 +289,7 @@ void device_checks(const ComputeDevice &device) {
     options.allow_cpu_fallback = false;
     std::cout << "device=" << device.name << " type=" << device.type << " software=" << device.software
               << " api=" << device.api_version << '\n';
+    starting_variation_renders(options);
     compare("generic-impulse", impulse(false), options, true);
     compare("classic-filtered-impulse", impulse(true), options, true);
     compare("generic-nonlinear-chaos-final", nonlinear(), options, false);

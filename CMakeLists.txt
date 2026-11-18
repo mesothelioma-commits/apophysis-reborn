@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(apophysis_reborn VERSION 0.10.2 LANGUAGES CXX)
+project(apophysis_reborn VERSION 0.11.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -180,11 +180,12 @@ if(BUILD_TESTING)
     add_executable(creative-tests tests/creative_tests.cpp)
     target_link_libraries(creative-tests PRIVATE flame-core)
     add_test(NAME creative COMMAND creative-tests)
-    add_executable(extended-variation-tests tests/extended_variation_tests.cpp)
+    add_executable(extended-variation-tests tests/extended_variation_tests.cpp tests/producer_variation_tests.cpp)
     target_link_libraries(extended-variation-tests PRIVATE flame-core)
     add_test(NAME extended_variations COMMAND extended-variation-tests
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/extended-variation-vectors.tsv
-        ${CMAKE_CURRENT_SOURCE_DIR}/examples/variation-studies.flame)
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/variation-studies.flame
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/starting-variation-vectors.tsv)
     add_executable(reference-tests tests/reference_tests.cpp)
     target_link_libraries(reference-tests PRIVATE flame-core)
     add_test(NAME flam3_reference COMMAND reference-tests

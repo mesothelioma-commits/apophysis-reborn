@@ -26,6 +26,26 @@ std::string replaced(std::string source, Text old, Text replacement) {
     source.replace(source.find(old), old.size(), replacement);
     return source;
 }
+void test_new_variation_fields() {
+    const std::string bytes = "<flame name='Fields'><xform weight='1' var1='23' blob_low='0.2500' blob_high='1'/>"
+        "<!--retain--><finalxform perspective='1' perspective_dist='0.0' perspective_angle='.2'/>"
+        "<color index='0' rgb='255 255 255'/></flame>";
+    auto doc = LegacyDocument::parse(bytes);
+    LegacyTransformEdits edit;
+    edit.variation_parameters["blob_low"] = .5;
+    doc.edit_transform(0, 0, edit);
+    check(doc.bytes() == replaced(bytes, "0.2500", "0.5"), "one parameter rewrote other flame bytes");
+    edit = {};
+    edit.variation_parameters["perspective_angle"] = .125;
+    doc.edit_transform(0, 0, edit, true);
+    check(doc.bytes() == replaced(replaced(bytes, "0.2500", "0.5"), "'.2'", "'0.125'"),
+          "final parameter rewrite affected explicit zero or source layout");
+    const auto saved = doc.bytes();
+    edit = {};
+    edit.variation_parameters["juliascope_power"] = 0;
+    rejects([&] { doc.edit_transform(0, 0, edit); }, "nonzero");
+    check(doc.bytes() == saved, "invalid parameter edit was partially committed");
+}
 void test_archival_collection() {
     const std::string before = "\xef\xbb\xbf<?xml version='1.0'?>\r\n<?saved by-app?>\r\n<Flames name='My &amp; your forms'>";
     const std::string first = "<flame alt='a > b'\n name = 'F&#x69;rst' version='Apophysis 2.08 beta 2'"
@@ -508,7 +528,7 @@ void test_encoded_creative_edits() {
 
 }
 int main() {
-    try { test_archival_collection(); test_boundaries(); test_encodings();
+    try { test_new_variation_fields(); test_archival_collection(); test_boundaries(); test_encodings();
           test_transform_fields(); test_transform_structure(); test_producer_transform_edits(); test_encoded_transform_edits();
           test_adjustment_fields(); test_palette_edits(); test_library_operations(); test_encoded_creative_edits(); }
     catch (const std::exception& e) { std::cerr << e.what() << "\n"; return 1; }

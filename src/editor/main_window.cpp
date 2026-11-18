@@ -465,9 +465,9 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   help->addAction("About Apophysis Reborn", this, [this] {
     QMessageBox::about(
         this, "Apophysis Reborn " + text(application_version()),
-        "Release hardening checkpoint\nC++20 / Qt 6 / CPU "
+        QString("C++20 / Qt 6 / CPU "
         "and Vulkan compute\n\n"
-        "31 registered variations, gradient and adjustment editors, seeded "
+        "%1 registered variations, gradient and adjustment editors, seeded "
         "generation and "
         "mutations. Global sampling, disk-backed reconstruction, persistent "
         "render queues, "
@@ -479,7 +479,7 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
         "See the packaged compatibility report for historical rendering "
         "coverage.\n\n"
         "Qt and other third-party license texts accompany the portable "
-        "distribution.");
+        "distribution.").arg(variation_registry().size()));
   });
   help->addAction("About Qt", qApp, &QApplication::aboutQt);
   connect(&session_, &DocumentSession::changed, this, &MainWindow::refresh);
@@ -1386,34 +1386,30 @@ void MainWindow::makeProperties() {
                 terms.push_back({id, value});
               LegacyTransformEdits edit;
               edit.variations = std::move(terms);
+              edit.initialize_new_variations = true;
               editTransform("Change variation weight", edit);
             });
           });
-  auto variables = new QFormLayout;
-  power_ = numeric("julianPower", 1);
-  distance_ = numeric("julianDistance", 1);
-  variables->addRow("JuliaN power", power_);
-  variables->addRow("JuliaN distance", distance_);
-  variationLayout->addLayout(variables);
-  numberEdited(power_, this, [this] {
-    run([&] {
-      const double value = readNumber(power_);
-      if (value == 0 || value != std::trunc(value) || value < INT_MIN ||
-          value > INT_MAX)
-        throw std::runtime_error(
-            "JuliaN power must be a nonzero 32-bit integer");
-      LegacyTransformEdits e;
-      e.julian_power = int(value);
-      editTransform("Change JuliaN power", e);
+  variationForm_ = new QFormLayout;
+  for (const auto &field : variation_parameter_registry()) {
+    const auto key = text(field.name);
+    const auto objectName = field.name == "julian_power" ? QString("julianPower") :
+                            field.name == "julian_dist" ? QString("julianDistance") : key;
+    auto input = numeric(objectName, field.get(VariationParameters{}));
+    variationFields_[field.name] = input;
+    variationForm_->addRow(key, input);
+    variationForm_->setRowVisible(input, false);
+    numberEdited(input, this, [this, input, name = field.name] {
+      run([&] {
+        LegacyTransformEdits edits;
+        edits.variation_parameters.emplace(name, readNumber(input));
+        editTransform("Change " + text(name), edits);
+      });
     });
-  });
-  numberEdited(distance_, this, [this] {
-    run([&] {
-      LegacyTransformEdits e;
-      e.julian_dist = readNumber(distance_);
-      editTransform("Change JuliaN distance", e);
-    });
-  });
+  }
+  variationLayout->addLayout(variationForm_);
+  connect(variations_, &QTableWidget::currentCellChanged, this,
+          [this] { refreshVariationParameters(); });
   properties_->addTab(variationPanel, "Variations");
 
   auto colors = new QWidget;
@@ -1660,9 +1656,7 @@ void MainWindow::refreshTransform() {
     setNumber(color_, t.color);
     setNumber(colorSpeed_, t.color_speed);
     setNumber(opacity_, t.opacity);
-    setNumber(power_, t.parameters.julian_power);
-    setNumber(distance_, t.parameters.julian_dist);
-    bool hasJuliaN = false;
+    int firstParameterized = -1;
     for (int row = 0; row < variations_->rowCount(); ++row) {
       const auto id = variation_registry()[row].id;
       auto term = std::find_if(t.variations.begin(), t.variations.end(),
@@ -1671,11 +1665,14 @@ void MainWindow::refreshTransform() {
       variations_->item(row, 1)->setText(number(weight));
       variations_->item(row, 0)->setForeground(
           weight ? QColor("#76d5dd") : palette().color(QPalette::Text));
-      if (id == Variation::julian && weight != 0)
-        hasJuliaN = true;
+      if (firstParameterized < 0 && weight != 0 &&
+          std::any_of(variation_parameter_registry().begin(), variation_parameter_registry().end(),
+                      [id](const auto &field) { return field.variation == id; }))
+        firstParameterized = row;
     }
-    power_->setEnabled(hasJuliaN);
-    distance_->setEnabled(hasJuliaN);
+    if (variations_->currentRow() < 0 && firstParameterized >= 0)
+      variations_->setCurrentCell(firstParameterized, 0);
+    refreshVariationParameters();
     QImage strip(256, 1, QImage::Format_RGB32);
     for (int i = 0; i < 256; ++i) {
       const auto c = model_->palette[i];
@@ -1711,6 +1708,19 @@ void MainWindow::requestPreview() {
                 diagnostic_->text()
           : "Open a flame library to begin");
 }
+void MainWindow::refreshVariationParameters() {
+  const int row = variations_->currentRow();
+  if (!model_ || row < 0) return;
+  const auto selected = variation_registry()[row].id;
+  const auto &transform = selectedTransform();
+  for (const auto &field : variation_parameter_registry()) {
+    auto input = variationFields_.at(field.name);
+    variationForm_->setRowVisible(input, field.variation == selected);
+    if (field.variation == selected)
+      setNumber(input, field.get(transform.parameters));
+  }
+}
+
 void MainWindow::editTransform(const QString &label,
                                const LegacyTransformEdits &edit) {
   if (!model_ || lock_->isChecked())

@@ -185,18 +185,34 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
     }
 }
 
+// 2.09 XFormMan.Varnames supplies indices 0..29. The Delphi 7 project
+// registers these ten compiled modules before loading runtime DLLs.
+constexpr std::array stock209_tail{
+    Variation::eyefish, Variation::bubble, Variation::cylinder, Variation::noise, Variation::blur,
+    Variation::gaussian_blur, Variation::pre_blur, Variation::radial_blur, Variation::rings2,
+    Variation::fan2, Variation::blob, Variation::pdj, Variation::perspective, Variation::julian,
+    Variation::juliascope, Variation::curl, Variation::rectangles
+};
+unsigned variation_rank(Variation id, bool stock209) {
+    const auto canonical = static_cast<unsigned>(id);
+    if (!stock209 || id <= Variation::fan) return canonical;
+    const auto found = std::find(stock209_tail.begin(), stock209_tail.end(), id);
+    if (found != stock209_tail.end()) return 23 + static_cast<unsigned>(found - stock209_tail.begin());
+    return 40 + canonical; // extensions follow the published registry
+}
+bool variation_before(const Term& a, const Term& b, bool stock209) {
+    if (a.id == b.id) return term_name(a) < term_name(b);
+    return variation_rank(a.id, stock209) < variation_rank(b.id, stock209);
+}
+
 Variation legacy_variation_id(int id, Text version) {
     // After the first 23 IDs, Apophysis 2 and FLAM3 registries diverge. 7X/AV
     // inserted/reordered built-ins; plugin-dependent indices cannot be inferred from a name tag.
     if (is_apophysis(version) && identify_producer(version) != Producer::classic)
         fail("Numbered variation needs the original 3D-hack/7X/AV registry; use named variations");
-    if (is_apophysis_2(version)) {
-        if (id == 23) return Variation::eyefish;
-        if (id == 24) return Variation::bubble;
-        if (id == 25) return Variation::cylinder;
-        if (id == 26) return Variation::noise;
-        if (id == 27) return Variation::blur;
-        if (id == 29) return Variation::pre_blur;
+    if (is_apophysis_2(version) && id >= 23) {
+        const int last = version == "Apophysis 2.09" ? 39 : 29;
+        if (id <= last) return stock209_tail[static_cast<unsigned>(id - 23)];
     }
     if (id >= 0 && (!is_apophysis_2(version) || id <= 22))
         for (const auto& entry : variation_registry())
@@ -211,14 +227,16 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
     t.weight = final ? 1 : 0;
     t.color = apo ? 0 : static_cast<double>(index % 2);
     t.parameters.apophysis_math = apo;
-    t.parameters.separate_blur_angle = identify_producer(version) == Producer::seven;
-    if (attributes.contains("var") && attributes.contains("var1")) fail("Cannot mix var and var1");
-    if (attributes.contains("julian_power")) {
-        const double power = number<double>(required(attributes,"julian_power"), "julian_power");
-        if (power != std::trunc(power) || power == 0 || std::abs(power) > std::numeric_limits<int>::max())
-            fail("Unsupported julian_power; use a nonzero integer within int range");
-        t.parameters.julian_power = static_cast<int>(power);
+    const auto producer = identify_producer(version);
+    t.parameters.separate_blur_angle = producer == Producer::seven;
+    if (producer == Producer::seven) {
+        t.parameters.curl_c1 = 0;
+        t.parameters.curl_c2 = 0;
+        t.parameters.ngon_sides = 4;
+        t.parameters.ngon_power = 2;
+        t.parameters.ngon_corners = 1;
     }
+    if (attributes.contains("var") && attributes.contains("var1")) fail("Cannot mix var and var1");
     // Resolve explicitly enabled ordinary plugins before walking parameter attributes.
     std::map<std::string, Term> plugin_terms;
     std::set<std::string> plugin_fields;
@@ -264,8 +282,16 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
         else if (key == "enabled" && final && apo) {
             const auto enabled = number<int>(value, key);
             if (enabled != 0 && enabled != 1) fail("enabled must be zero or one");
-        } else if (key == "julian_power") { /* parsed before the weights */ }
-        else if (key == "julian_dist") t.parameters.julian_dist = number<double>(value, key);
+        } else if (const auto* field = find_variation_parameter(key)) {
+            double input = number<double>(value, key);
+            if (apo && (key == "juliascope_power" || key == "blob_waves" || key == "ngon_sides")) {
+                if (key == "ngon_sides" && std::abs(input) < 1)
+                    input = input < 0 ? -1 : 1;
+                input = std::nearbyint(input);
+                if (key == "juliascope_power" && input == 0) input = 1;
+            }
+            field->set(t.parameters, input);
+        }
         else if (key == "linear3D" && apo && identify_producer(version) != Producer::classic) {
             if (attributes.contains("linear") || attributes.contains("var") || attributes.contains("var1"))
                 fail("Cannot mix linear3D with linear or numeric variation weights");
@@ -316,10 +342,16 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
             fail("Unsupported transform attribute or variation '" + std::string(key) + "'");
         }
     }
-    const bool julian_active = std::any_of(t.variations.begin(), t.variations.end(),
-        [](Term term){ return term.id == Variation::julian && term.weight != 0; });
-    if (julian_active && apo && !attributes.contains("julian_power"))
-        fail("Apophysis JuliaN requires explicit julian_power (producer default is random)");
+    if (apo) {
+        for (const auto& term : t.variations) {
+            if (term.weight == 0) continue;
+            for (const auto& field : variation_parameter_registry())
+                if (field.variation == term.id && needs_explicit_variation_parameter(field, producer) &&
+                    !attributes.contains(field.name))
+                    fail("Apophysis requires explicit " + std::string(field.name) +
+                         " (producer default is random)");
+        }
+    }
     if (attributes.contains("var_order")) {
         std::vector<Term> ordered;
         std::istringstream names(std::string{required(attributes, "var_order")});
@@ -335,7 +367,7 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
         t.variations = std::move(ordered);
     } else {
         std::sort(t.variations.begin(), t.variations.end(),
-                  [](const Term& a, const Term& b) { return a.id == b.id ? term_name(a) < term_name(b) : a.id < b.id; });
+                  [stock209 = version == "Apophysis 2.09"](const Term& a, const Term& b) { return variation_before(a, b, stock209); });
     }
     return t;
 }
@@ -566,7 +598,8 @@ void write_affine(std::ostream& out, Text field, Affine m) {
         << ' ' << m.e << ' ' << m.f << '"';
 }
 
-void write_transform(std::ostream& out, const Transform& t, bool final, bool apo) {
+void write_transform(std::ostream& out, const Transform& t, bool final, Text version) {
+    const bool apo = is_apophysis(version);
     out << (final ? "  <finalxform" : "  <xform");
     if (!final) out << " weight=\"" << t.weight << '"';
     out << " color=\"" << t.color << '"';
@@ -593,17 +626,37 @@ void write_transform(std::ostream& out, const Transform& t, bool final, bool apo
         }
     }
     if (std::any_of(t.variations.begin(), t.variations.end(), [](const Term& term){return term.id == Variation::plugin;}) ||
-        (apo && !std::is_sorted(t.variations.begin(), t.variations.end(), [](const Term& a, const Term& b){ return a.id < b.id; }))) {
+        (apo && !std::is_sorted(t.variations.begin(), t.variations.end(), [stock209 = version == "Apophysis 2.09"](const Term& a, const Term& b){ return variation_before(a,b,stock209); }))) {
         out << " var_order=\"";
         for (const auto& term : t.variations) out << term_name(term) << ' ';
         out << '"';
     }
-    if (std::any_of(t.variations.begin(), t.variations.end(), [](Term term){ return term.id == Variation::julian; }))
-        out << " julian_power=\"" << t.parameters.julian_power << "\" julian_dist=\"" << t.parameters.julian_dist << '"';
+    for (const auto& term : t.variations)
+        for (const auto& field : variation_parameter_registry())
+            if (field.variation == term.id)
+                out << ' ' << field.name << "=\"" << field.get(t.parameters) << '\"';
     out << "/>\n";
 }
 
 } // namespace
+
+// Some Delphi constructors choose a new uniform-random parameter per transform.
+// A file omitting that parameter cannot identify the shape that its author saw.
+bool needs_explicit_variation_parameter(const VariationParameterInfo& field, Producer producer) {
+    if (producer == Producer::generic) return false;
+    switch (field.variation) {
+    case Variation::julian: return field.name == "julian_power";
+    case Variation::juliascope: return field.name == "juliascope_power";
+    case Variation::curl: return producer != Producer::seven;
+    case Variation::blob:
+    case Variation::pdj:
+    case Variation::fan2:
+    case Variation::rings2:
+    case Variation::perspective:
+    case Variation::radial_blur: return true;
+    default: return false;
+    }
+}
 
 std::vector<Flame> parse_flames(std::string_view xml) {
     Parser p;
@@ -660,8 +713,8 @@ std::string serialize_flame(const Flame& f) {
         << "\" oversample=\"" << f.oversample << "\" brightness=\"" << f.brightness
         << "\" gamma=\"" << f.gamma << "\" vibrancy=\"" << f.vibrancy << "\" background=\""
         << f.background.r << ' ' << f.background.g << ' ' << f.background.b << "\">\n";
-    for (const auto& t : f.transforms) write_transform(out, t, false, is_apophysis(f.source_version));
-    if (f.final_transform) write_transform(out, *f.final_transform, true, is_apophysis(f.source_version));
+    for (const auto& t : f.transforms) write_transform(out, t, false, f.source_version);
+    if (f.final_transform) write_transform(out, *f.final_transform, true, f.source_version);
     // RGB decimal stops retain sub-byte channels from interpolated or generated palettes.
     for (std::size_t i = 0; i < f.palette.size(); ++i) {
         const auto& color = f.palette[i];

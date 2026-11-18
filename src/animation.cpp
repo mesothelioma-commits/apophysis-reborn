@@ -140,8 +140,21 @@ void compatible_transform(const Transform &a, const Transform &b) {
     for (const auto &y : b.variations)
       if (term_name(x) == term_name(y)) same_plugin(x,y);
 }
+bool hold_parameter(const VariationParameterInfo &field, const Transform &a, const Transform &b) {
+  if (field.is_integer(a.parameters)) return true;
+  const bool forbidsZero = field.name == "juliascope_power" || field.name == "pie_slices" ||
+                           field.name == "ngon_sides";
+  return forbidsZero && std::signbit(field.get(a.parameters)) != std::signbit(field.get(b.parameters));
+}
 bool discrete_parameters_differ(const Transform &a,const Transform &b) {
-  if(a.parameters.julian_power!=b.parameters.julian_power)return true;
+  for (const auto &field : variation_parameter_registry()) {
+    const auto has = [&](const Transform &x) {
+      return std::any_of(x.variations.begin(), x.variations.end(),
+                         [&](const Term &term) { return term.id == field.variation; });
+    };
+    if (hold_parameter(field, a, b) && field.get(a.parameters) != field.get(b.parameters) &&
+        has(a) && has(b)) return true;
+  }
   for(const auto &x:a.variations)
     for(const auto &y:b.variations)
       if(x.id==Variation::plugin && term_name(x)==term_name(y))
@@ -186,17 +199,17 @@ Transform transform(const Transform &a,const Transform &b,double t,AnimationAffi
   result.color=blend(a.color,b.color,t);
   result.color_speed=blend(a.color_speed,b.color_speed,t);
   result.opacity=blend(a.opacity,b.opacity,t);
-  const auto has_julian=[](const Transform &value) {
-    return std::any_of(value.variations.begin(),value.variations.end(),
-        [](const auto &term) {return term.id==Variation::julian;});
-  };
-  // A one-sided variation keeps its own shape while its contribution fades.
-  // For a variation present at both ends, the integer branch count stays left.
-  if(!has_julian(a) && has_julian(b)) {
-    result.parameters.julian_power=b.parameters.julian_power;
-    result.parameters.julian_dist=b.parameters.julian_dist;
-  } else if(has_julian(a) && has_julian(b)) {
-    result.parameters.julian_dist=blend(a.parameters.julian_dist,b.parameters.julian_dist,t);
+  // Hold discrete parameters on the left. A one-sided term keeps its shape as it fades.
+  for (const auto &field : variation_parameter_registry()) {
+    const auto has = [&](const Transform &x) {
+      return std::any_of(x.variations.begin(), x.variations.end(),
+                         [&](const Term &term) { return term.id == field.variation; });
+    };
+    if (!has(b)) continue;
+    if (!has(a))
+      field.set(result.parameters, field.get(b.parameters));
+    else if (!hold_parameter(field, a, b))
+      field.set(result.parameters, blend(field.get(a.parameters), field.get(b.parameters), t));
   }
   result.variations=terms(a,b,t);
   result.chaos.clear();

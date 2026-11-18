@@ -83,7 +83,7 @@ bool reserved_name(std::string_view name) {
         "weight",       "color",       "opacity", "plotmode",  "name",  "enabled",
         "julian_power", "julian_dist", "flatten", "var_order", "coefs", "post",
         "color_speed",  "symmetry",    "chaos",   "var",       "var1"};
-    return find_variation(name).has_value() ||
+    return find_variation(name).has_value() || find_variation_parameter(name) ||
            std::find(names.begin(), names.end(), name) != names.end();
 }
 bool same_descriptor(const PluginInfo &a, const PluginInfo &b) {

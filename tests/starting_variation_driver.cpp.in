@@ -1,0 +1,40 @@
+// Temporary upstream-only oracle harness. The reference functions are inserted by the generator.
+#include <cmath>
+#include <cstdlib>
+#include <iomanip>
+#include <iostream>
+#include <random>
+@EPS@
+struct flam3_xform { double @FIELDS@; };
+struct flam3_iter_helper {
+    flam3_xform *xform;
+    double tx, ty, p0, p1, precalc_sqrt, precalc_atan, precalc_atanyx, precalc_sumsq, precalc_sina, precalc_cosa;
+    std::mt19937_64 *rc;
+};
+static double flam3_random_isaac_01(std::mt19937_64 *rc) {
+    return static_cast<double>((*rc)() >> 11) * 0x1p-53;
+}
+@BODIES@
+static void prepare(flam3_xform *xf) { @PREP@ }
+int main() {
+    unsigned id, seed;
+    double x, y, weight;
+    while (std::cin >> id >> x >> y >> weight >> seed) {
+        std::mt19937_64 rng(seed);
+        flam3_xform xf{};
+        xf.juliascope_power = 1;
+        flam3_iter_helper f{};
+        f.rc = &rng;
+        f.xform = &xf;
+        f.tx = x;
+        f.ty = y;
+        f.precalc_sumsq = x*x + y*y;
+        f.precalc_sqrt = std::sqrt(f.precalc_sumsq);
+        f.precalc_atan = std::atan2(x,y);
+        f.precalc_atanyx = std::atan2(y,x);
+        f.precalc_sina = x/f.precalc_sqrt;
+        f.precalc_cosa = y/f.precalc_sqrt;
+        switch (id) { @CALLS@ default: return 1; }
+        std::cout << std::setprecision(17) << f.p0 << '\t' << f.p1 << '\t' << flam3_random_isaac_01(&rng) << '\n';
+    }
+}

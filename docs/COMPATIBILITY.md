@@ -22,7 +22,7 @@ Tagged 7X/AV files commonly write density estimator parameters alongside `enable
 
 ## Mathematical coverage
 
-The current registry contains 31 variations. All 15 original registry entries from Milestone 2 remain available. The following six were added in 0.3.0; the ten additions in 0.5.0 are described below and in [VARIATIONS.md](VARIATIONS.md). Use `--list-variations` to inspect the complete current registry.
+The current registry contains 43 variations. All 15 original registry entries from Milestone 2 remain available. The following six were added in 0.3.0; the ten additions in 0.5.0 are described below and in [VARIATIONS.md](VARIATIONS.md). Use `--list-variations` to inspect the complete current registry.
 
 | FLAM3 ID | XML name | Computation / historical controls |
 | ---: | --- | --- |
@@ -73,7 +73,7 @@ The seeded random and mutation algorithms are new Reborn workflows and do not re
 
 ## Vulkan compatibility in 0.6.0
 
-Vulkan adds a rendering choice without changing the XML model, producer detection or source-preserving save contract. The shader covers all 31 current variation names and the admitted generic/classic/7X/AV conventions. The ordinary CPU renderer retains its double calculations, MT19937-64 stream and earlier image/reference tests. The CLI still defaults to that CPU path. New saved editor preferences select Automatic with CPU fallback; backend/device preferences are machine settings and are not inserted into legacy flames.
+Vulkan adds a rendering choice without changing the XML model, producer detection or source-preserving save contract. The shader covers all 43 current variation names and the admitted generic/classic/7X/AV conventions. The ordinary CPU renderer retains its double calculations, MT19937-64 stream and earlier image/reference tests. The CLI still defaults to that CPU path. New saved editor preferences select Automatic with CPU fallback; backend/device preferences are machine settings and are not inserted into legacy flames.
 
 The compute path has a narrower numeric and resource envelope than the CPU. It accepts up to 64 ordinary transforms plus a final transform. Packed nonzero inputs must remain finite, nonzero and normal in FP32; selection intervals must survive cumulative-boundary conversion and be at least `2^-24`. JuliaN power, camera dimensions, histogram addressing and selected-device storage limits have explicit bounds. Historical waves/rings/fan denominators require additional checks because the original `1e-300` guards cannot be represented in FP32. [GPU_KERNEL.md](GPU_KERNEL.md) defines these limits and the special zero-radius behavior.
 

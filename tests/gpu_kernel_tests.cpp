@@ -107,6 +107,19 @@ void packing_and_admission() {
         bad.transforms[0].pre.e = 0;
         check(!gpu::support_reason(bad).empty(), "Unrepresentable historical affine guard admitted");
     }
+    auto parameterized = demo_flame();
+    auto &term = parameterized.transforms[0];
+    term.variations = {{Variation::rectangles, 1}};
+    term.parameters.rectangles_x = 1e-100;
+    check(!gpu::support_reason(parameterized).empty(), "Underflowed active rectangle spacing admitted");
+    term.variations = {{Variation::linear, 1}, {Variation::rectangles, 0}};
+    check(gpu::support_reason(parameterized).empty(), "Dormant spacing changed GPU eligibility");
+    term.variations = {{Variation::pie, 1}};
+    term.parameters.pie_slices = 16777217;
+    check(!gpu::support_reason(parameterized).empty(), "Unrepresentable pie slice count admitted");
+    term.variations = {{Variation::juliascope, 1}};
+    term.parameters.juliascope_power = 16777217;
+    check(!gpu::support_reason(parameterized).empty(), "Unrepresentable JuliaScope branch count admitted");
     rejects([&] { gpu::pack_flame(f, {UINT32_MAX, 2, 0, 1, 1, 0}); }, "Overflowing histogram");
     rejects([&] { gpu::pack_flame(f, {64, 48, 0, 1e100, 1, 0}); }, "Overflowing projection");
     rejects([&] { gpu::make_probe(0, {}, 0, 0, 0); }, "Zero-repeat probe");
@@ -137,7 +150,12 @@ std::vector<ExpectedProbe> build_probes(const Flame &f) {
             // The probe interface stores input in binary32. Compare the CPU
             // formula with that exact input while retaining the original model.
             Orbit input{{float(inputs[i].x), float(inputs[i].y)}, .375};
-            const auto repeats = t >= 60 ? 8u : 1u;
+            const bool hasHistory = std::any_of(transform.variations.begin(), transform.variations.end(),
+                [](const Term &term) {
+                    return term.weight && (term.id == Variation::pre_blur ||
+                           term.id == Variation::gaussian_blur || term.id == Variation::radial_blur);
+                });
+            const auto repeats = hasHistory ? 8u : 1u;
             const auto record = gpu::make_probe(t, input, seed, stream, repeats);
             Rng rng(seed, stream);
             auto expected = input;
@@ -155,11 +173,11 @@ void formula_probes(const RenderOptions &options) {
     std::uint64_t comparisons = 0;
     double worst = 0;
     for (unsigned producer = 0; producer < 3; ++producer) {
-        Flame f;
-        f.width = f.height = 8;
-        f.source_version = producer == 0 ? "" : producer == 1 ? "Apophysis 2.09" : "Apophysis 7X";
-        for (const auto &variation : variation_registry()) {
-            for (unsigned matrix = 0; matrix < 2; ++matrix) {
+        for (unsigned matrix = 0; matrix < 2; ++matrix) {
+            Flame f;
+            f.width = f.height = 8;
+            f.source_version = producer == 0 ? "" : producer == 1 ? "Apophysis 2.09" : "Apophysis 7X";
+            for (const auto &variation : variation_registry()) {
                 Transform t;
                 t.pre = matrix ? Affine{-.41, .63, .28, -.71, -.57, .26}
                                : Affine{.69, .21, -.37, .52, .33, -.46};
@@ -170,6 +188,17 @@ void formula_probes(const RenderOptions &options) {
                 t.parameters.separate_blur_angle = producer == 2;
                 t.parameters.julian_power = matrix ? -3 : 3;
                 t.parameters.julian_dist = .75;
+                auto &p = t.parameters;
+                p.blob_low = -.3; p.blob_high = 1.25; p.blob_waves = producer ? 3 : 3.5;
+                p.pdj_a = -.83; p.pdj_b = .57; p.pdj_c = 1.3; p.pdj_d = -.65;
+                p.fan2_x = -.37; p.fan2_y = .19; p.rings2_val = .46;
+                p.perspective_angle = -.23; p.perspective_dist = 2.5;
+                p.juliascope_power = matrix ? -3 : 4; p.juliascope_dist = .73;
+                p.radial_blur_angle = matrix ? -.38 : .49;
+                p.pie_slices = 5; p.pie_rotation = -.45; p.pie_thickness = .28;
+                p.ngon_sides = 5; p.ngon_power = .85; p.ngon_circle = .64; p.ngon_corners = .34;
+                p.curl_c1 = -.32; p.curl_c2 = .16;
+                p.rectangles_x = matrix ? 0 : .39; p.rectangles_y = matrix ? -.55 : 0;
                 const double weight = matrix ? -.375 : .625;
                 t.variations = {{variation.id, weight}};
                 if (variation.id == Variation::pre_blur)
@@ -178,48 +207,61 @@ void formula_probes(const RenderOptions &options) {
                     t.variations.insert(t.variations.begin(), {Variation::julia, 0});
                 f.transforms.push_back(t);
             }
-        }
-        for (unsigned i = 0; i < 2; ++i) {
-            auto t = f.transforms[0];
-            t.variations = {{Variation::pre_blur, .125},
-                            {Variation::linear, .3},
-                            {Variation::swirl, .1},
-                            {Variation::julia, .25},
-                            {Variation::noise, .1}};
-            if (i)
-                std::swap(t.variations[3], t.variations[4]);
-            f.transforms.push_back(t);
-        }
-        f.final_transform = f.transforms.back();
-        const auto cases = build_probes(f);
-        std::vector<std::uint32_t> raw;
-        for (const auto &c : cases)
-            raw.insert(raw.end(), c.input.begin(), c.input.end());
-        const auto packed = gpu::pack_flame(f, {8, 8, 0, 1, 1, 0});
-        const auto output = gpu::run_probes(packed, raw, options);
-        check(output.size() == raw.size(), "GPU probe result size changed");
-        for (std::size_t i = 0; i < cases.size(); ++i) {
-            gpu::ProbeRecord record;
-            std::copy_n(output.begin() + i * gpu::probe_words, gpu::probe_words, record.begin());
-            const auto actual = gpu::probe_orbit(record);
-            const auto &expected = cases[i].output;
-            for (const auto &pair : {std::pair{actual.point.x, expected.point.x},
-                                     std::pair{actual.point.y, expected.point.y},
-                                     std::pair{actual.color, expected.color}}) {
-                const auto [a, e] = pair;
-                const double relative = std::abs(a - e) / std::max(1.0, std::abs(e));
-                worst = std::max(worst, relative);
-                if (!std::isfinite(a) || !std::isfinite(e) || relative > 2e-4) {
-                    std::ostringstream error;
-                    error << std::setprecision(17) << "GPU formula mismatch producer " << producer
-                          << ", " << cases[i].description << ": actual=" << a << " expected=" << e
-                          << " normalized error=" << relative;
-                    throw std::runtime_error(error.str());
-                }
+            // The power ±1 fast paths in Apophysis consume no branch draw.
+            // Generic flames consume one even for a single possible branch.
+            for (double power : {1., -1.}) {
+                auto t = f.transforms.front();
+                t.variations = {{Variation::juliascope, -.75}};
+                t.parameters.juliascope_power = power;
+                t.parameters.juliascope_dist = 1;
+                f.transforms.push_back(t);
             }
-            check(gpu::probe_next_unit(record) == cases[i].next_unit,
-                  "GPU random draw order mismatch: " + cases[i].description);
-            ++comparisons;
+            for (unsigned i = 0; i < 2; ++i) {
+                auto t = f.transforms[0];
+                t.variations = {{Variation::pre_blur, .125},
+                                {Variation::linear, .3},
+                                {Variation::swirl, .1},
+                                {Variation::julia, .25},
+                                {Variation::noise, .1},
+                                {Variation::gaussian_blur, .15},
+                                {Variation::radial_blur, -.38}};
+                if (i) {
+                    std::swap(t.variations[3], t.variations[4]);
+                    std::swap(t.variations[5], t.variations[6]);
+                }
+                f.transforms.push_back(t);
+            }
+            f.final_transform = f.transforms.back();
+            const auto cases = build_probes(f);
+            std::vector<std::uint32_t> raw;
+            for (const auto &c : cases)
+                raw.insert(raw.end(), c.input.begin(), c.input.end());
+            const auto packed = gpu::pack_flame(f, {8, 8, 0, 1, 1, 0});
+            const auto output = gpu::run_probes(packed, raw, options);
+            check(output.size() == raw.size(), "GPU probe result size changed");
+            for (std::size_t i = 0; i < cases.size(); ++i) {
+                gpu::ProbeRecord record;
+                std::copy_n(output.begin() + i * gpu::probe_words, gpu::probe_words, record.begin());
+                const auto actual = gpu::probe_orbit(record);
+                const auto &expected = cases[i].output;
+                for (const auto &pair : {std::pair{actual.point.x, expected.point.x},
+                                         std::pair{actual.point.y, expected.point.y},
+                                         std::pair{actual.color, expected.color}}) {
+                    const auto [a, e] = pair;
+                    const double relative = std::abs(a - e) / std::max(1.0, std::abs(e));
+                    worst = std::max(worst, relative);
+                    if (!std::isfinite(a) || !std::isfinite(e) || relative > 2e-4) {
+                        std::ostringstream error;
+                        error << std::setprecision(17) << "GPU formula mismatch producer " << producer
+                              << ", " << cases[i].description << ": actual=" << a << " expected=" << e
+                              << " normalized error=" << relative;
+                        throw std::runtime_error(error.str());
+                    }
+                }
+                check(gpu::probe_next_unit(record) == cases[i].next_unit,
+                      "GPU random draw order mismatch: " + cases[i].description);
+                ++comparisons;
+            }
         }
     }
     std::cout << comparisons

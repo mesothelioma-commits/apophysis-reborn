@@ -2,6 +2,8 @@
 #include "editor/main_window.hpp"
 #include "flame_io.hpp"
 #include <QAction>
+#include <QTableWidget>
+#include <QTabWidget>
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -93,6 +95,37 @@ class EditorTests : public QObject {
         QCoreApplication::setOrganizationName("ApophysisRebornTests");
         QCoreApplication::setApplicationName("EditorWorkflow");
         applyDarkTheme();
+    }
+    void editNewVariationParameters() {
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        const auto xml = "<flame><xform weight='1' var1='0'/><finalxform curl='1' curl_c1='0.2500'/>"
+                         "<!--keep--><color index='0' rgb='255 255 255'/></flame>";
+        window.session().loadBytes(xml);
+        window.show();
+        auto tabs = widget<QTabWidget>(window, "transformTabs");
+        tabs->setCurrentIndex(1);
+        auto table = widget<QTableWidget>(window, "variationWeights");
+        QCOMPARE(table->rowCount(), 43);
+        auto rows = table->findItems("perspective", Qt::MatchExactly);
+        QCOMPARE(rows.size(), 1);
+        table->setCurrentCell(rows.front()->row(), 1);
+        table->currentItem()->setText(".5");
+        const auto authored = window.session().document().render_model(0).transforms[0];
+        QCOMPARE(authored.parameters.perspective_dist, 2.);
+        auto distance = widget<QLineEdit>(window, "perspective_dist");
+        QVERIFY(distance->isVisible());
+        enter(distance, "4.75");
+        QCOMPARE(window.session().document().render_model(0).transforms[0].parameters.perspective_dist, 4.75);
+        window.session().selectTransform(0, true);
+        table->setCurrentCell(table->findItems("curl", Qt::MatchExactly).front()->row(), 0);
+        auto c2 = widget<QLineEdit>(window, "curl_c2");
+        QVERIFY(c2->isVisible());
+        enter(c2, "-.125");
+        const auto doc = window.session().document().bytes();
+        QVERIFY(doc.find("curl_c1='0.2500'") != std::string::npos);
+        QVERIFY(doc.find("<!--keep-->") != std::string::npos);
+        QCOMPARE(window.session().document().render_model(0).final_transform->parameters.curl_c2, -.125);
     }
     void deviceDiscoveryDoesNotBlockDialogsOrDestruction() {
         struct Gate {

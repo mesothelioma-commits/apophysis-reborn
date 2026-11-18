@@ -1,4 +1,4 @@
-# Vulkan compute kernel — 0.7.0
+# Vulkan compute kernel
 
 The Vulkan backend computes orbit sampling, transform selection, variation evaluation, palette lookup and histogram accumulation in a compute shader. The existing CPU image reconstruction then applies the flame's filtering, density, gamma, vibrancy and background conventions to that histogram. This is a hybrid renderer: the sampling work runs through Vulkan, while image development and file encoding retain the established CPU implementation.
 
@@ -6,7 +6,7 @@ The shader targets Vulkan 1.0 and uses binary32 floating-point arithmetic, stora
 
 ## Shared flame interpretation
 
-All 31 currently registered variations have a compute implementation. Signed variation weights, declared term order, pre-affine and post-affine matrices, JuliaN parameters, color speed, transform opacity, Xaos transition rows and an optional final transform retain their existing roles. Pre-blur modifies the shared variation input before ordinary terms execute. Historical pre-blur keeps its four-value ring separately for each transform within a sampling stream, including the additional replacement draw used by the supported 7X convention. A disabled stochastic term consumes no random draws.
+All 43 registered built-in variations have a compute implementation. Signed variation weights, declared term order, pre-affine and post-affine matrices, variation parameters, color speed, transform opacity, Xaos transition rows and an optional final transform retain their existing roles. Pre-blur modifies the shared variation input before ordinary terms execute. Historical pre-blur keeps its four-value ring separately for each transform within a sampling stream, including the additional replacement draw used by the supported 7X convention. Gaussian and pre-blur share that historical ring. Radial blur has an independent ring per transform and applies its signed weight to the spin and zoom. Generic Gaussian and radial blur take fresh samples on each application. A disabled stochastic term consumes no random draws.
 
 The transform chooser's robust, normalized CPU cumulative distributions are packed into the model. Missing chaos destinations retain their established defaults. A final transform changes only the plotted copy, never the next orbit state. Palette interpolation, historical palette index rounding, historical integer channel quantization, generic opacity weighting and the historical opacity probability test follow the existing renderer's interpretation.
 
@@ -16,7 +16,7 @@ The shader has a limit of **64 ordinary transforms**, plus one final-transform s
 
 The established CPU renderer keeps its MT19937-64 generator and 8,192-sample batch boundaries. The compute path uses separate, explicitly defined portable streams. The CPU comparison function uses the same portable streams and chain boundaries as the shader, but executes the existing double-precision CPU formulas. It does not replace the normal CPU rendering mode.
 
-Each compute invocation owns one **256-sample chain**, preceded by **32 burn-in iterations**. The last chain may contain fewer requested samples. The chain's seed depends on the user's entire 64-bit seed and its 64-bit chain index. Dispatch partitioning does not choose a seed or change a chain boundary. Invalid orbit steps restart the point and color and reset the burn-in counter; they do not reset the random stream or its existing pre-blur rings.
+Each compute invocation owns one **256-sample chain**, preceded by **32 burn-in iterations**. The last chain may contain fewer requested samples. The chain's seed depends on the user's entire 64-bit seed and its 64-bit chain index. Dispatch partitioning does not choose a seed or change a chain boundary. Invalid orbit steps restart the point and color and reset the burn-in counter; they do not reset the random stream or its existing blur rings.
 
 All arithmetic in the following generator definition wraps modulo 2³². Its mixing function is:
 
@@ -50,7 +50,7 @@ Each bin occupies **32 bytes**. Dense histogram storage, readback staging, model
 
 ## Precision admission and fallback
 
-The model packer checks values before converting them to binary32. It rejects nonzero values that overflow, become zero or become subnormal at that precision. This covers camera values, affine coefficients, variation weights, transform parameters, effective opacity and palette channels. JuliaN powers must fit the exact binary32 integer range. Camera and histogram dimensions must also fit their declared addressing and exact-integer limits.
+The model packer checks values before converting them to binary32. It rejects nonzero values that overflow, become zero or become subnormal at that precision. This covers camera values, affine coefficients, variation weights, transform parameters, effective opacity and palette channels. JuliaN powers, JuliaScope branch counts and pie slice counts must fit the exact binary32 integer range. Packed variation coefficients must fit normal binary32 or be zero. Camera and histogram dimensions must also fit their declared addressing and exact-integer limits.
 
 A positive transform-selection interval must survive binary32 cumulative-boundary conversion and be at least `2^-24`, the portable sampler's unit resolution. Otherwise the compute path reports that probability as unsupported. This prevents a tiny but nonzero branch from silently becoming unreachable or receiving the probability of the first representable random draw.
 
@@ -64,12 +64,14 @@ When CPU fallback is enabled, a missing loader, unavailable device, unsupported 
 
 The compute kernel was executed through **Mesa llvmpipe, LLVM 19.1.7**, a software Vulkan implementation. The host has no exposed physical GPU device. This verifies a real Vulkan compute dispatch and its results, but does not establish hardware performance or Windows-driver acceptance.
 
-`gpu-kernel-tests` compares **1,560 direct CPU/GPU transform probes** against the existing CPU `apply_transform` function. They cover all 31 variations, positive and negative weights, two asymmetric pre-affine matrices and an asymmetric post-affine matrix, eight inputs, generic/classic/7X parameter conventions, mixed stochastic term order, repeated historical pre-blur ring use, and the final-transform slot. Each probe also checks the next random draw exactly, which detects a changed number or order of stochastic draws.
+`gpu-kernel-tests` compares **2,304 direct CPU/GPU transform probes** against the existing CPU `apply_transform` function. They cover all 43 variations, positive and negative weights, two asymmetric pre-affine matrices and an asymmetric post-affine matrix, eight inputs, generic/classic/7X parameter conventions, mixed stochastic term order, repeated historical Gaussian, pre-blur and radial-blur ring use, and the final-transform slot. Each probe also checks the next random draw exactly, which detects a changed number or order of stochastic draws.
 
 All probes passed. The maximum observed normalized coordinate error was **1.7820791 × 10⁻⁵**, against a bound of **2 × 10⁻⁴ × max(1, |CPU reference|)** for each coordinate. Every subsequent random draw matched exactly. The companion CPU-only checks verify packing, geometry and probability admission, zero-probability destinations, and **16,384 portable random draws**, including nonzero high seed and chain bits. These are bounded formula and stream tests, not a claim of bit-identical full-render output across arbitrary devices.
+
+A further 24 end-to-end comparisons render each of the 12 starting-list additions as an ordinary transform and a final transform. The strict Vulkan run and the matched-stream CPU reference produced identical RGB8 images on these bounded fixtures.
 
 The full rendering, cancellation, fallback, accumulator-carry and distribution checks are recorded with the milestone's [verification report](TEST_PLAN.md). Physical GPU speed, Windows execution and broader driver equivalence remain separately reported acceptance work.
 
 ## Bounded file-output mode in 0.7.0
 
-Shader mode 2 emits global x/y and quantized R/G/B/mass records into at most 256 slots per invocation. Absolute chain indices, RNG draws, formulas and final partial-chain handling match the dense mode. The host compacts valid slots and validates counters; disk grouping occurs afterward. The returned hits and model, mapped/readback/device buffers are charged to the caller's host/GPU budgets. Preview accumulation and direct variation-probe modes retain their existing contracts. The validated embedded payload is 49,728 bytes. [Full contract and tests](GPU_STREAMING.md)
+Shader mode 2 emits global x/y and quantized R/G/B/mass records into at most 256 slots per invocation. Absolute chain indices, RNG draws, formulas and final partial-chain handling match the dense mode. The host compacts valid slots and validates counters; disk grouping occurs afterward. The returned hits and model, mapped/readback/device buffers are charged to the caller's host/GPU budgets. Preview accumulation and direct variation-probe modes retain their existing contracts. The 0.11.0 build embeds 66,436 bytes of validated SPIR-V. [Full contract and tests](GPU_STREAMING.md)

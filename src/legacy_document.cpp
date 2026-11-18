@@ -1,4 +1,5 @@
 #include "legacy_document.hpp"
+#include "creative.hpp"
 #include "plugin.hpp"
 #include "flame_io.hpp"
 
@@ -754,6 +755,7 @@ void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_ind
             changes["reborn_plugin_id_" + name] = std::nullopt;
             changes["reborn_plugin_version_" + name] = std::nullopt;
         }
+        const auto previousTerms = std::move(transform.variations);
         transform.variations = *edits.variations;
         changes["var"] = std::nullopt;
         changes["var1"] = std::nullopt;
@@ -777,12 +779,28 @@ void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_ind
             order += name;
         }
         if (!has_sinusoidal) changes["sinusoidal_use3D"] = std::nullopt;
-        if ((apophysis && !is_apophysis_2(model.source_version)) ||
+        if (source.attributes.contains("var_order") || (apophysis && !is_apophysis_2(model.source_version)) ||
             std::any_of(transform.variations.begin(), transform.variations.end(), [](const Term& term){return term.id == Variation::plugin;})) changes["var_order"] = order;
-        if (std::any_of(transform.variations.begin(), transform.variations.end(),
-                [](Term term) { return term.id == Variation::julian; })) {
-            changes["julian_power"] = std::to_string(transform.parameters.julian_power);
-            changes["julian_dist"] = shortest(transform.parameters.julian_dist);
+        // The source can specify dormant parameters even when their weight is
+        // zero. Preserve these values when the artist turns a variation on.
+        const auto authored = creative::authoring_parameters();
+        for (const auto& term : transform.variations) {
+            const bool newlyEnabled = term.weight != 0 && std::none_of(previousTerms.begin(), previousTerms.end(),
+                [&](const Term& old) { return old.id == term.id && old.weight != 0; });
+            for (const auto& field : variation_parameter_registry()) {
+                if (field.variation != term.id || source.attributes.contains(std::string(field.name))) continue;
+                if (edits.initialize_new_variations && newlyEnabled)
+                    field.set(transform.parameters, field.get(authored));
+                changes[std::string(field.name)] = shortest(field.get(transform.parameters));
+            }
+        }
+    }
+    for (const auto& [name, value] : edits.variation_parameters) {
+        const auto* field = find_variation_parameter(name);
+        if (!field) throw std::invalid_argument("Unknown variation parameter: " + name);
+        if (field->get(transform.parameters) != value) {
+            field->set(transform.parameters, value);
+            changes[name] = shortest(value);
         }
     }
     if (edits.julian_power && transform.parameters.julian_power != *edits.julian_power) {

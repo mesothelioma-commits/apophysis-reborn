@@ -64,7 +64,7 @@ void LegacyDocument::apply_model(
       changes["plotmode"] = std::nullopt;
     const bool variation_change =
         std::any_of(changes.begin(), changes.end(), [&](const auto &item) {
-          return !geometry.contains(item.first);
+          return !geometry.contains(item.first) && !find_variation_parameter(item.first);
         });
     if (variation_change) {
       for (const auto *key : {"var", "var1", "linear3D", "var_order", "flatten",

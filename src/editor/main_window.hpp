@@ -19,6 +19,7 @@ class QComboBox;
 class QDockWidget;
 class QLabel;
 class QLineEdit;
+class QFormLayout;
 class QListWidget;
 class QPlainTextEdit;
 class QProgressBar;
@@ -79,7 +80,10 @@ private:
   TriangleCanvas *triangles_;
   QTabWidget *properties_;
   std::array<QLineEdit *, 6> coefficients_{};
-  QLineEdit *weight_, *color_, *colorSpeed_, *opacity_, *power_, *distance_;
+  QLineEdit *weight_, *color_, *colorSpeed_, *opacity_;
+  QFormLayout *variationForm_;
+  std::map<std::string_view, QLineEdit *> variationFields_;
+  void refreshVariationParameters();
   QLineEdit *pivotX_, *pivotY_, *rotation_, *factor_, *translateX_,
       *translateY_;
   QTableWidget *variations_, *chaos_;
