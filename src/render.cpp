@@ -239,46 +239,64 @@ std::uint64_t default_samples(const Flame& f) {
 }
 
 namespace {
+Image reconstruct(const Flame& f, const RenderOptions& opt, detail::RenderGeometry& geometry,
+                  const std::vector<Bin>& bins) {
+    const auto& kernel = geometry.kernel;
+    if (!geometry.density.levels)
+        return develop(f, bins, geometry.gpu.ppu, opt.samples, kernel, geometry.gpu.width, geometry.historical, opt.stop_token);
+    if (!color_curves_are_identity(f.curves))
+        geometry.curves = std::make_shared<ColorCurveEvaluator>(f.curves);
+    geometry.density_kernels = std::make_shared<detail::DensityKernels>(geometry.density, opt.stop_token);
+    const unsigned lit_rows = (unsigned(f.height) - 1) * unsigned(f.oversample) + kernel.taps;
+    const auto light = detail::density_strip(f, geometry, bins, 0, kernel.inset, lit_rows, opt.samples, opt.stop_token);
+    std::vector<detail::LightBin> row(f.width);
+    Image image{f.width, f.height, std::vector<std::uint8_t>(std::size_t(f.width) * f.height * 3)};
+    for (int y = 0; y < f.height; ++y) {
+        detail::develop_row(f, geometry, {}, kernel.inset, y, opt.samples, row, false, false, opt.stop_token, light);
+        for (int x = 0; x < f.width; ++x)
+            for (unsigned c = 0; c < 3; ++c)
+                image.rgb[(std::size_t(y) * f.width + x) * 3 + c] = std::uint8_t(std::lround(255 * row[x][c]));
+    }
+    return image;
+}
+
 RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable) {
     check_cancelled(opt.stop_token);
-    validate(f);
-    if (opt.samples == 0 || opt.samples > max_samples)
-        throw std::invalid_argument("Sample count exceeds the supported positive fixed-point accumulator range");
-    const double ppu = f.scale * std::exp2(f.zoom);
-    if (!(ppu > 0 && std::isfinite(ppu))) throw std::invalid_argument("Invalid effective camera scale");
-    const double angle = std::remainder(f.rotate, 360.0) * (std::numbers::pi / 180.0);
-    const double cs = std::cos(angle), sn = std::sin(angle);
-    const auto os = static_cast<std::uint64_t>(f.oversample);
-    const bool apophysis = is_apophysis(f.source_version);
-    const Footprint kernel = footprint(f, apophysis);
-    const auto width = checked_product(f.width, os) + 2ull * kernel.padding;
-    const auto height = checked_product(f.height, os) + 2ull * kernel.padding;
-    if (width > UINT32_MAX || height > UINT32_MAX)
-        throw std::invalid_argument("Histogram dimensions exceed the supported coordinate range");
+    auto geometry = detail::render_geometry(f, opt, false);
+    const auto& kernel = geometry.kernel;
+    const auto width = geometry.gpu.width, height = geometry.gpu.height;
+    const auto apophysis = geometry.historical;
     const auto bin_count = checked_product(width, height);
     const auto hist_bytes = checked_product(bin_count, sizeof(Bin));
     const auto image_bytes = checked_product(checked_product(f.width, f.height), 3);
     const auto budget = checked_product(opt.memory_mib, 1024 * 1024);
     if (hist_bytes > budget || image_bytes > budget - hist_bytes)
         throw std::invalid_argument("Histogram and image exceed --memory-mib; reduce size or oversampling");
-    const auto kernel_bytes = (f.filter_radius ? std::uint64_t(kernel.taps) * sizeof(double) : 0) +
-        ColorCurveEvaluator::storage_bytes(f.curves);
     const auto remaining = budget - hist_bytes - image_bytes;
-    if (kernel_bytes > remaining) throw std::invalid_argument("Filter and color curves exceed --memory-mib");
+    std::uint64_t kernel_bytes = 0;
+    const auto charge = [&](std::uint64_t bytes) {
+        if (bytes > remaining - kernel_bytes)
+            throw std::invalid_argument("Reconstruction filters and color curves exceed --memory-mib");
+        kernel_bytes += bytes;
+    };
+    if (f.filter_radius) charge(std::uint64_t(kernel.taps) * sizeof(double));
+    charge(ColorCurveEvaluator::storage_bytes(f.curves));
+    if (geometry.density.levels) {
+        charge(geometry.density.table_bytes);
+        charge(geometry.density.column_bytes(width));
+        const auto lit_rows = std::uint64_t(f.height - 1) * f.oversample + kernel.taps;
+        charge(checked_product(checked_product(width, lit_rows), sizeof(detail::LightBin)));
+        charge(checked_product(f.width, sizeof(detail::LightBin)));
+    }
     const auto started = std::chrono::steady_clock::now();
     std::string fallback;
     if (!portable && opt.backend != RenderBackend::cpu) {
         try {
             if (has_plugin_variations(f))
                 throw gpu::Unavailable("Native plugin variations require the CPU renderer");
-            if (width > UINT32_MAX || height > UINT32_MAX)
-                throw gpu::Unavailable("GPU histogram dimensions exceed the addressable range");
-            const gpu::Geometry geometry{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
-                                         kernel.padding, ppu, cs, sn};
-            auto sampled = gpu::sample(f, opt, geometry, hist_bytes + image_bytes + kernel_bytes);
+            auto sampled = gpu::sample(f, opt, geometry.gpu, hist_bytes + image_bytes + kernel_bytes);
             const auto sampled_at = std::chrono::steady_clock::now();
-            auto image = develop(f, sampled.bins, ppu, opt.samples, kernel, static_cast<std::size_t>(width),
-                                 apophysis, opt.stop_token);
+            auto image = reconstruct(f, opt, geometry, sampled.bins);
             const auto finished = std::chrono::steady_clock::now();
             RenderResult result{std::move(image), sampled.plotted, sampled.invalid, 0};
             result.backend = RenderBackend::vulkan;
@@ -326,9 +344,7 @@ RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable
                 if (batch >= batch_count) break;
                 const auto n = std::min(batch_size, opt.samples - batch * batch_size);
                 // The stream belongs to the batch. Scheduling never selects a seed.
-                const gpu::Geometry geometry{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
-                                             kernel.padding, ppu, cs, sn};
-                const auto bad = sample_batch(f, opt, geometry, choose, visibility, batch, n, portable, pending);
+                const auto bad = sample_batch(f, opt, geometry.gpu, choose, visibility, batch, n, portable, pending);
                 std::lock_guard lock(merge);
                 for (const auto& hit : pending) {
                     auto& bin = bins[std::size_t(hit[1]) * width + hit[0]];
@@ -353,7 +369,7 @@ RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable
     if (error) std::rethrow_exception(error);
     check_cancelled(opt.stop_token);
     const auto sampled_at = std::chrono::steady_clock::now();
-    RenderResult result{develop(f, bins, ppu, opt.samples, kernel, static_cast<std::size_t>(width), apophysis, opt.stop_token), plotted, invalid, workers};
+    RenderResult result{reconstruct(f, opt, geometry, bins), plotted, invalid, workers};
     result.fallback_reason = std::move(fallback);
     result.device_name = portable ? "CPU compute-sequence reference" : "CPU";
     result.sampling_ms = std::chrono::duration<double, std::milli>(sampled_at - started).count();
@@ -388,7 +404,12 @@ RenderGeometry render_geometry(const Flame& f, const RenderOptions& opt, bool pr
     const double ppu = f.scale * std::exp2(f.zoom);
     if (!(ppu > 0 && std::isfinite(ppu))) throw std::invalid_argument("Invalid effective camera scale");
     const bool historical = is_apophysis(f.source_version);
-    const auto kernel = footprint(f, historical);
+    auto kernel = footprint(f, historical);
+    const auto density = density_plan(f);
+    if (density.camera_margin > kernel.padding) {
+        kernel.inset += density.camera_margin - kernel.padding;
+        kernel.padding = density.camera_margin;
+    }
     const auto width = checked_product(f.width, f.oversample) + 2ull * kernel.padding;
     const auto height = checked_product(f.height, f.oversample) + 2ull * kernel.padding;
     if (width > UINT32_MAX || height > UINT32_MAX)
@@ -396,7 +417,8 @@ RenderGeometry render_geometry(const Flame& f, const RenderOptions& opt, bool pr
     const double angle = std::remainder(f.rotate, 360.0) * (std::numbers::pi / 180.0);
     return {{std::uint32_t(width), std::uint32_t(height), kernel.padding, ppu,
              std::cos(angle), std::sin(angle)}, kernel, historical,
-             !prepare_curves || color_curves_are_identity(f.curves) ? nullptr : std::make_shared<ColorCurveEvaluator>(f.curves)};
+             !prepare_curves || color_curves_are_identity(f.curves) ? nullptr : std::make_shared<ColorCurveEvaluator>(f.curves),
+             density, prepare_curves && density.levels ? std::make_shared<DensityKernels>(density, opt.stop_token) : nullptr};
 }
 
 CpuHits sample_cpu_hits(const Flame& f, const RenderOptions& opt, const RenderGeometry& geometry,
@@ -454,14 +476,15 @@ CpuHits sample_cpu_hits(const Flame& f, const RenderOptions& opt, const RenderGe
 void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const Bin> bins,
                  std::uint32_t first_row, int y, std::uint64_t samples,
                  std::span<std::array<double, 4>> rgba, bool sixteen_bit, bool transparent,
-                 std::stop_token stop) {
+                 std::stop_token stop, std::span<const LightBin> density_light) {
     check_cancelled(stop);
     const auto& kernel = geometry.kernel;
     const auto os = static_cast<std::size_t>(f.oversample);
     const auto stride = std::size_t(geometry.gpu.width);
+    const auto footprint_bins = density_light.empty() ? bins.size() : density_light.size();
     if (y < 0 || y >= f.height || rgba.size() != std::size_t(f.width) ||
         std::size_t(y) * os + kernel.inset < first_row ||
-        (std::size_t(y) * os + kernel.inset + kernel.taps - first_row) * stride > bins.size())
+        (std::size_t(y) * os + kernel.inset + kernel.taps - first_row) * stride > footprint_bins)
         throw std::invalid_argument("Reconstruction strip does not contain the complete filter footprint");
     const auto filter = f.filter_radius ? gaussian_weights(kernel) : std::vector<double>{};
     const double box_weight = 1.0 / double(os * os);
@@ -484,10 +507,15 @@ void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const
             if ((dy & 31u) == 0) check_cancelled(stop);
             const auto row = (std::size_t(y) * os + kernel.inset + dy - first_row) * stride + x * os + kernel.inset;
             for (std::size_t dx = 0; dx < kernel.taps; ++dx) {
+                const double weight = filter.empty() ? box_weight : filter[dy] * filter[dx];
+                if (!density_light.empty()) {
+                    const auto& light = density_light[row + dx];
+                    for (unsigned c = 0; c < 4; ++c) sum[c] += weight * light[c];
+                    continue;
+                }
                 const auto& bin = bins[row + dx];
                 if (!bin[3]) continue;
                 const double mass = double(bin[3]) / mass_unit;
-                const double weight = filter.empty() ? box_weight : filter[dy] * filter[dx];
                 const double light = (exposure * weight) * log_one_plus_exp(std::log(mass) + log_gain);
                 sum[3] += light;
                 for (unsigned c = 0; c < 3; ++c) sum[c] += light * (double(bin[c]) / double(bin[3]));

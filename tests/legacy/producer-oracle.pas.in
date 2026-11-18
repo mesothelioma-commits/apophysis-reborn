@@ -71,6 +71,7 @@ begin
     fcp.background[0]:=16; fcp.background[1]:=32; fcp.background[2]:=64;
     fcp.spatial_oversample:=StrToInt(ParamStr(1)); fcp.spatial_filter_radius:=StrToFloat(ParamStr(2));
     {$ifdef SEVEN}
+    fcp.enable_de:=ParamCount>4; fcp.estimator:=9; fcp.estimator_min:=0; fcp.estimator_curve:=0.4;
     for y:=0 to 3 do
       for x:=0 to 3 do begin
         fcp.curvePoints[y][x].x:=ord(x>=2); fcp.curvePoints[y][x].y:=ord(x>=2);

@@ -343,6 +343,7 @@ class CreativeEditorTests : public QObject {
         AdjustmentDialog historical(original);
         quickPreviews(historical);
         control<QComboBox>(historical, "adjust_filter")->setCurrentIndex(0);
+        QVERIFY(!control<QCheckBox>(historical, "adjust_density_estimation")->isEnabled());
         QCOMPARE(historical.resultFlame().filter_radius.value(), .5);
         QVERIFY(historical.edits().clear_filter_radius);
     }
@@ -412,6 +413,14 @@ class CreativeEditorTests : public QObject {
         tabs->setCurrentIndex(0);
         enter(control<QLineEdit>(dialog, "adjust_zoom"), "0.5");
         enter(control<QLineEdit>(dialog, "adjust_rotate"), "-21");
+        tabs->setCurrentIndex(2);
+        auto* density = control<QCheckBox>(dialog, "adjust_density_estimation");
+        QVERIFY(density->isEnabled());
+        QVERIFY(!density->isChecked());
+        density->setChecked(true);
+        enter(control<QLineEdit>(dialog, "adjust_estimator_radius"), "3");
+        enter(control<QLineEdit>(dialog, "adjust_estimator_minimum"), "0.5");
+        enter(control<QLineEdit>(dialog, "adjust_estimator_curve"), "0.6");
         click(dialog, "acceptAdjustments");
         QCOMPARE(dialog.result(), int(QDialog::Accepted));
         session.change("Adjust flame", [&](LegacyDocument &document) { document.edit(0, dialog.edits()); });
@@ -420,6 +429,10 @@ class CreativeEditorTests : public QObject {
         QCOMPARE(model.gamma, 1.7);
         QCOMPARE(model.zoom, .5);
         QCOMPARE(model.rotate, -21.);
+        QVERIFY(model.density_estimator.has_value());
+        QCOMPARE(model.density_estimator->radius, 3.);
+        QCOMPARE(model.density_estimator->minimum, .5);
+        QCOMPARE(model.density_estimator->curve, .6);
         QCOMPARE(std::string(session.document().element_bytes(1)), sibling);
         session.undoStack().undo();
         QCOMPARE(session.document().bytes(), original);

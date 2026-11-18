@@ -179,6 +179,22 @@ bool is_apophysis_2(std::string_view version) {
 }
 bool is_apophysis(std::string_view version) { return identify_producer(version) != Producer::generic; }
 
+bool has_flam3_estimator_defaults(std::string_view version) {
+    // flam3_print() writes FLAM3-<OS>-<release>; recognize the verified upstream release.
+    if (version == "FLAM3-3.1.1" || version == "FLAM3 3.1.1") return true;
+    for (const std::string_view prefix : {"FLAM3-LNX-", "FLAM3-OSX-", "FLAM3-WIN-"}) {
+        if (version.starts_with(prefix)) {
+            const auto release = version.substr(prefix.size());
+            return release == "3.1.1" || release == "1cdfc77275821182ad3c057e629c75a240dd52d3";
+        }
+    }
+    return false;
+}
+bool supports_density_estimator(std::string_view version) {
+    return version.empty() || version == "Apophysis Reborn" || version.starts_with("Apophysis Reborn ") ||
+           has_flam3_estimator_defaults(version);
+}
+
 Palette default_palette() {
     Palette palette;
     for (std::size_t i = 0; i < palette.size(); ++i) {
@@ -627,6 +643,14 @@ void validate(const Flame& flame) {
     if ((flame.filter_radius && (!std::isfinite(*flame.filter_radius) || *flame.filter_radius < 0)) ||
         !std::isfinite(flame.gamma_threshold) || flame.gamma_threshold < 0)
         throw std::invalid_argument("filter and gamma_threshold must be finite and nonnegative");
+    if (flame.density_estimator) {
+        const auto& de = *flame.density_estimator;
+        if (!supports_density_estimator(flame.source_version))
+            throw std::invalid_argument("Active density estimation is unsupported for this producer");
+        if (!positive_finite(de.radius) || !std::isfinite(de.minimum) || de.minimum < 0 ||
+            de.minimum > de.radius || !positive_finite(de.curve))
+            throw std::invalid_argument("Active density estimation requires a positive radius and curve, and a minimum in [0,radius]");
+    }
     if (flame.palette_mode != PaletteMode::step && flame.palette_mode != PaletteMode::linear)
         throw std::invalid_argument("unsupported palette mode");
     if (!valid_rgb(flame.background) || !std::all_of(flame.palette.begin(), flame.palette.end(), valid_rgb))

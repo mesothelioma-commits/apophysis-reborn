@@ -101,7 +101,7 @@ class AdjustmentDialog : public QDialog {
     QLabel *status_;
     QPushButton *background_, *apply_;
     QSpinBox *width_, *height_, *oversample_;
-    QCheckBox *aspect_;
+    QCheckBox *aspect_, *density_;
     QComboBox *filter_;
     std::map<std::string, QLineEdit *> fields_;
     bool syncing_ = false;

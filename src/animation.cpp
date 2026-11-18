@@ -437,7 +437,8 @@ PreparedAnimation::PreparedAnimation(AnimationClip clip,std::stop_token stop) {
       }
       if(fallback)data->diagnostics.push_back(context+"singular/ill-conditioned matrices or opposite reflection signs use linear affine interpolation");
       if(a.width!=b.width||a.height!=b.height||a.oversample!=b.oversample||a.palette_mode!=b.palette_mode||
-         a.filter_radius.has_value()!=b.filter_radius.has_value()||discrete)
+         a.filter_radius.has_value()!=b.filter_radius.has_value()||
+         a.density_estimator.has_value()!=b.density_estimator.has_value()||discrete)
         data->diagnostics.push_back(context+"discrete settings hold their left-keyframe value until the right endpoint");
       if(mapping.ids.size()!=left.transform_ids.size()||mapping.ids.size()!=right.transform_ids.size()||a.final_transform.has_value()!=b.final_transform.has_value())
         data->diagnostics.push_back(context+"unmatched branches fade by selection weight; new/lost Xaos edges fade from/to zero; a missing final transform uses identity");
@@ -477,6 +478,12 @@ AnimationFrame PreparedAnimation::evaluate(std::int64_t requested) const {
   result.gamma=blend(a.gamma,b.gamma,t);result.gamma_threshold=blend(a.gamma_threshold,b.gamma_threshold,t);
   result.brightness=blend(a.brightness,b.brightness,t);result.vibrancy=blend(a.vibrancy,b.vibrancy,t);
   if(a.filter_radius&&b.filter_radius)result.filter_radius=blend(*a.filter_radius,*b.filter_radius,t);
+  if(a.density_estimator && b.density_estimator) {
+    const auto& from = *a.density_estimator;
+    const auto& to = *b.density_estimator;
+    result.density_estimator = DensityEstimator{blend(from.radius,to.radius,t), blend(from.minimum,to.minimum,t),
+                                                blend(from.curve,to.curve,t)};
+  }
   result.background=creative::blend_colors(a.background,b.background,t,creative::GradientSpace::rgb);
   result.curves=interpolate_color_curves(a.curves,b.curves,t);
   for(std::size_t i=0;i<result.palette.size();++i)

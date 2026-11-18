@@ -194,6 +194,27 @@ void test_producer_import() {
     rejects(document(std::string(transform)+colors,"gamma_threshold='-1'"), "gamma_threshold");
 }
 
+void test_density_estimator_settings() {
+    const auto body = std::string(transform) + std::string(white);
+    for (auto version : {"FLAM3-LNX-3.1.1", "FLAM3-WIN-3.1.1", "FLAM3-OSX-3.1.1"}) {
+        auto tag = std::string("version='") + version + "'";
+        check(parse_flames(document(body,tag))[0].density_estimator == DensityEstimator{},
+              "Tagged FLAM3 constructors enable the default radius");
+        check(!parse_flames(document(body,tag + " estimator_radius='0'"))[0].density_estimator,
+              "Explicit zero must override FLAM3 defaults");
+    }
+    check(!parse_flames(document(body))[0].density_estimator, "Unversioned flame changed without an estimator");
+    check(parse_flames(document(body,"estimator_radius='2'"))[0].density_estimator == DensityEstimator{2,0,.4},
+          "An explicit radius should use the default minimum and curve");
+    rejects(document(body, "version='Other renderer' estimator_radius='3'"), "density");
+    rejects(document(body, "estimator_curve='.4'"), "estimator_radius");
+    rejects(document(body, "estimator_radius='3' estimator_curve='0'"), "density");
+    const auto all_colors = std::string(transform) + "<colors count='256' data='" + std::string(256 * 8, '0') + "'/>";
+    for (auto flag : {"0", "1"}) {
+        const auto attrs = std::string("version='Apophysis 7X Version 15D' enable_de='") + flag + "' estimator_radius='9'";
+        check(!parse_flames(document(all_colors,attrs))[0].density_estimator, "Pinned 7X does not enable the FLAM3 estimator");
+    }
+}
 void test_extended_variations() {
     constexpr double pi = std::numbers::pi;
     Rng rng(2), draws(2);
@@ -267,6 +288,7 @@ int main() {
         test_packed_palette();
         test_rejections();
         test_producer_import();
+        test_density_estimator_settings();
         test_extended_variations();
         std::cout << "XML collection, geometry, palette, round-trip and diagnostic checks passed\n";
         return 0;

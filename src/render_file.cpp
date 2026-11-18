@@ -177,14 +177,21 @@ Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOpti
     const auto row_bytes = multiply(flame.width, sizeof(std::array<double, 4>));
     const auto base = add(add(2 * MiB, model), add(row_bytes,
         ImageStreamWriter::working_bytes(flame.width, file.image)));
-    const auto kernel_bytes = add(multiply(geometry.kernel.taps, sizeof(double)),
-                                  ColorCurveEvaluator::storage_bytes(flame.curves));
-    const auto fixed = add(base, kernel_bytes);
+    const auto kernel_bytes = add(add(multiply(geometry.kernel.taps, sizeof(double)),
+                                  ColorCurveEvaluator::storage_bytes(flame.curves)), geometry.density.table_bytes);
+    const auto fixed = add(add(base, kernel_bytes), geometry.density.column_bytes(geometry.gpu.width));
     const auto hist_row = multiply(geometry.gpu.width, sizeof(detail::Bin));
-    const auto gutter_bytes = multiply(2ull * geometry.kernel.padding, hist_row);
+    const auto light_row = geometry.density.levels ? multiply(geometry.gpu.width, sizeof(detail::LightBin)) : 0;
+    const auto row_cost = add(hist_row, light_row);
+    const auto os = unsigned(flame.oversample);
+    const auto filter_overlap = geometry.kernel.taps > os ? geometry.kernel.taps - os : 0;
+    const auto density_halo = std::uint64_t(geometry.density.radius) + geometry.density.count_radius;
+    const auto gutter_bytes = flame.density_estimator ?
+        add(multiply(filter_overlap, row_cost), multiply(2 * density_halo, hist_row)) :
+        multiply(2ull * geometry.kernel.padding, hist_row);
     if (fixed > budget || gutter_bytes > budget - fixed)
         throw std::invalid_argument("Filter overlap and export buffers exceed the memory budget");
-    const auto available_rows = (budget - fixed - gutter_bytes) / hist_row / unsigned(flame.oversample);
+    const auto available_rows = (budget - fixed - gutter_bytes) / row_cost / os;
     if (!available_rows)
         throw std::invalid_argument("One reconstruction row exceeds the memory budget; reduce oversampling/filter or increase memory");
     const auto rows = file.strip_rows ? std::uint64_t(file.strip_rows) : std::min<std::uint64_t>(256, available_rows);
@@ -206,7 +213,7 @@ Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOpti
     disk = add(add(disk, image_export_upper_bound(flame.width, flame.height, file.image)), manifest_bytes);
     if (disk > multiply(file.disk_mib, MiB))
         throw std::invalid_argument("Conservative render working-storage estimate exceeds the disk budget");
-    const auto reconstruction = add(fixed, multiply(add(group_rows, 2ull * geometry.kernel.padding), hist_row));
+    const auto reconstruction = add(add(fixed, gutter_bytes), multiply(group_rows, row_cost));
     const auto sampling = add(fixed, multiply(chunk_samples, 4 * sizeof(Hit)));
     return {{flame.width, flame.height, unsigned(rows), unsigned(ceil_div(flame.height, rows)),
              std::max(reconstruction, sampling), disk}, geometry, fixed, chunk_samples, group_rows, groups};
@@ -551,6 +558,8 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
     const auto sampled_at = Clock::now();
     const auto stride = std::size_t(l.geometry.gpu.width);
     report("Reconstructing");
+    if (l.geometry.density.levels)
+        l.geometry.density_kernels = std::make_shared<detail::DensityKernels>(l.geometry.density, opt.stop_token);
     write_atomic(output, [&](std::ostream& out) {
         ImageStreamWriter writer(out, f.width, f.height, file.image);
         std::vector<std::array<double, 4>> row(static_cast<std::size_t>(f.width));
@@ -558,8 +567,16 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
             cancel(opt.stop_token);
             const auto y = strip * l.public_plan.strip_rows;
             const auto rows = std::min(l.public_plan.strip_rows, unsigned(f.height) - y);
-            const auto first = y * unsigned(f.oversample);
-            const auto height = rows * unsigned(f.oversample) + 2u * l.geometry.kernel.padding;
+            const auto& kernel = l.geometry.kernel;
+            const unsigned os = unsigned(f.oversample);
+            const auto lit_first = y * os + kernel.inset;
+            const auto lit_rows = (rows - 1) * os + kernel.taps;
+            const auto halo = l.geometry.density.radius + l.geometry.density.count_radius;
+            const auto first = f.density_estimator ? (lit_first > halo ? lit_first - halo : 0u) : y * os;
+            const auto end = f.density_estimator ?
+                std::min<std::uint64_t>(l.geometry.gpu.height, std::uint64_t(lit_first) + lit_rows + halo) :
+                std::uint64_t(first) + rows * os + 2ull * kernel.padding;
+            const auto height = unsigned(end - first);
             std::vector<detail::Bin> bins(std::size_t(height) * stride);
             const auto first_group = first / m.group_rows;
             const auto last_group = (std::uint64_t(first) + height - 1) / m.group_rows;
@@ -576,10 +593,13 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
                     });
                 }
             }
+            const auto light = l.geometry.density.levels ?
+                detail::density_strip(f, l.geometry, bins, first, lit_first, lit_rows, opt.samples, opt.stop_token) :
+                std::vector<detail::LightBin>{};
             for (unsigned i = 0; i < rows; ++i) {
-                detail::develop_row(f, l.geometry, bins, first, int(y + i), opt.samples, row,
+                detail::develop_row(f, l.geometry, bins, light.empty() ? first : lit_first, int(y + i), opt.samples, row,
                                     image_format_bits(file.image.format) == 16, file.image.alpha,
-                                    opt.stop_token);
+                                    opt.stop_token, light);
                 writer.write_row(row);
             }
             report("Reconstructing", strip + 1);

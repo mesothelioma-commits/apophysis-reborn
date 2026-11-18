@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(apophysis_reborn VERSION 0.11.0 LANGUAGES CXX)
+project(apophysis_reborn VERSION 0.12.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -25,7 +25,7 @@ set_source_files_properties(${apophysis_lua_sources} PROPERTIES LANGUAGE CXX)
 add_library(apo-lua STATIC ${apophysis_lua_sources})
 target_include_directories(apo-lua PUBLIC third_party/lua/src)
 set_target_properties(apo-lua PROPERTIES POSITION_INDEPENDENT_CODE ON)
-add_library(flame-core src/flame.cpp src/flame_io.cpp src/render.cpp src/image.cpp
+add_library(flame-core src/flame.cpp src/flame_io.cpp src/render.cpp src/density_estimation.cpp src/image.cpp
     src/legacy_document.cpp src/output_file.cpp src/creative.cpp src/gpu_kernel.cpp src/vulkan_runtime.cpp
     src/render_file.cpp src/image_stream.cpp src/plugin.cpp src/project_io.cpp
     src/project_document.cpp src/legacy_formats.cpp src/script.cpp src/legacy_script.cpp
@@ -152,6 +152,11 @@ if(BUILD_TESTING)
         -DSCRIPTS=${CMAKE_CURRENT_SOURCE_DIR}/examples/scripts
         -DMANIFEST=${CMAKE_CURRENT_BINARY_DIR}/plugins/reborn-wave/reborn_wave.apoplugin
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/extensions-cli -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/extensions_cli.cmake)
+    add_executable(density-tests tests/density_tests.cpp)
+    target_link_libraries(density-tests PRIVATE flame-core)
+    add_test(NAME density_estimation COMMAND density-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/legacy/density-oracle.tsv"
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples/density-study.flame")
     add_executable(file-render-tests tests/file_render_tests.cpp)
     target_link_libraries(file-render-tests PRIVATE flame-core)
     add_test(NAME file_render COMMAND file-render-tests)

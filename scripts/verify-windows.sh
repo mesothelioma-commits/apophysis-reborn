@@ -11,7 +11,7 @@ exec > >(tee "$log") 2>&1
 trap 'status=$?; echo "Exit code: $status"; echo "Log: $log"; exit "$status"' EXIT
 bin=./bin/windows-x64
 for exe in flame-cpu reference-tests import-tests renderer-tests legacy-document-tests creative-tests \
-    extended-variation-tests gpu-kernel-tests file-render-tests image-stream-tests \
+    extended-variation-tests density-tests gpu-kernel-tests file-render-tests image-stream-tests \
     project-io-tests legacy-formats-tests script-tests script-host-tests plugin-tests \
     animation-tests animation-export-tests color-curves-tests; do
     [[ -f "$bin/$exe.exe" ]] || { echo "Missing $bin/$exe.exe. Extract the full milestone ZIP before running this check."; exit 1; }
@@ -37,6 +37,7 @@ cmd.exe //c ver
 "$bin/extended-variation-tests.exe" tests/extended-variation-vectors.tsv examples/variation-studies.flame tests/starting-variation-vectors.tsv
 "$bin/gpu-kernel-tests.exe" --cpu-only
 "$bin/image-stream-tests.exe"
+"$bin/density-tests.exe" tests/legacy/density-oracle.tsv examples/density-study.flame
 "$bin/file-render-tests.exe" --cpu-only
 "$bin/project-io-tests.exe"
 "$bin/legacy-formats-tests.exe" tests/fixtures/formats

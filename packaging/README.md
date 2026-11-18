@@ -107,8 +107,7 @@ supports `/NOSTARTMENU` and `/DESKTOP`. NSIS `/D=` must be the final argument,
 without surrounding quotes even when its value contains spaces.
 
 The target must be new or empty, on a local drive, without reparse ancestors.
-The installers published through 0.11.0 keep versions side by side.
-Subsequent installers compare registered release numbers numerically. When the
+The 0.12.0 installer compares registered release numbers numerically. Installers published through 0.11.0 keep versions side by side. When the
 incoming version is newer than the highest registered Apophysis Reborn version
 for the current user, Setup installs and registers the new version before
 removing that single previous installation. Its custom installation folder is

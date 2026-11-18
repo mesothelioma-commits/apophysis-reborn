@@ -193,7 +193,7 @@ QJsonObject jobJson(const RenderJob &j) {
       {"checkpointed", j.checkpointed},
       {"resumed", j.resumed}};
 }
-RenderJob readJob(const QJsonObject &o) {
+RenderJob readJob(const QJsonObject &o, int version) {
   RenderJob j;
   j.id = requiredString(o, "id");
   if (QUuid(j.id).isNull() ||
@@ -222,6 +222,10 @@ RenderJob readJob(const QJsonObject &o) {
     throw std::invalid_argument(
         "Each render queue job needs one flame snapshot");
   j.flame = std::move(flames.front());
+  // Queue v1 predates active estimation. Its snapshots could omit an explicit disabled
+  // radius, including on FLAM3 releases whose original producer defaults to an active filter.
+  if (version == 1)
+    j.flame.density_estimator.reset();
   const auto identity = text(plugin_identity(j.flame));
   if ((!identity.isEmpty() && !o.value("plugin_identity").isString()) ||
       (o.contains("plugin_identity") &&
@@ -323,7 +327,7 @@ void writeQueue(const QString &path, const std::vector<RenderJob> &jobs) {
     array.append(jobJson(j));
   const auto bytes =
       QJsonDocument(QJsonObject{{"format", "apophysis-render-queue"},
-                                {"version", 1},
+                                {"version", 2},
                                 {"jobs", array}})
           .toJson();
   QSaveFile out(path);
@@ -762,8 +766,9 @@ void RenderQueue::loadFrom(const QString &path) {
   if (error.error != QJsonParseError::NoError || !document.isObject())
     throw std::invalid_argument("Render queue is not valid JSON");
   const auto object = document.object();
+  const int version = object.value("version").toInt(-1);
   if (object.value("format") != "apophysis-render-queue" ||
-      object.value("version").toInt(-1) != 1 || !object.value("jobs").isArray())
+      (version != 1 && version != 2) || !object.value("jobs").isArray())
     throw std::invalid_argument("Unsupported render queue format or version");
   const auto array = object.value("jobs").toArray();
   if (array.size() > 1000)
@@ -773,7 +778,7 @@ void RenderQueue::loadFrom(const QString &path) {
   for (const auto &value : array) {
     if (!value.isObject())
       throw std::invalid_argument("Invalid render queue entry");
-    auto j = readJob(value.toObject());
+    auto j = readJob(value.toObject(), version);
     if (!ids.insert(j.id).second)
       throw std::invalid_argument("Duplicate render queue job identifier");
     candidate.push_back(std::move(j));

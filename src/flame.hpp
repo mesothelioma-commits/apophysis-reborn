@@ -92,6 +92,12 @@ struct Transform {
     double weight = 1, color = 0, color_speed = 0.5, opacity = 1;
     std::vector<double> chaos; // Per-destination multipliers; missing trailing values are 1.
 };
+struct DensityEstimator {
+    double radius = 9, minimum = 0, curve = .4; // FLAM3 3.1.1 defaults, radii in output pixels.
+    bool operator==(const DensityEstimator&) const = default;
+};
+bool has_flam3_estimator_defaults(std::string_view version);
+bool supports_density_estimator(std::string_view version);
 struct Flame {
     static constexpr unsigned current_model_version = 1;
     unsigned model_version = current_model_version;
@@ -102,6 +108,7 @@ struct Flame {
     double scale = 50, zoom = 0, rotate = 0; // Pixels per unit at declared size; rotation in degrees.
     double gamma = 2.2, brightness = 4, vibrancy = 1;
     std::optional<double> filter_radius; // Absence retains the original Reborn box reconstruction.
+    std::optional<DensityEstimator> density_estimator;
     double gamma_threshold = 0;
     int oversample = 1;
     RGB background;

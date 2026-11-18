@@ -59,6 +59,11 @@ def main():
                 ("gaussian",1,0.75,0.05), ("even",2,0.5,0.15), ("wide",3,0.8,0.4)):
             ppm = output / f"producer-oracle-{name}.ppm"
             result = subprocess.check_output([build/"harness",str(oversample),str(radius),str(threshold),ppm])
+            if seven:
+                flagged = build / "flagged.ppm"
+                enabled = subprocess.check_output([build/"harness",str(oversample),str(radius),str(threshold),flagged,"enable_de"])
+                if enabled != result or flagged.read_bytes() != ppm.read_bytes():
+                    raise ValueError(f"7X estimator flag changed the pinned producer output for {name}")
             if name != "low":
                 filters.append(result)
         (output / "producer-oracle-kernels.tsv").write_bytes(b"os\tradius\twidth\trow\tcol\tweight\n"+b"".join(filters))

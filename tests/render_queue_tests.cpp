@@ -4,6 +4,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPointer>
@@ -55,6 +56,37 @@ void write(const QString &path, const QByteArray &value) {
 class RenderQueueTests : public QObject {
   Q_OBJECT
 private slots:
+  void densityEstimatorMigratesOldQueueSnapshots() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    RenderQueue queue({}, dir.filePath("checkpoints"));
+    auto f = fixture();
+    f.source_version = "FLAM3-LNX-3.1.1";
+    const auto disabled = queue.add(f, settings(), fileSettings(), dir.filePath("off.ppm"));
+    f.density_estimator = DensityEstimator{3.5, .25, .4};
+    const auto active = queue.add(f, settings(), fileSettings(), dir.filePath("on.ppm"));
+    const auto current = dir.filePath("current.json");
+    queue.saveTo(current);
+    RenderQueue restored({}, dir.filePath("other-checkpoints"));
+    restored.loadFrom(current);
+    QVERIFY(!restored.job(disabled)->flame.density_estimator);
+    QVERIFY(restored.job(active)->flame.density_estimator == f.density_estimator);
+
+    auto legacy = QJsonDocument::fromJson(bytes(current)).object();
+    QCOMPARE(legacy["version"].toInt(), 2);
+    auto job = legacy["jobs"].toArray().first().toObject();
+    auto snapshot = job["flame"].toString();
+    QVERIFY(snapshot.contains(" estimator_radius=\"0\""));
+    snapshot.remove(" estimator_radius=\"0\""); // Original v1 canonical writer omitted the field.
+    job["flame"] = snapshot;
+    legacy["jobs"] = QJsonArray{job};
+    legacy["version"] = 1;
+    const auto previous = dir.filePath("previous.json");
+    write(previous, QJsonDocument(legacy).toJson());
+    restored.loadFrom(previous);
+    QCOMPARE(restored.jobs().size(), std::size_t(1));
+    QVERIFY(!restored.job(disabled)->flame.density_estimator);
+  }
   void immutableSnapshotsOrderAndPersistence() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());

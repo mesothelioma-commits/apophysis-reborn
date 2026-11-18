@@ -175,3 +175,9 @@ Profiling led to zero-light reconstruction and repeated-pixel conversion optimiz
 The registry now contains the full list of 40 variations named in the project brief and three additional built-ins. The twelve additions have parameter-aware import and export, CPU and Vulkan evaluation, and individual entries in the study library. The [variation reference](VARIATIONS.md) records the formulas, producer conventions and test fixtures. The [compatibility register](requirements-status.json) tracks the wider historical inventory separately.
 
 The user reported that 0.10.2 completed their render and remained responsive during their session. Its Save and dialog-close regression checks continue to run with this milestone.
+
+## 0.12.0 — Legacy density estimation
+
+Supported FLAM3 flames can render their adaptive density estimator. The [reference notes](DENSITY_ESTIMATION.md) describe the behavior by producer and the executable comparisons. Setup now registers the new version before uninstalling its immediate predecessor for the current Windows account. If an older program is locked, the new version stays installed and Setup gives cleanup instructions. The Windows verifier accepts the original 0.11.0 installer to exercise both paths on a disposable test account.
+
+Saved 0.11 render-queue jobs keep density estimation disabled when opened in 0.12. New jobs store their estimator settings alongside the flame.

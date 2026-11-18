@@ -25,6 +25,8 @@ struct LegacyEdits {
     std::optional<PaletteMode> palette_mode;
     // Remove explicit filter/filter_shape overrides. The producer's defaults then apply.
     bool clear_filter_radius = false;
+    std::optional<DensityEstimator> density_estimator;
+    bool disable_density_estimator = false;
 };
 
 struct LegacyTransformEdits {

@@ -1,6 +1,7 @@
 #pragma once
 #include "render.hpp"
 #include "gpu_kernel.hpp"
+#include "density_estimation.hpp"
 #include <span>
 
 namespace apo::detail {
@@ -15,6 +16,8 @@ struct RenderGeometry {
     Footprint kernel;
     bool historical;
     std::shared_ptr<const ColorCurveEvaluator> curves;
+    DensityPlan density;
+    std::shared_ptr<const DensityKernels> density_kernels;
 };
 struct CpuHits {
     std::vector<SampleHit> hits;
@@ -31,5 +34,5 @@ CpuHits sample_cpu_hits(const Flame&, const RenderOptions&, const RenderGeometry
 void develop_row(const Flame&, const RenderGeometry&, std::span<const Bin>,
                  std::uint32_t first_histogram_row, int output_y, std::uint64_t samples,
                  std::span<std::array<double, 4>> rgba, bool sixteen_bit, bool transparent,
-                 std::stop_token);
+                 std::stop_token, std::span<const LightBin> density_light = {});
 } // namespace apo::detail

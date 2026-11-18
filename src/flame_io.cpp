@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cctype>
 #include <cmath>
 #include <exception>
 #include <fstream>
@@ -96,11 +97,47 @@ ColorCurves parsed_curves(Text value) {
     return result;
 }
 
+std::optional<DensityEstimator> read_density_estimator(Text version, const Attributes& attributes) {
+    DensityEstimator settings;
+    auto parameter = [&](Text key, double& target) {
+        if (auto it = attributes.find(key); it != attributes.end()) target = number<double>(it->second, key);
+    };
+    parameter("estimator_radius", settings.radius);
+    parameter("estimator_minimum", settings.minimum);
+    parameter("estimator_curve", settings.curve);
+    const bool specified = attributes.contains("estimator_radius") || attributes.contains("estimator_minimum") ||
+                           attributes.contains("estimator_curve");
+    std::optional<int> enabled;
+    if (auto it = attributes.find("enable_de"); it != attributes.end()) {
+        enabled = number<int>(it->second, it->first);
+        if (!is_apophysis(version) || (*enabled != 0 && *enabled != 1))
+            fail("Unsupported density estimation switch 'enable_de' for this producer");
+    }
+    if (enabled == 0) return {};
+    // The 7X 15D internal ImageMaker disables InitDE for both switch values.
+    // ParameterIO also writes the shortened producer tag without the build number.
+    auto seven = [](Text actual, Text expected) {
+        return actual.size() == expected.size() && std::equal(actual.begin(), actual.end(), expected.begin(),
+            [](unsigned char c, char lower) { return std::tolower(c) == lower; });
+    };
+    if (seven(version, "apophysis 7x") || seven(version, "apophysis 7x version 15d")) return {};
+    if (enabled) fail("Active density estimation is unsupported for this Apophysis producer");
+    if (attributes.contains("estimator_radius") && settings.radius == 0) return {};
+    const bool defaults_on = has_flam3_estimator_defaults(version);
+    if (!specified && !defaults_on) return {};
+    if (!supports_density_estimator(version))
+        fail("Active density estimation is unsupported for this producer");
+    if (!attributes.contains("estimator_radius") && !defaults_on)
+        fail("Specify estimator_radius to enable density estimation for an unversioned or Reborn flame");
+    return settings;
+}
+
 void flame_settings(Flame& flame, const Attributes& attributes) {
     // FLAM3 clear_cp(..., defaults_on) defaults for the supported XML settings.
     flame.width = flame.height = 100;
     if (attributes.contains("version")) flame.source_version = required(attributes, "version");
     const bool apo = is_apophysis(flame.source_version);
+    const bool flam3 = has_flam3_estimator_defaults(flame.source_version);
     flame.gamma = apo ? 1 : 4;
     flame.quality = apo ? 50 : 1;
     if (apo) {
@@ -108,9 +145,7 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
         flame.filter_radius = .5;
         flame.name = "untitled";
     }
-    const bool de_off = apo && attributes.contains("enable_de") && number<int>(required(attributes,"enable_de"), "enable_de") == 0;
-    const bool radius_zero = attributes.contains("estimator_radius") &&
-        number<double>(required(attributes,"estimator_radius"), "estimator_radius") == 0;
+    flame.density_estimator = read_density_estimator(flame.source_version, attributes);
 
     for (const auto& [key, value] : attributes) {
         if (key == "name") flame.name = value;
@@ -129,11 +164,8 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
             if (value != "gaussian") fail("Unsupported filter_shape '" + std::string(value) + "'");
             if (!attributes.contains("filter")) flame.filter_radius = .5;
         } else if (key == "gamma_threshold") flame.gamma_threshold = number<double>(value,key);
-        else if (key == "enable_de") {
-            if (!de_off) fail("Active density estimation (enable_de) is unsupported");
-        } else if (key == "estimator_radius" || key == "estimator_minimum" || key == "estimator_curve") {
-            (void)number<double>(value, key);
-            if (!de_off && !radius_zero) fail("Density estimation requires disabled enable_de or estimator_radius=0");
+        else if (key == "enable_de" || key == "estimator_radius" || key == "estimator_minimum" || key == "estimator_curve") {
+            // Handled together above because the switch and radius determine whether estimation runs.
         } else if (key == "curves") {
             flame.curves.channels = parsed_curves(value).channels;
         } else if (key == "reborn_curve_mode") {
@@ -144,7 +176,13 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
             if (number<int>(value,key) != 1) fail("Unsupported new_linear conversion mode");
         } else if ((key == "plugins" && apo) || key == "nick" || key == "url") {
             // Producer-exported plugin inventory and author metadata. Each actual operation is checked below.
-        } else if (key == "batches" || key == "temporal_samples") {
+        } else if (flam3 && ((key == "temporal_filter_type" && value == "box") ||
+                             (key == "temporal_filter_width" && number<double>(value, key) == 1) ||
+                             (key == "highlight_power" && number<double>(value, key) == -1) ||
+                             (key == "interpolation_type" && value == "log") ||
+                             (key == "palette_interpolation" && value == "hsv_circular"))) {
+            // Neutral FLAM3 3.1.1 writer settings for a single still frame and a single time sample.
+        } else if (key == "batches" || key == "temporal_samples" || (flam3 && key == "passes")) {
             if (number<int>(value, key) != 1) fail("Unsupported multi-batch or temporal sampling: " + std::string(key));
         } else if (key == "cam_pitch" || key == "cam_yaw" || key == "cam_perspective" ||
                    key == "cam_zpos" || key == "cam_dof") {
@@ -272,6 +310,10 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
             const auto weight = number<double>(value, key);
             if (final && weight != 0) fail("A finalxform cannot have selection weight");
             if (!final) t.weight = weight;
+        } else if (key == "animate" && has_flam3_estimator_defaults(version)) {
+            // An interpolation flag has no effect on a still keyframe. Motion children remain unsupported.
+            auto flag = number<double>(value, key);
+            if (flag != 0 && flag != 1) fail("Unsupported FLAM3 xform animate value");
         } else if (key == "color") t.color = number<double>(value, key);
         else if (key == "opacity") t.opacity = number<double>(value, key);
         else if (key == "plotmode") {
@@ -693,6 +735,13 @@ std::string serialize_flame(const Flame& f) {
     if (!f.source_version.empty()) out << " version=\"" << escaped(f.source_version) << '"';
     if (f.filter_radius) out << " filter=\"" << *f.filter_radius << '"';
     if (f.gamma_threshold != 0) out << " gamma_threshold=\"" << f.gamma_threshold << '"';
+    if (f.density_estimator) {
+        const auto& de = *f.density_estimator;
+        out << " estimator_radius=\"" << de.radius << "\" estimator_minimum=\"" << de.minimum
+            << "\" estimator_curve=\"" << de.curve << '"';
+    } else if (has_flam3_estimator_defaults(f.source_version)) {
+        out << " estimator_radius=\"0\"";
+    }
     if (f.curves != ColorCurves{}) {
         out << " curves=\"";
         bool first = true;

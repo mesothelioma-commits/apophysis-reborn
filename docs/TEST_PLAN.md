@@ -302,3 +302,7 @@ Both outputs had identical bytes. BMP SHA-256: `82133ca765ddd8440d495c383c26da79
 The extension test compares 432 FLAM3 operation results, verifies the following RNG draw, exercises the historical blur streams and renders all 43 studies. The GPU kernel test covers 2,304 direct comparisons. The GPU render tests put every addition in both an ordinary transform and the final transform with strict backend selection. The stream tests compare mixtures that use both historical blur histories.
 
 The desktop and file checks cover parameter edits, Save and reopen, 2.09 numeric IDs, native and legacy script access, and interpolation of parameters. The checked-in gallery uses the CPU renderer. Its twelve source flames can also be selected individually from the study library.
+
+## 0.12.0 density estimation and upgrades
+
+The `density_estimation` test consumes frozen vectors generated from the original FLAM3 density code. See [Density estimation](DENSITY_ESTIMATION.md) and the complete release’s verification logs for the tested conditions and results. On Windows 11, supply the 0.11.0 installer as `--previous-installer` to the [installer verifier](../packaging/README.md#verification-and-acceptance-boundary) to cover a real upgrade and a locked predecessor.

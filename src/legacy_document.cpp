@@ -484,6 +484,22 @@ void LegacyDocument::edit(std::size_t index, const LegacyEdits& edits) {
         }
         if (model) model->curves = *edits.curves;
     }
+    if (edits.density_estimator || edits.disable_density_estimator) {
+        if (!model || !supports_density_estimator(entry.version))
+            throw std::invalid_argument("Cannot edit density estimation for this producer or preserve-only entry");
+        if (edits.density_estimator && edits.disable_density_estimator)
+            throw std::invalid_argument("Cannot enable and disable density estimation together");
+        if (edits.density_estimator) {
+            const auto& de = *edits.density_estimator;
+            changes["estimator_radius"] = shortest(de.radius);
+            changes["estimator_minimum"] = shortest(de.minimum);
+            changes["estimator_curve"] = shortest(de.curve);
+        } else {
+            // Zero disables the filter even for producers whose default radius is positive.
+            changes["estimator_radius"] = "0";
+        }
+        model->density_estimator = edits.density_estimator;
+    }
     if (edits.clear_filter_radius && edits.filter_radius)
         throw std::invalid_argument("Cannot set and clear the filter radius together");
     if (edits.filter_radius) {

@@ -176,6 +176,20 @@ void hostile_input_tests() {
   clip.keyframes[0].library_bytes += " ";
   rejects([&] { validate_animation_structure(clip); }, "6 MiB");
 }
+void density_keyframes() {
+  auto a = base(), b = base();
+  a.density_estimator = DensityEstimator{2, .5, .3};
+  b.density_estimator = DensityEstimator{4, 1, .7};
+  const auto middle = PreparedAnimation(clip_for(a,b)).evaluate(2).flame.density_estimator;
+  require(middle.has_value(), "Density interpolation lost active settings");
+  near(middle->radius, 3, "Animated maximum radius");
+  near(middle->minimum, .75, "Animated minimum radius");
+  near(middle->curve, .5, "Animated estimator curve");
+  a.density_estimator.reset();
+  PreparedAnimation enabled(clip_for(a,b));
+  require(!enabled.evaluate(3).flame.density_estimator && enabled.evaluate(4).flame.density_estimator == b.density_estimator,
+          "A disabled estimator should hold until the enabled keyframe");
+}
 void timeline_tests() {
   auto clip = clip_for(base(), base());
   require(animation_frame_at(clip, -1) == 0 && animation_frame_at(clip, 100) == 4,
@@ -557,7 +571,7 @@ void plugin_tests(const fs::path &sample_manifest, const fs::path &integer_modul
 int main(int argc, char **argv) {
   try {
     require(argc == 3, "Usage: animation-tests SAMPLE.apoplugin INTEGER_FIXTURE_MODULE");
-    io_and_source_tests(); hostile_input_tests(); timeline_tests(); interpolation_tests();
+    io_and_source_tests(); hostile_input_tests(); density_keyframes(); timeline_tests(); interpolation_tests();
     new_variation_interpolation(); polar_and_variation_tests(); topology_tests(); preset_and_legacy_time_tests();
     plugin_tests(argv[1],argv[2]);
     std::cout << "Animation source, schema, timing, morph, numerical, and native-identity regressions passed\n";

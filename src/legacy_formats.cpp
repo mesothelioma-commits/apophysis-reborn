@@ -619,6 +619,8 @@ UprExport export_upr(const Flame &f) {
     out.report.errors.push_back(e.what());
     return out;
   }
+  if (f.density_estimator)
+    out.report.errors.push_back("UPR export cannot represent active density estimation");
   if (f.rotate != 0)
     out.report.errors.push_back("UPR export does not support camera rotation");
   if (f.vibrancy != 1 || f.gamma_threshold != 0)

@@ -818,6 +818,15 @@ AdjustmentDialog::AdjustmentDialog(const Flame &flame, QWidget *parent, const Pr
                    "historical Gaussian default; generic sources use box reconstruction.");
     filterHelp->setWordWrap(true);
     renderingForm->addRow(filterHelp);
+    density_ = new QCheckBox("Enable density estimation");
+    density_->setObjectName("adjust_density_estimation");
+    density_->setEnabled(supports_density_estimator(flame.source_version));
+    density_->setToolTip(density_->isEnabled() ? "Spread sparse samples using the FLAM3 3.1.1 density estimator."
+                                               : "This source uses a different producer's rendering rules.");
+    renderingForm->addRow(density_);
+    addField(renderingForm, "estimator_radius", "Maximum radius", "Smoothing radius in output pixels for low-density regions.");
+    addField(renderingForm, "estimator_minimum", "Minimum radius", "Smallest smoothing radius in output pixels.");
+    addField(renderingForm, "estimator_curve", "Estimator curve", "A positive exponent controls how quickly smoothing decreases as density increases.");
     tabs->addTab(scrollPanel(camera), "Camera");
     tabs->addTab(scrollPanel(tone), "Tone / color");
     tabs->addTab(scrollPanel(rendering), "Rendering");
@@ -866,6 +875,7 @@ AdjustmentDialog::AdjustmentDialog(const Flame &flame, QWidget *parent, const Pr
             aspectRatio_ = double(width_->value()) / height_->value();
     });
     connect(oversample_, &QSpinBox::valueChanged, this, [this] { updateFlame(); });
+    connect(density_, &QCheckBox::toggled, this, [this] { updateFlame(); });
     connect(filter_, &QComboBox::currentIndexChanged, this, [this] { updateFlame(); });
     connect(background_, &QPushButton::clicked, this, [this] {
         const auto chosen = QColorDialog::getColor(color(flame_.background), this, "Flame background");
@@ -932,7 +942,12 @@ AdjustmentDialog::~AdjustmentDialog() {
 }
 void AdjustmentDialog::refreshFields() {
     syncing_ = true;
-    const std::map<std::string, double> values{{"center_x", flame_.center.x},
+    const auto de = flame_.density_estimator.value_or(DensityEstimator{});
+    density_->setChecked(flame_.density_estimator.has_value());
+    const std::map<std::string, double> values{{"estimator_radius", de.radius},
+                                               {"estimator_minimum", de.minimum},
+                                               {"estimator_curve", de.curve},
+                                               {"center_x", flame_.center.x},
                                                {"center_y", flame_.center.y},
                                                {"scale", flame_.scale},
                                                {"zoom", flame_.zoom},
@@ -970,6 +985,12 @@ bool AdjustmentDialog::updateFlame() {
         next.vibrancy = value("vibrancy");
         next.quality = value("quality");
         next.oversample = oversample_->value();
+        for (auto key : {"estimator_radius", "estimator_minimum", "estimator_curve"})
+            fields_.at(key)->setEnabled(density_->isChecked());
+        if (density_->isChecked())
+            next.density_estimator = DensityEstimator{value("estimator_radius"), value("estimator_minimum"), value("estimator_curve")};
+        else
+            next.density_estimator.reset();
         fields_.at("filter_radius")->setEnabled(filter_->currentIndex() == 1);
         if (filter_->currentIndex())
             next.filter_radius = value("filter_radius");
@@ -1015,6 +1036,10 @@ LegacyEdits AdjustmentDialog::edits() const {
         result.vibrancy = flame_.vibrancy;
     if (flame_.quality != original_.quality)
         result.quality = flame_.quality;
+    if (flame_.density_estimator != original_.density_estimator) {
+        result.density_estimator = flame_.density_estimator;
+        result.disable_density_estimator = !flame_.density_estimator;
+    }
     if (flame_.oversample != original_.oversample)
         result.oversample = flame_.oversample;
     if (!equal(flame_.background, original_.background))

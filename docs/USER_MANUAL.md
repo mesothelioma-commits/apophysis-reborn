@@ -1,4 +1,4 @@
-# Apophysis Reborn 0.11.0 — User manual
+# Apophysis Reborn 0.12.0 — User manual
 
 Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
@@ -29,7 +29,7 @@ The primary target is Windows 11 x64. Choose one of these distributions:
 | Windows setup EXE | Run the supplied setup EXE. | Install for the current Windows user with versioned shortcuts and an uninstall entry. |
 | Complete source/history ZIP | Open `bin/windows-x64/apophysis-reborn.exe` after extraction, or build the source. | Development, complete verification tools, source history and release evidence. |
 
-The installer is `apophysis-reborn-0.11.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.11.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. The published 0.11.0 installer uses an empty destination and keeps previous versions. Future installers first install the new release, then uninstall the most recent older version registered to your Windows account. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
+The installer is `apophysis-reborn-0.12.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.12.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.12.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
 
 Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application's per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.
 
@@ -79,6 +79,8 @@ When the current file changes outside the editor after opening, Save offers **Sa
 Every 45 seconds, modified documents request a background recovery save. Thumbnail preparation, serialization and disk writes run off the interface thread; a pending request is replaced by the newest snapshot. Recovery completes when that worker finishes. On a later launch, a stale recovery copy offers **Recover edits**, **Discard recovery copy**, or **Later**. Recovery opens an unsaved document so you can inspect it and choose where to save. Copies owned by another live editor are skipped. Native recovery retains the project envelope and timeline.
 
 Recovery, the automatic queue and the rotating Activity log use the application's per-user local data directory. Recovery is not a replacement for a backup of your artwork folder. Its interval is currently fixed, and uninstalling a version does not intentionally clear those user-data locations. Queue checkpoints are separate from editing recovery files.
+
+Open “Tidal filaments” in examples/density-study.flame to try density estimation. In Adjust → Rendering, use Enable density estimation, Maximum radius, Minimum radius and Estimator curve to compare the result with the same seed. It spreads sparse samples over a wider area and keeps dense detail sharper. The offline file docs/DENSITY_ESTIMATION.md describes the supported historical settings.
 
 ## Transform editing
 

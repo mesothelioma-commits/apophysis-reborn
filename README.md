@@ -1,19 +1,19 @@
-# Apophysis Reborn 0.11.0
+# Apophysis Reborn 0.12.0
 
-Milestone 11 adds the twelve remaining variations from the original brief. All 40 named starting variations are now available in the editor and on the CPU and Vulkan renderers. The registry also includes noise, foci and pre_blur, for 43 built-ins.
+Milestone 12 adds FLAM3 density estimation and automatic Windows upgrades. Open “Tidal filaments” in `examples/density-study.flame` to try the renderer. In Adjust → Rendering, use Enable density estimation, Maximum radius, Minimum radius and Estimator curve to compare the result with the same seed. Low-density areas spread color over a wider area, while denser parts of the flame retain finer detail. The [density estimation notes](docs/DENSITY_ESTIMATION.md) describe the historical profiles and numerical checks.
 
-**0.11.0 completes the starting variation list. Complete original Apophysis 2.x/7X/AV feature parity remains unfinished.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
+![Tidal filaments rendered with the same seed and sample count, with density estimation off and on](preview/density-estimation-0.12.0.png)
 
 ## Choose a distribution
 
 | Edition | Entry point and contents |
 | --- | --- |
-| Lean portable | Extract `apophysis-reborn-0.11.0-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.11.0-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
-| Per-user installer | Run `apophysis-reborn-0.11.0-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.11.0`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
-| Complete source/history and SDK | Extract `apophysis-reborn-0.11.0-starting-variations.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
-| Git source | Extract `apophysis-reborn-0.11.0-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
+| Lean portable | Extract `apophysis-reborn-0.12.0-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.12.0-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
+| Per-user installer | Run `apophysis-reborn-0.12.0-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.12.0`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
+| Complete source/history and SDK | Extract `apophysis-reborn-0.12.0-legacy-density-estimation.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
+| Git source | Extract `apophysis-reborn-0.12.0-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
 
-The published 0.11.0 installer uses a separate, empty version folder. Future Windows installers install the new release first and then uninstall the most recent older release registered to the same account. Uninstall removes unchanged installed payload files and retains modified/extra files; external projects, settings and recovery data remain. An interrupted install can leave a partial folder; automatic repair or replacement is not provided. Portable and installed applications normally share per-user settings/data, so separate program directories are not isolated user profiles. Keep artwork outside the program folder and retain the original executable/plugins for in-progress checkpoints. [Getting started and recovery](docs/USER_MANUAL.md)
+Setup installs the new release in an empty version folder, then removes the most recent older release registered to the same Windows account. If the old editor is running, Setup explains how to finish cleanup after closing it. Uninstall removes unchanged installed payload files and retains modified/extra files; external projects, settings and recovery data remain. An interrupted install can leave a partial folder; automatic repair or replacement is not provided. Portable and installed applications normally share per-user settings/data, so separate program directories are not isolated user profiles. Keep artwork outside the program folder and retain the original executable/plugins for in-progress checkpoints. [Getting started and recovery](docs/USER_MANUAL.md)
 
 ## New variations in 0.11.0
 
@@ -314,6 +314,6 @@ The complete source/history ZIP also includes `apophysis-reborn.bundle`, `BUILD.
 
 ## Remaining work
 
-The original brief names 40 starting variations. All 40 are implemented, alongside three additional built-ins for 43 total. That list is not the complete historical inventory. Active density estimation, broader filters/3D/direct-color behavior, JPEG/WebP/OpenEXR/HDR, ICC/embedded metadata, the full legacy script/animation surface, light theme and more workspace/preferences controls remain open. Native plugins are trusted in-process CPU code; local crash reporting and stronger isolation remain incomplete. CUDA is optional and not implemented.
+The original brief names 40 starting variations. All 40 are implemented, alongside three additional built-ins for 43 total. That list is not the complete historical inventory. Additional historical estimator profiles, broader filters/3D/direct-color behavior, JPEG/WebP/OpenEXR/HDR, ICC/embedded metadata, the full legacy script/animation surface, light theme and more workspace/preferences controls remain open. Native plugins are trusted in-process CPU code; local crash reporting and stronger isolation remain incomplete. CUDA is optional and not implemented.
 
 Continue with targeted compatibility work and Windows/physical-GPU acceptance using [RELEASE_COMPATIBILITY.md](docs/RELEASE_COMPATIBILITY.md), [FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) and [RELEASE_HANDOFF.md](docs/RELEASE_HANDOFF.md). M10 packaging does not turn those outstanding requirements into completed product functionality.

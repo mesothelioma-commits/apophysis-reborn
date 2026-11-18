@@ -35,7 +35,7 @@ namespace {
 namespace fs = std::filesystem;
 
 void usage(std::ostream &out) {
-  out << "Apophysis Reborn " << apo::application_version() << " | Release hardening\n"
+  out << "Apophysis Reborn " << apo::application_version() << " | Flame renderer\n"
       << "  flame-cpu --flame input.flame --output image.png [options]\n"
       << "  flame-cpu inspect input.flame [--json]\n"
       << "  flame-cpu save input.flame --output copy.flame [--index N] [--name "

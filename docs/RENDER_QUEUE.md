@@ -134,3 +134,7 @@ This renders the built-in Ember spiral at **16384 × 16384**, using 8,388,611 sa
 The large mode writes a known prior destination, pauses after committed sampling, verifies a usable checkpoint and preservation of that destination, then explicitly resumes to `16k.png`. It records 10 ms UI heartbeat counts and maximum gaps, the Qt platform in use, completed sample/strip counts, actual backend/device, elapsed time, and pause/resume evidence in `16k-report.json`. A gap over one second fails the mode. It also saves `16k-queue-paused.png`, `16k-queue-complete.png`, `16k-editor-complete.png`, `paused-queue.json`, and `completed-queue.json`; durable queue/checkpoint data remain under `queue-data`. Its timeout is 15 minutes. This mode renders through the real native queue and visible Qt widgets; a report naming the offscreen platform does not claim a desktop interaction test.
 
 See [High-resolution rendering](HIGH_RES_RENDERING.md) for the core and command-line workflow, [GPU rendering](GPU_RENDERING.md) for Vulkan selection and limitations, and [the test plan](TEST_PLAN.md) for the milestone validation matrix.
+
+## Queue compatibility in 0.12.0
+
+Version 2 queue files store each job’s density estimator state. Opening a version 1 queue from an earlier release keeps estimation disabled, including for FLAM3 snapshots whose source tag otherwise selects an active estimator by default.
