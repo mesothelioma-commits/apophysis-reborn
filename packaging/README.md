@@ -107,14 +107,29 @@ supports `/NOSTARTMENU` and `/DESKTOP`. NSIS `/D=` must be the final argument,
 without surrounding quotes even when its value contains spaces.
 
 The target must be new or empty, on a local drive, without reparse ancestors.
-Registering the same version twice is refused. Different versions can coexist;
-setup never automatically removes an older version. There is no in-place repair
-or migration of existing program directories. A forced termination can leave a
-partial new folder: inspect it or choose another empty destination. Ordinary
-detected install failures roll back only files that this attempt created.
+The installers published through 0.11.0 keep versions side by side.
+Subsequent installers compare registered release numbers numerically. When the
+incoming version is newer than the highest registered Apophysis Reborn version
+for the current user, Setup installs and registers the new version before
+removing that single previous installation. Its custom installation folder is
+supported. Additional historical releases, portable copies and other Windows
+accounts keep their installations. Installing an older version preserves the
+newer version. The existing same-version registration check still applies.
+
+If the new installation fails or the user cancels before it completes, the
+previous installation stays in place. If a running program locks the previous
+installation, close the program and use **Settings → Apps → Installed apps** to
+uninstall the older version. The new release remains installed. Silent Setup
+returns exit code `20` when the new installation succeeded and removal of the
+previous release needs attention.
+
+A forced termination can leave a partial new folder. Inspect it or choose another
+empty destination. Detected install failures roll back only files that this attempt created.
 
 `installer_guard.cpp` compiles the payload inventory and hashes into the helper.
-An editable installed manifest does not authorize deletion. The guard holds
+During an upgrade, the helper verifies the previous release’s manifest against
+the SHA-256 digest saved when that release was installed. It uses that verified
+inventory to identify the previous release’s files. The guard holds
 directory handles that deny deletion/replacement, creates files with `CREATE_NEW`,
 and keeps verified file handles through the operation. Before uninstall deletes
 the first file, it checks every remaining candidate. Locked ordinary files stop
@@ -138,10 +153,10 @@ path conflicts, symlink/reparse admission and generated-input escaping. A real
 compile/extract probe additionally verifies literal dollar/macro/environment and
 Unicode payload names. It uses synthetic bytes, so it is not a release runtime.
 
-Run the following on a Windows x64 test account, with other Apophysis processes
-closed. The evidence directory must be new and its absolute path shorter than
-90 characters. The verifier refuses an existing same-version registration or
-versioned shortcuts. It never recursively deletes test folders.
+Use a disposable Windows x64 account with no registered Apophysis Reborn
+installations. Close any running Apophysis processes. The evidence directory
+must be new and its absolute path shorter than 90 characters. The verifier
+checks for existing registrations and conflicting shortcuts before it begins.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
@@ -161,6 +176,11 @@ bash /path/to/apophysis-reborn/scripts/verify-installer-windows.sh \
   --out /c/temp/apo-installer-check \
   --no-open
 ```
+
+To test an upgrade, pass `--previous-installer /path/to/older-setup.exe`
+or use `-PreviousInstaller` in PowerShell. The verifier installs the older
+release in a custom folder, checks a successful upgrade and exercises the
+recovery path when an older executable is locked.
 
 The verifier retains `installer-lifecycle.json`, a `.txt` transcript and setup
 logs. It exercises conflicting/nonempty destinations, junction ancestors, shortcut

@@ -91,6 +91,9 @@ def main():
         work.mkdir(parents=True)
     else:
         work = Path(tempfile.mkdtemp(prefix="apo-installer-", dir=output.parent))
+    sources = ["packaging/apophysis-reborn.nsi", "packaging/installer_guard.cpp", "packaging/upgrade_receipt.hpp",
+               "packaging/build_installer.py", "src/sha256.hpp"]
+    source_hashes = {name: package.digest(ROOT / name) for name in sources}
     (work / "payload_manifest.hpp").write_text(generate_header(payload, metadata, files), encoding="utf-8")
     (work / "payload.nsh").write_text(generate_include(files), encoding="utf-8")
     staged = work / "staged-inputs"
@@ -127,6 +130,8 @@ def main():
     package.require(package.manifest_files(payload) == files, "Payload changed while compiling installer")
     package.require(package.digest(work / "apophysis-reborn.nsi") == package.digest(ROOT / "packaging/apophysis-reborn.nsi"),
                     "Installer template changed while compiling")
+    package.require(all(package.digest(ROOT / name) == source_hashes[name] for name in sources),
+                    "Installer sources changed while compiling")
     os.link(private_output, output)
     record = {"schema": "apophysis-reborn.installer-build", "schema_version": 1,
               "version": metadata["version"], "source_commit": metadata["source_commit"],
@@ -134,12 +139,11 @@ def main():
               "payload_manifest_sha256": package.digest(payload / "package-manifest.json"),
               "payload_files": len(files), "nsis": tool_version, "compiler": compiler_version,
               "helper_sha256": package.digest(helper), "helper_imports": sorted(imports),
-              "source_sha256": {name: package.digest(ROOT / name) for name in
-                  ["packaging/apophysis-reborn.nsi", "packaging/installer_guard.cpp", "packaging/build_installer.py", "src/sha256.hpp"]},
+              "source_sha256": source_hashes,
               "generated_input_sha256": {name: package.digest(work / name) for name in
                   ["payload_manifest.hpp", "payload.nsh", "installer.nsi"]},
               "windows_executed": False, "signed": False,
-              "policy": "Per-user; versioned side-by-side; no file associations; empty destination; compiled inventory and hash-checked nonrecursive uninstall"}
+              "policy": "Per-user; remove the most recent previous version after successful installation; no file associations; empty destination; compiled inventory and hash-checked nonrecursive uninstall"}
     (work / "installer-build.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"installer": str(output), "work": str(work), **record}, indent=2))
 

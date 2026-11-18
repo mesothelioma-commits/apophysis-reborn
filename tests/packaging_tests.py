@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -48,7 +49,7 @@ class PackagingTests(unittest.TestCase):
                            "flame-cpu.exe": b"fixture CLI, not executable",
                            "examples/normal file.flame": b"<flame/>\n", **(extra or {})}.items():
             self.put(name, data, payload)
-        metadata = {"schema": package.SCHEMA, "schema_version": 1, "version": "0.10.0",
+        metadata = {"schema": package.SCHEMA, "schema_version": 1, "version": "0.10.0", "edition": "Windows x64 runtime",
                     "source_commit": "a" * 40, "files": package.manifest_files(payload)}
         self.write_manifest(payload, metadata)
         return payload
@@ -277,6 +278,16 @@ class PackagingTests(unittest.TestCase):
                          '${U+24}${U+24}{APO_VERSION} ${U+24}${U+24}%PATH%')
         for name in ("line\nbreak", "carriage\rreturn", "nul\0byte"):
             with self.assertRaises(ValueError): installer.nsis_string(name)
+
+    @unittest.skipUnless(shutil.which("c++"), "host C++ compiler needed for installer rule tests")
+    def test_upgrade_rules_and_old_release_receipt(self):
+        name = "examples/a study \u00e9 \U0001f30c.flame"
+        payload = self.fixture_payload({name: b"edited by the release author"})
+        executable = self.root / ("upgrade-test.exe" if os.name == "nt" else "upgrade-test")
+        subprocess.run(["c++", "-std=c++20", "-I", str(ROOT / "packaging"),
+                        str(ROOT / "tests/installer_upgrade_tests.cpp"), "-o", str(executable)], check=True)
+        subprocess.run([str(executable), str(payload / "package-manifest.json"),
+                        package.digest(payload / name)], check=True)
 
     def test_installer_refuses_existing_output_before_invoking_build_tools(self):
         payload = self.fixture_payload()

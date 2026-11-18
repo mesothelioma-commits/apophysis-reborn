@@ -1,5 +1,5 @@
-// Private installer helper. The trusted file inventory is compiled into this
-// executable; an editable on-disk manifest never authorizes a deletion.
+// Per-user installer. Removal uses the embedded inventory or a previous
+// release receipt whose SHA-256 matches its version-specific registration.
 // No user settings, recovery/queue data or arbitrary directory trees are removed.
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -19,6 +19,7 @@
 #include <vector>
 #include "sha256.hpp"
 #include "payload_manifest.hpp"
+#include "upgrade_receipt.hpp"
 
 namespace {
 namespace fs = std::filesystem;
@@ -43,9 +44,10 @@ struct Key {
   ~Key() { if (value) RegCloseKey(value); }
 };
 Handle log_file;
-std::wstring registry_key() {
-  return L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ApophysisReborn-" +
-         std::wstring(payload_version);
+constexpr auto uninstall_keys = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+constexpr std::wstring_view product_prefix = L"ApophysisReborn-";
+std::wstring registry_key(const std::wstring &version = payload_version) {
+  return std::wstring(uninstall_keys) + L"\\" + std::wstring(product_prefix) + version;
 }
 std::string utf8(const std::wstring &s) {
   if (s.empty()) return {};
@@ -57,6 +59,14 @@ std::string utf8(const std::wstring &s) {
   return result;
 }
 std::wstring wide(const std::string &s) { return std::wstring(s.begin(), s.end()); }
+std::wstring from_utf8(const std::string &s) {
+  if (s.empty()) return {};
+  const auto size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), nullptr, 0);
+  if (!size) throw std::runtime_error("Invalid UTF-8 in installed package receipt");
+  std::wstring text(size, 0);
+  MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), text.data(), size);
+  return text;
+}
 void log(const std::wstring &s) {
   const auto bytes = utf8(s + L"\r\n");
   std::cout << bytes;
@@ -223,8 +233,8 @@ fs::path known_folder(REFKNOWNFOLDERID id) {
   return absolute(result.c_str());
 }
 const std::array<const wchar_t *, 2> shortcut_names{L"StartMenuSHA256", L"DesktopSHA256"};
-fs::path shortcut_path(std::size_t index) {
-  const auto name = L"Apophysis Reborn " + std::wstring(payload_version) + L".lnk";
+fs::path shortcut_path(std::size_t index, const std::wstring &version = payload_version) {
+  const auto name = L"Apophysis Reborn " + version + L".lnk";
   return index == 0 ? known_folder(FOLDERID_Programs) / L"Apophysis Reborn" / name
                     : known_folder(FOLDERID_Desktop) / name;
 }
@@ -268,7 +278,7 @@ void check_registry_absent() {
   HKEY key = nullptr;
   const auto result = RegOpenKeyExW(HKEY_CURRENT_USER, registry_key().c_str(), 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &key);
   if (key) RegCloseKey(key);
-  require(result == ERROR_FILE_NOT_FOUND, L"This version is already registered. Uninstall it before reinstalling; other versions may coexist");
+  require(result == ERROR_FILE_NOT_FOUND, L"This version is already registered. Uninstall it before reinstalling");
 }
 void check_destination(const fs::path &root) {
   Directories directories;
@@ -351,6 +361,9 @@ void install(const fs::path &source, const fs::path &uninstaller, const fs::path
     write_value(registration.value, L"UninstallString", L"\"" + (root / L"Uninstall.exe").wstring() + L"\"");
     write_value(registration.value, L"QuietUninstallString", L"\"" + (root / L"Uninstall.exe").wstring() + L"\" /S");
     write_value(registration.value, L"PayloadSHA256", payload_manifest_hash);
+    for (const auto &entry : payload_entries)
+      if (wcscmp(entry.path, L"SHA256SUMS.txt") == 0)
+        write_value(registration.value, L"ChecksumsSHA256", wide(entry.hash));
     write_value(registration.value, L"UninstallerSHA256", wide(uninstaller_hash));
     write_value(registration.value, L"StartMenuSHA256", shortcut_hashes[0]);
     write_value(registration.value, L"DesktopSHA256", shortcut_hashes[1]);
@@ -358,7 +371,7 @@ void install(const fs::path &source, const fs::path &uninstaller, const fs::path
     write_number(registration.value, L"NoModify", 1); write_number(registration.value, L"NoRepair", 1);
     if (RegFlushKey(registration.value) != ERROR_SUCCESS) fail(L"Cannot flush installation registration");
     log(L"Installed Apophysis Reborn " + std::wstring(payload_version) + L" in " + root.wstring());
-    log(L"Other versions, user settings, recovery data and personal projects were preserved.");
+
   } catch (...) {
     if (registration.value) RegCloseKey(std::exchange(registration.value, nullptr));
     if (new_registration) RegDeleteKeyExW(HKEY_CURRENT_USER, registry_key().c_str(), KEY_WOW64_64KEY, 0);
@@ -369,37 +382,41 @@ void install(const fs::path &source, const fs::path &uninstaller, const fs::path
     throw;
   }
 }
-int uninstall(const fs::path &root) {
-  Directories directories;
-  directories.hold(root, false);
-  Key registration;
-  auto result = RegOpenKeyExW(HKEY_CURRENT_USER, registry_key().c_str(), 0,
-                            KEY_QUERY_VALUE | KEY_WOW64_64KEY, &registration.value);
-  if (result != ERROR_SUCCESS) fail(L"This installation has no matching per-user registration", result);
-  require(same_path(absolute(read_value(registration.value, L"InstallLocation").c_str(), true), root) &&
-          read_value(registration.value, L"PayloadSHA256") == payload_manifest_hash,
-          L"This uninstaller does not match the registered folder and payload");
-  std::vector<std::pair<fs::path, std::string>> candidates;
+using Inventory = std::vector<std::pair<fs::path, std::string>>;
+
+void open_registration(Key &key, const std::wstring &version) {
+  const auto status = RegOpenKeyExW(HKEY_CURRENT_USER, registry_key(version).c_str(), 0,
+                                    KEY_QUERY_VALUE | DELETE | KEY_WOW64_64KEY, &key.value);
+  if (status != ERROR_SUCCESS) fail(L"Cannot open the matching per-user installation registration", status);
+  DWORD children = 0;
+  if (RegQueryInfoKeyW(key.value, nullptr, nullptr, nullptr, &children, nullptr, nullptr, nullptr,
+                       nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS || children)
+    fail(L"Unexpected uninstall registration layout");
+}
+
+int remove_install(const fs::path &root, const std::wstring &version, Key &registration,
+                   const Inventory &files, Directories &directories) {
+  Inventory candidates;
   std::set<fs::path> folders{root};
-  for (const auto &entry : payload_entries) {
-    const fs::path path = root / entry.path;
-    candidates.emplace_back(path, entry.hash);
+  for (const auto &[relative, hash] : files) {
+    const auto path = root / relative;
+    candidates.emplace_back(path, hash);
     for (auto parent = path.parent_path(); parent != root && parent != parent.root_path(); parent = parent.parent_path())
       folders.insert(parent);
   }
   const auto uninstall_hash = read_value(registration.value, L"UninstallerSHA256");
-  require(uninstall_hash.size() == 64, L"Invalid uninstaller identity");
-  candidates.emplace_back(root / L"Uninstall.exe", utf8(uninstall_hash));
+  require(apo::installer::is_digest(utf8(uninstall_hash)), L"Invalid uninstaller identity");
   fs::path menu_folder;
   for (std::size_t i = 0; i < shortcut_names.size(); ++i) {
     const auto expected = read_value(registration.value, shortcut_names[i]);
     if (!expected.empty()) {
-      require(expected.size() == 64, L"Invalid shortcut identity");
-      const auto path = shortcut_path(i);
+      require(apo::installer::is_digest(utf8(expected)), L"Invalid shortcut identity");
+      const auto path = shortcut_path(i, version);
       candidates.emplace_back(path, utf8(expected));
       if (i == 0) menu_folder = path.parent_path();
     }
   }
+  candidates.emplace_back(root / L"Uninstall.exe", utf8(uninstall_hash)); // Keep the retry path until last.
   std::vector<std::pair<fs::path, Handle>> ready;
   bool retained = false;
   // Open and verify every remaining owned file before deleting the first one.
@@ -421,19 +438,197 @@ int uninstall(const fs::path &root) {
   }
   for (auto &[path, file] : ready) { remove_handle(file); log(L"Removed: " + path.wstring()); }
   RegCloseKey(std::exchange(registration.value, nullptr));
-  result = RegDeleteKeyExW(HKEY_CURRENT_USER, registry_key().c_str(), KEY_WOW64_64KEY, 0);
+  const auto result = RegDeleteKeyExW(HKEY_CURRENT_USER, registry_key(version).c_str(), KEY_WOW64_64KEY, 0);
   if (result != ERROR_SUCCESS) fail(L"Application files were removed but the uninstall registration could not be removed", result);
-  directories.clear();
+  if (!menu_folder.empty()) folders.insert(menu_folder);
   std::vector<fs::path> ordered(folders.begin(), folders.end());
   std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) { return a.native().size() > b.native().size(); });
-  for (const auto &path : ordered) RemoveDirectoryW(path.c_str()); // Never recursive.
-  // A shared Start Menu folder is removed only when completely empty.
-  if (!menu_folder.empty()) RemoveDirectoryW(menu_folder.c_str());
+  for (const auto &path : ordered) {
+    // Pin every ancestor while inspecting the final component without following
+    // it. An empty folder reached via a junction can belong to another program.
+    if (!directories.held.contains(path.parent_path().wstring())) continue;
+    directories.held.erase(path.wstring());
+    Handle dir(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+    if (!dir) continue;
+    const auto attrs = information(dir.value).dwFileAttributes;
+    if (!(attrs & FILE_ATTRIBUTE_DIRECTORY) || (attrs & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_READONLY))) continue;
+    FILE_DISPOSITION_INFO disposition{TRUE};
+    SetFileInformationByHandle(dir.value, FileDispositionInfo, &disposition, sizeof(disposition)); // Empty only.
+  }
   if (GetFileAttributesW(root.c_str()) != INVALID_FILE_ATTRIBUTES) retained = true;
   log(retained ? L"Uninstalled. Modified or additional files remain in their original locations."
                : L"Uninstalled the versioned program payload.");
   log(L"User preferences, projects, recovery data, render checkpoints and other versions were not removed.");
   return retained ? 10 : 0;
+}
+int uninstall(const fs::path &root) {
+  Directories directories;
+  directories.hold(root, false);
+  Key registration;
+  open_registration(registration, payload_version);
+  require(same_path(absolute(read_value(registration.value, L"InstallLocation").c_str(), true), root) &&
+          read_value(registration.value, L"PayloadSHA256") == payload_manifest_hash,
+          L"This uninstaller does not match the registered folder and payload");
+  Inventory files;
+  for (const auto &entry : payload_entries) files.emplace_back(entry.path, entry.hash);
+  return remove_install(root, payload_version, registration, files, directories);
+}
+struct WindowsPathOrder {
+  bool operator()(const std::wstring &a, const std::wstring &b) const {
+    return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_LESS_THAN;
+  }
+};
+std::string digest(const std::string &bytes) {
+  Sha256 hash;
+  hash.add(reinterpret_cast<const unsigned char *>(bytes.data()), bytes.size());
+  return hash.finish();
+}
+Inventory read_receipt(const fs::path &root, const std::wstring &version, HKEY registration) {
+  const auto manifest_hash = utf8(read_value(registration, L"PayloadSHA256"));
+  auto file = read_file(root / L"package-manifest.json");
+  const auto length = size_of(information(file.value));
+  require(length > 0 && length <= 16 * 1024 * 1024, L"Invalid previous package receipt size");
+  std::string text(static_cast<std::size_t>(length), '\0');
+  DWORD count = 0;
+  if (!ReadFile(file.value, text.data(), static_cast<DWORD>(length), &count, nullptr) || count != length)
+    fail(L"Cannot read the previous package receipt");
+  require(digest(text) == manifest_hash, L"The previous package receipt differs from its registered SHA-256");
+  const auto entries = apo::installer::receipt_files(text, utf8(version));
+  Inventory files;
+  std::set<std::wstring, WindowsPathOrder> names{L"Uninstall.exe", L"package-manifest.json", L"SHA256SUMS.txt"};
+  for (const auto &[name, hash] : entries) {
+    auto spelling = from_utf8(name);
+    require(spelling.size() <= 150, L"Overlong previous payload path");
+    std::replace(spelling.begin(), spelling.end(), L'/', L'\\');
+    const fs::path relative(spelling);
+    require(!relative.has_root_path() && relative.lexically_normal() == relative, L"Non-relative previous payload path");
+    for (const auto &part : relative) component(part.wstring());
+    require(names.emplace(spelling).second, L"Duplicate or reserved previous payload path");
+    files.emplace_back(relative, hash);
+  }
+  for (const auto &[relative, hash] : files) {
+    for (auto parent = relative.parent_path(); !parent.empty(); parent = parent.parent_path())
+      require(!names.contains(parent.wstring()), L"Previous receipt has a file in place of a folder");
+  }
+  auto sums = utf8(read_value(registration, L"ChecksumsSHA256", true));
+  if (sums.empty()) {
+    // Releases through 0.11 recorded only the manifest hash. Derive the
+    // original checksum file from that authenticated inventory, not installed bytes.
+    sums = digest(apo::installer::receipt_checksums(entries, manifest_hash, text.find("\r\n") != text.npos));
+  }
+  require(apo::installer::is_digest(sums), L"Invalid checksum-file identity");
+  files.emplace_back(L"SHA256SUMS.txt", sums);
+  files.emplace_back(L"package-manifest.json", manifest_hash);
+  return files; // Close the read handle before removal preflights DELETE access.
+}
+
+bool product_registration(HKEY key, const std::wstring &version) {
+  return read_value(key, L"DisplayName", true) == L"Apophysis Reborn " + version &&
+         read_value(key, L"DisplayVersion", true) == version &&
+         read_value(key, L"Publisher", true) == L"Apophysis Reborn project";
+}
+struct Registered {
+  std::wstring version;
+  fs::path root;
+};
+std::map<apo::installer::Version, Registered> installed_releases() {
+  std::map<apo::installer::Version, Registered> releases;
+  Key parent;
+  auto status = RegOpenKeyExW(HKEY_CURRENT_USER, uninstall_keys, 0, KEY_ENUMERATE_SUB_KEYS | KEY_WOW64_64KEY, &parent.value);
+  if (status != ERROR_SUCCESS) fail(L"Cannot inspect current-user installed applications", status);
+  for (DWORD i = 0; ; ++i) {
+    std::array<wchar_t, 256> name{};
+    DWORD length = static_cast<DWORD>(name.size());
+    status = RegEnumKeyExW(parent.value, i, name.data(), &length, nullptr, nullptr, nullptr, nullptr);
+    if (status == ERROR_NO_MORE_ITEMS) break;
+    if (status != ERROR_SUCCESS) fail(L"Cannot enumerate current-user installed applications", status);
+    const std::wstring_view key_name(name.data(), length);
+    if (!key_name.starts_with(product_prefix)) continue;
+    const std::wstring version(key_name.substr(product_prefix.size()));
+    const auto number = apo::installer::parse_version(version);
+    if (!number) continue;
+    Key key;
+    status = RegOpenKeyExW(parent.value, name.data(), 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &key.value);
+    if (status == ERROR_FILE_NOT_FOUND) continue;
+    if (status != ERROR_SUCCESS) fail(L"Cannot inspect an Apophysis Reborn registration", status);
+    if (!product_registration(key.value, version)) continue;
+    releases.emplace(*number, Registered{version, absolute(read_value(key.value, L"InstallLocation").c_str())});
+  }
+  return releases;
+}
+fs::path final_directory(Directories &dirs, const fs::path &path) {
+  dirs.hold(path, false);
+  std::array<wchar_t, 32768> resolved{};
+  const auto n = GetFinalPathNameByHandleW(dirs.held.at(path.wstring()).value, resolved.data(),
+                                           static_cast<DWORD>(resolved.size()), FILE_NAME_NORMALIZED | VOLUME_NAME_NT);
+  require(n && n < resolved.size(), L"Cannot resolve registered installation folders");
+  return fs::path(std::wstring(resolved.data(), n));
+}
+bool contains_directory(const fs::path &parent, fs::path path) {
+  while (!path.empty()) {
+    if (same_path(parent, path)) return true;
+    if (path == path.root_path()) break;
+    path = path.parent_path();
+  }
+  return false;
+}
+int retire_previous(const fs::path &current_root) {
+  std::wstring previous;
+  try {
+    const auto incoming = apo::installer::parse_version(payload_version);
+    require(incoming.has_value(), L"Invalid installer release version");
+    // The incoming key has just been created. install() already rejects any
+    // pre-existing equal registration, including a concurrent creation.
+    auto releases = installed_releases();
+    apo::installer::UpgradeSelection selection(*incoming);
+    for (const auto &[number, release] : releases)
+      if (number != *incoming) selection.consider(number);
+    if (!selection.previous()) return 0;
+    const auto &old = releases.at(*selection.previous());
+    previous = old.version;
+    log(L"Checking previous version " + previous + L" in " + old.root.wstring());
+    Directories dirs;
+    const auto prior = final_directory(dirs, old.root);
+    // Guard physical folder aliases as well as nested custom install paths.
+    // Release these additional handles before trying to remove an empty old root.
+    {
+      Directories other_dirs;
+      auto check_overlap = [&](const fs::path &other) {
+        const auto path = final_directory(other_dirs, other);
+        require(!contains_directory(prior, path) && !contains_directory(path, prior),
+                L"Two registered installation folders overlap");
+      };
+      check_overlap(current_root);
+      for (const auto &[number, release] : releases) {
+        if (number == *incoming || release.version == previous) continue;
+        if (GetFileAttributesW(release.root.c_str()) == INVALID_FILE_ATTRIBUTES && missing(GetLastError())) continue;
+        check_overlap(release.root);
+      }
+    }
+    Key key;
+    open_registration(key, previous);
+    require(product_registration(key.value, previous) &&
+            same_path(old.root, absolute(read_value(key.value, L"InstallLocation").c_str())) &&
+            same_path(old.root / L"apophysis-reborn.exe", absolute(read_value(key.value, L"DisplayIcon").c_str())) &&
+            read_value(key.value, L"UninstallString") == L"\"" + (old.root / L"Uninstall.exe").wstring() + L"\"",
+            L"The previous version's registration does not match its installation folder");
+    {
+      // Portable distributions have the same runtime receipt but no registered
+      // setup-generated uninstaller. Verify that identity without running it.
+      const auto uninstaller = read_file(old.root / L"Uninstall.exe");
+      require(hash_file(uninstaller.value) == utf8(read_value(key.value, L"UninstallerSHA256")),
+              L"The previous version's uninstaller differs from its registration");
+    }
+    const auto files = read_receipt(old.root, previous, key.value);
+    remove_install(old.root, previous, key, files, dirs);
+    log(L"Finished removing the previous version " + previous);
+    return 0;
+  } catch (const std::exception &error) {
+    log(L"New version installed. Previous version cleanup deferred. " + from_utf8(error.what()));
+    log(L"Close the editor and render processes. Use Windows Installed apps to uninstall the previous version " + previous + L".");
+    return 20;
+  }
 }
 void open_log(const wchar_t *name) {
   const auto path = absolute(name);
@@ -456,7 +651,11 @@ int wmain(int argc, wchar_t **argv) {
       require((wcscmp(argv[5], L"0") == 0 || wcscmp(argv[5], L"1") == 0) &&
               (wcscmp(argv[6], L"0") == 0 || wcscmp(argv[6], L"1") == 0), L"Invalid shortcut selection");
       open_log(argv[7]);
-      install(absolute(argv[2]), absolute(argv[3]), absolute(argv[4], true), argv[5][0] == L'1', argv[6][0] == L'1');
+      const auto root = absolute(argv[4], true);
+      install(absolute(argv[2]), absolute(argv[3]), root, argv[5][0] == L'1', argv[6][0] == L'1');
+      const auto result = retire_previous(root);
+      if (SUCCEEDED(initialized)) CoUninitialize();
+      return result;
     } else if (argc == 4 && wcscmp(argv[1], L"uninstall") == 0) {
       open_log(argv[3]);
       const auto result = uninstall(absolute(argv[2], true));
