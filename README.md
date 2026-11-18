@@ -1,20 +1,32 @@
-# Apophysis Reborn 0.10.0 — Release Hardening
+# Apophysis Reborn 0.10.1 — Responsiveness and Rendering
 
-Milestone 10 adds a lean Windows portable edition, a per-user installer, embedded offline help, build/system diagnostics, reproducible release tooling and measured benchmark workflows. The native source-preserving editor, CPU/Vulkan renderer, creative tools, persistent queue, scripting/plugins, timeline, morphing and high-resolution output remain available.
+This maintenance release addresses preview lifecycle bugs, UI stalls during device discovery and recovery saving, render-queue event backlogs, and measured image reconstruction/encoding overhead. It builds on Milestone 10’s portable and installer editions, offline help, build diagnostics and reproducible release tooling. The native source-preserving editor, CPU/Vulkan renderer, creative tools, persistent queue, scripting/plugins, timeline, morphing and high-resolution output remain available.
 
-**0.10.0 is a release-hardening checkpoint, not a claim of complete original Apophysis 2.x/7X/AV parity.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
+**0.10.1 is a maintenance checkpoint. Complete original Apophysis 2.x/7X/AV feature parity remains unfinished.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
 
 ## Choose a distribution
 
 | Edition | Entry point and contents |
 | --- | --- |
-| Lean portable | Extract `apophysis-reborn-0.10.0-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.10.0-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
-| Per-user installer | Run `apophysis-reborn-0.10.0-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.0`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
-| Complete source/history and SDK | Extract `apophysis-reborn-0.10.0-release-hardening.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
+| Lean portable | Extract `apophysis-reborn-0.10.1-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.10.1-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
+| Per-user installer | Run `apophysis-reborn-0.10.1-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.1`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
+| Complete source/history and SDK | Extract `apophysis-reborn-0.10.1-responsiveness.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
 
 Setup requires an empty destination and keeps different versions side by side. Uninstall removes unchanged installed payload files and retains modified/extra files; external projects, settings and recovery data remain. An interrupted install can leave a partial folder; automatic repair or replacement is not provided. Portable and installed applications normally share per-user settings/data, so separate program directories are not isolated user profiles. Keep artwork outside the program folder and retain the original executable/plugins for in-progress checkpoints. [Getting started and recovery](docs/USER_MANUAL.md)
 
-## New in this checkpoint
+## New in this maintenance release
+
+| Area | Change |
+| --- | --- |
+| Preview lifecycle | Handles stop/replacement/deletion during direct Qt callbacks, rejects stale completions, coalesces progress, and moves validation/fitting to the persistent worker. |
+| Device selection | CPU-only settings do not enumerate Vulkan. Other modes discover devices in the background, cache results and offer an explicit refresh; closing the dialog does not join a blocked driver probe. |
+| Recovery | The 45-second autosave captures a snapshot and performs thumbnail encoding, preparation, serialization and atomic writes on one worker. Pending saves coalesce, and changing documents invalidates obsolete work. |
+| Render queue | Reuses one render worker across jobs, bounds progress delivery, and removes whole-queue saves from cosmetic progress updates while retaining durable state transitions and checkpoints. |
+| Renderer | Accounts for CPU chaos-selection tables in the working-memory budget, skips repeated zero-light reconstruction work and reduces repeated-pixel output conversion. The output precision and PNG compression settings are retained. |
+
+[Responsiveness and rendering review](docs/RESPONSIVENESS_REVIEW.md) explains the findings, reproductions, measurements and platform limits. The original intermittent freezes reported in 0.8/0.9 have not been conclusively tied to one cause on the user’s machine.
+
+## Release tooling introduced in Milestone 10
 
 | Area | Implemented behavior |
 | --- | --- |

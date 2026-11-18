@@ -3,7 +3,6 @@
 #include "../plugin.hpp"
 #include "document_session.hpp"
 #include "flame_io.hpp"
-#include <QDateTime>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
@@ -16,6 +15,7 @@
 #include <QLabel>
 #include <QLockFile>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSignalBlocker>
@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -379,8 +380,8 @@ struct RenderQueue::Impl {
   std::unique_ptr<QLockFile> lock;
   std::vector<RenderJob> jobs;
   bool running = false, shuttingDown = false;
+  std::uint64_t activeRun = 0;
   enum class StopIntent { none, pause, cancel } stopIntent = StopIntent::none;
-  std::jthread worker;
   struct Finish {
     QString id, error;
     std::optional<FileRenderResult> result;
@@ -390,13 +391,58 @@ struct RenderQueue::Impl {
   };
   std::mutex mutex;
   std::optional<Finish> finished;
+  struct Progress {
+    QString id;
+    FileRenderProgress value;
+  };
+  struct Work {
+    RenderJob snapshot;
+    std::stop_token stop;
+  };
+  std::optional<Progress> progress;
+  std::optional<Work> pending;
+  std::condition_variable wake, completed;
+  std::stop_source activeStop;
+  bool closing = false;
+  QTimer progressTimer;
+  std::jthread worker;
   double elapsedBefore = 0, phaseStartSeconds = 0;
   std::uint64_t phaseStartSamples = 0;
   unsigned phaseStartStrips = 0;
   QString measuredPhase;
-  qint64 lastSave = 0;
 
   explicit Impl(RenderQueue *q) : owner(q) {}
+  ~Impl() {
+    progressTimer.stop();
+    activeStop.request_stop();
+    {
+      std::lock_guard guard(mutex);
+      closing = true;
+      pending.reset();
+    }
+    wake.notify_one();
+    if (worker.joinable())
+      worker.join();
+  }
+  void execute(const RenderJob &snapshot, std::stop_token stop);
+  void ensureWorker() {
+    if (worker.joinable())
+      return;
+    worker = std::jthread([this] {
+      for (;;) {
+        std::optional<Work> work;
+        {
+          std::unique_lock guard(mutex);
+          wake.wait(guard, [this] { return closing || pending.has_value(); });
+          if (closing)
+            return;
+          work = std::move(pending);
+          pending.reset();
+        }
+        execute(work->snapshot, work->stop);
+      }
+    });
+  }
   auto find(const QString &id) {
     return std::find_if(jobs.begin(), jobs.end(),
                         [&](const auto &j) { return j.id == id; });
@@ -417,8 +463,11 @@ struct RenderQueue::Impl {
     } catch (const std::exception &error) {
       running = false;
       stopIntent = StopIntent::pause;
-      worker.request_stop();
+      activeStop.request_stop();
+      const QPointer<RenderQueue> alive(owner);
       emit owner->runningChanged(false);
+      if (!alive)
+        return false;
       emit owner->problem(
           text(error.what()) +
           " The queue has stopped; save a copy before continuing.");
@@ -449,6 +498,19 @@ RenderQueue::RenderQueue(QString stateFile, QString checkpointRoot,
   impl_->checkpointRoot = absolute(checkpointRoot);
   if (!QDir().mkpath(impl_->checkpointRoot))
     throw std::runtime_error("Cannot create checkpoint storage");
+  // Only the latest worker update matters. A GUI timer bounds delivery even
+  // when a render produces thousands of strip/checkpoint notifications.
+  impl_->progressTimer.setInterval(50);
+  connect(&impl_->progressTimer, &QTimer::timeout, this, [this] {
+    std::optional<Impl::Progress> progress;
+    {
+      std::lock_guard guard(impl_->mutex);
+      progress = std::move(impl_->progress);
+      impl_->progress.reset();
+    }
+    if (progress)
+      updateProgress(progress->id, progress->value);
+  });
 }
 RenderQueue::~RenderQueue() {
   impl_->shuttingDown = true;
@@ -647,14 +709,19 @@ void RenderQueue::start() {
     launchNext();
 }
 void RenderQueue::pause() {
+  const QPointer<RenderQueue> alive(this);
   impl_->running = false;
-  emit runningChanged(false);
   if (isBusy()) {
     impl_->stopIntent = Impl::StopIntent::pause;
     impl_->find(impl_->active)->state = RenderJobState::pausing;
-    impl_->worker.request_stop();
+    impl_->activeStop.request_stop();
   }
   impl_->persistResult();
+  if (!alive)
+    return;
+  emit runningChanged(false);
+  if (!alive)
+    return;
   emit changed();
 }
 void RenderQueue::cancel(const QString &id) {
@@ -664,7 +731,7 @@ void RenderQueue::cancel(const QString &id) {
   if (id == impl_->active) {
     impl_->stopIntent = Impl::StopIntent::cancel;
     found->state = RenderJobState::pausing;
-    impl_->worker.request_stop();
+    impl_->activeStop.request_stop();
     impl_->persistResult();
     emit changed();
   } else {
@@ -721,10 +788,70 @@ void RenderQueue::disableAutoSave() { impl_->stateFile.clear(); }
 void RenderQueue::pauseAndWait() {
   if (!isBusy())
     return;
+  const QPointer<RenderQueue> alive(this);
+  const auto run = impl_->activeRun;
   pause();
-  if (impl_->worker.joinable())
-    impl_->worker.join();
+  // pause() publishes signals. A direct slot or nested event loop can finish
+  // this job (and even start another with the same ID) before it returns.
+  if (!alive || !isBusy() || impl_->activeRun != run)
+    return;
+  {
+    std::unique_lock guard(impl_->mutex);
+    impl_->completed.wait(guard, [this] { return impl_->finished.has_value(); });
+  }
   finishActive();
+}
+
+void RenderQueue::Impl::execute(const RenderJob &snapshot, std::stop_token stop) {
+  auto options = snapshot.render;
+  auto file = snapshot.file;
+  options.stop_token = stop;
+  options.progress = {};
+  file.resume = snapshot.checkpointed;
+  file.status = [this, id = snapshot.id](const FileRenderProgress &p) {
+    std::lock_guard guard(mutex);
+    progress = Progress{id, p};
+  };
+  if (snapshot.destination_sha256) {
+    file.before_publish = [snapshot, stop] {
+      const auto path = filesystemPath(snapshot.destination);
+      const auto state = std::filesystem::symlink_status(path);
+      const bool exists = std::filesystem::exists(state);
+      if (snapshot.destination_sha256->empty()) {
+        if (exists || std::filesystem::is_symlink(state))
+          throw std::runtime_error("The frame destination appeared after queue admission. The new file was not replaced.");
+      } else if (!exists || std::filesystem::is_symlink(state) ||
+                 !std::filesystem::is_regular_file(state) ||
+                 detail::sha256_file(path, stop) != *snapshot.destination_sha256) {
+        throw std::runtime_error("The frame destination changed after queue admission. The changed file was not replaced.");
+      }
+    };
+  }
+  Finish result;
+  result.id = snapshot.id;
+  const auto began = std::chrono::steady_clock::now();
+  try {
+    result.result = render_to_file(
+        snapshot.flame, options, filesystemPath(snapshot.destination), file);
+    if (snapshot.destination_sha256)
+      result.destination_sha256 = detail::sha256_file(filesystemPath(snapshot.destination));
+  } catch (const RenderCancelled &) {
+    result.cancelled = true;
+  } catch (const std::exception &error) {
+    result.result.reset();
+    result.error = text(error.what());
+  }
+  result.elapsed =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - began)
+          .count();
+  result.checkpointed = has_render_checkpoint(file.checkpoint_directory);
+  {
+    std::lock_guard lock(mutex);
+    finished = std::move(result);
+  }
+  completed.notify_one();
+  QMetaObject::invokeMethod(owner, &RenderQueue::finishActive,
+                            Qt::QueuedConnection);
 }
 
 void RenderQueue::launchNext() {
@@ -737,7 +864,10 @@ void RenderQueue::launchNext() {
       });
   if (found == impl_->jobs.end()) {
     impl_->running = false;
+    const QPointer<RenderQueue> alive(this);
     emit runningChanged(false);
+    if (!alive)
+      return;
     emit changed();
     return;
   }
@@ -750,69 +880,32 @@ void RenderQueue::launchNext() {
   pending.phase = pending.checkpointed ? "Resuming checkpoint" : "Preparing";
   pending.error.clear();
   pending.phase_remaining_seconds = -1;
+  auto snapshot = pending;
+  impl_->ensureWorker();
   impl_->persist(next);
   impl_->jobs = std::move(next);
-  const auto snapshot = impl_->jobs[index];
   impl_->active = snapshot.id;
+  ++impl_->activeRun;
   impl_->stopIntent = Impl::StopIntent::none;
   impl_->elapsedBefore = snapshot.elapsed_seconds;
   impl_->measuredPhase.clear();
-  impl_->lastSave = QDateTime::currentMSecsSinceEpoch();
-  impl_->worker = std::jthread([this, snapshot](std::stop_token stop) {
-    auto options = snapshot.render;
-    auto file = snapshot.file;
-    options.stop_token = stop;
-    options.progress = {};
-    file.resume = snapshot.checkpointed;
-    file.status = [this, id = snapshot.id](const FileRenderProgress &p) {
-      QMetaObject::invokeMethod(
-          this, [this, id, p] { updateProgress(id, p); }, Qt::QueuedConnection);
-    };
-    if (snapshot.destination_sha256) {
-      file.before_publish = [snapshot, stop] {
-        const auto path = filesystemPath(snapshot.destination);
-        const auto state = std::filesystem::symlink_status(path);
-        const bool exists = std::filesystem::exists(state);
-        if (snapshot.destination_sha256->empty()) {
-          if (exists || std::filesystem::is_symlink(state))
-            throw std::runtime_error("The frame destination appeared after queue admission. The new file was not replaced.");
-        } else if (!exists || std::filesystem::is_symlink(state) ||
-                   !std::filesystem::is_regular_file(state) ||
-                   detail::sha256_file(path, stop) != *snapshot.destination_sha256) {
-          throw std::runtime_error("The frame destination changed after queue admission. The changed file was not replaced.");
-        }
-      };
-    }
-    Impl::Finish finished;
-    finished.id = snapshot.id;
-    const auto began = std::chrono::steady_clock::now();
-    try {
-      finished.result = render_to_file(
-          snapshot.flame, options, filesystemPath(snapshot.destination), file);
-      if (snapshot.destination_sha256)
-        finished.destination_sha256 = detail::sha256_file(filesystemPath(snapshot.destination));
-    } catch (const RenderCancelled &) {
-      finished.cancelled = true;
-    } catch (const std::exception &error) {
-      finished.result.reset();
-      finished.error = text(error.what());
-    }
-    finished.elapsed =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - began)
-            .count();
-    finished.checkpointed = has_render_checkpoint(file.checkpoint_directory);
-    {
-      std::lock_guard lock(impl_->mutex);
-      impl_->finished = std::move(finished);
-    }
-    QMetaObject::invokeMethod(this, &RenderQueue::finishActive,
-                              Qt::QueuedConnection);
-  });
+  impl_->activeStop = std::stop_source{};
+  {
+    std::lock_guard guard(impl_->mutex);
+    impl_->progress.reset();
+    impl_->pending = Impl::Work{std::move(snapshot), impl_->activeStop.get_token()};
+  }
+  impl_->progressTimer.start();
+  impl_->wake.notify_one();
+  const QPointer<RenderQueue> alive(this);
   emit busyChanged(true);
+  if (!alive)
+    return;
   emit changed();
 }
 void RenderQueue::updateProgress(const QString &id,
-                                 const FileRenderProgress &p) {
+                                 const FileRenderProgress &p,
+                                 bool notifyObservers) {
   if (id != impl_->active)
     return;
   auto &j = *impl_->find(id);
@@ -855,21 +948,30 @@ void RenderQueue::updateProgress(const QString &id,
           elapsed * double(p.total_strips - p.completed_strips) /
           double(p.completed_strips - impl_->phaseStartStrips);
   }
-  if (QDateTime::currentMSecsSinceEpoch() - impl_->lastSave >= 1000) {
-    impl_->lastSave = QDateTime::currentMSecsSinceEpoch();
-    impl_->persistResult();
-  }
-  emit changed();
+  // Progress is cosmetic. Durable transitions and render checkpoints are
+  // saved independently; serializing the whole queue here stalls the GUI.
+  if (notifyObservers)
+    emit changed();
 }
 void RenderQueue::finishActive() {
   std::optional<Impl::Finish> finish;
+  std::optional<Impl::Progress> progress;
   {
     std::lock_guard lock(impl_->mutex);
     finish = std::move(impl_->finished);
     impl_->finished.reset();
+    if (finish) {
+      progress = std::move(impl_->progress);
+      impl_->progress.reset();
+    }
   }
   if (!finish || finish->id != impl_->active)
     return;
+  impl_->progressTimer.stop();
+  // Do not publish an intermediate signal while completion is being consumed:
+  // a direct slot may synchronously pause and wait for this same completion.
+  if (progress)
+    updateProgress(progress->id, progress->value, false);
   auto &j = *impl_->find(finish->id);
   j.elapsed_seconds = impl_->elapsedBefore + finish->elapsed;
   j.phase_remaining_seconds = -1;
@@ -902,17 +1004,29 @@ void RenderQueue::finishActive() {
   }
   const bool success = j.state == RenderJobState::complete;
   impl_->active.clear();
+  const QPointer<RenderQueue> alive(this);
   const bool saved = impl_->persistResult();
+  if (!alive)
+    return;
   emit busyChanged(false);
+  if (!alive)
+    return;
   emit changed();
+  if (!alive)
+    return;
   emit jobFinished(finish->id, success);
+  if (!alive)
+    return;
   if (saved && impl_->running && !impl_->shuttingDown)
     QTimer::singleShot(0, this, [this] {
       try {
         launchNext();
       } catch (const std::exception &error) {
         impl_->running = false;
+        const QPointer<RenderQueue> alive(this);
         emit runningChanged(false);
+        if (!alive)
+          return;
         emit problem(text(error.what()));
       }
     });
@@ -1046,8 +1160,10 @@ void RenderQueueDialog::refresh() {
         item = new QTableWidgetItem;
         table_->setItem(int(i), c, item);
       }
-      item->setText(values[c]);
-      item->setToolTip(values[c]);
+      if (item->text() != values[c])
+        item->setText(values[c]);
+      if (item->toolTip() != values[c])
+        item->setToolTip(values[c]);
       if (c == 0)
         item->setData(Qt::UserRole, j.id);
     }

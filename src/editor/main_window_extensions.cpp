@@ -388,9 +388,7 @@ void MainWindow::exportUpr() {
     record("Exported historical Apophysis UPR: " + path);
   });
 }
-void MainWindow::captureProjectState() {
-  if (!session_.hasDocument())
-    return;
+ProjectFile MainWindow::projectViewSnapshot() const {
   auto project = session_.projectSnapshot();
   const auto &preview = preview_.settings();
   auto &p = project.preview_settings;
@@ -410,23 +408,31 @@ void MainWindow::captureProjectState() {
   workspace["coordinates"] = std::to_string(coordinates_->currentIndex());
   workspace["grid"] = grid_->isChecked() ? "1" : "0";
   workspace["snap"] = snap_->isChecked() ? "1" : "0";
-  if (!previewCanvas_->image().isNull()) {
-    QByteArray png;
-    QBuffer buffer(&png);
-    if (buffer.open(QIODevice::WriteOnly) &&
-        previewCanvas_->image()
-            .scaled(384, 384, Qt::KeepAspectRatio, Qt::SmoothTransformation)
-            .save(&buffer, "PNG"))
-      p["thumbnail-png"] = png.toBase64().toStdString();
-  }
   project.render_settings = renderSettings_;
   project.render_presets = renderPresets_;
   project.metadata["application"] = "Apophysis Reborn";
   project.metadata["application-version"] = application_version();
-  auto remember = [&](const Transform &transform) {
-    for (const auto &term : transform.variations)
-      if (term.plugin) {
-        const auto &info = term.plugin->info();
+  return project;
+}
+namespace {
+// Called with owned snapshots only. This may parse a large library/timeline and
+// encode a thumbnail, so the periodic recovery path runs it off the GUI thread.
+void completeProjectSnapshot(ProjectFile &project, const QImage &image,
+                             const std::vector<PluginInfo> &plugins) {
+  auto &p = project.preview_settings;
+  if (!image.isNull()) {
+    QByteArray png;
+    QBuffer buffer(&png);
+    if (buffer.open(QIODevice::WriteOnly) &&
+        image
+            .scaled(384, 384, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+            .save(&buffer, "PNG"))
+      p["thumbnail-png"] = png.toBase64().toStdString();
+  }
+  auto remember = [&](const LegacyDocument &document,
+                      std::optional<std::size_t> entry = {}) {
+    for (const auto &info : plugins)
+      if (document.references_plugin(info.name, info.id, info.version, entry)) {
         auto it = std::find_if(
             project.plugin_references.begin(), project.plugin_references.end(),
             [&](const auto &ref) { return ref.id == info.id; });
@@ -443,32 +449,49 @@ void MainWindow::captureProjectState() {
         }
       }
   };
-  for (std::size_t i = 0; i < session_.document().entries().size(); ++i)
-    if (!session_.document().render_issue(i)) {
-      const auto f = session_.document().render_model(i);
-      for (const auto &t : f.transforms)
-        remember(t);
-      if (f.final_transform)
-        remember(*f.final_transform);
-    }
+  // No active plugins means there is nothing to refresh. Existing reference
+  // metadata remains intact, including unavailable plugins and future entries.
+  if (plugins.empty())
+    return;
+  remember(LegacyDocument::parse(project.library_bytes));
   if (project.animation_data && is_animation_payload(*project.animation_data)) {
     try {
       const auto clip = parse_animation(*project.animation_data);
       for (const auto &key : clip.keyframes) {
-        const auto document = LegacyDocument::parse(key.library_bytes);
-        if (document.render_issue(key.selected_index))
-          continue;
-        const auto frame = document.render_model(key.selected_index);
-        for (const auto &transform : frame.transforms)
-          remember(transform);
-        if (frame.final_transform)
-          remember(*frame.final_transform);
+        try {
+          const auto document = LegacyDocument::parse(key.library_bytes);
+          remember(document, key.selected_index);
+        } catch (const std::runtime_error &) {
+        } catch (const std::invalid_argument &) {
+        }
       }
     } catch (const std::exception &) {
       // Preserve newer or unsupported animation payloads without interpretation.
     }
   }
+}
+} // namespace
+void MainWindow::captureProjectState() {
+  if (!session_.hasDocument())
+    return;
+  auto project = projectViewSnapshot();
+  completeProjectSnapshot(project, previewCanvas_->image(), enabled_plugins());
   session_.setProjectState(std::move(project));
+}
+void MainWindow::requestRecovery() {
+  if (closing_)
+    return;
+  if (!session_.hasDocument() || !session_.isModified() || !session_.isProject()) {
+    session_.requestRecovery();
+    return;
+  }
+  auto project = projectViewSnapshot();
+  auto image = previewCanvas_->image();
+  auto plugins = enabled_plugins();
+  session_.requestRecovery(std::move(project),
+      [image = std::move(image), plugins = std::move(plugins)](ProjectFile &snapshot) {
+        completeProjectSnapshot(snapshot, image, plugins);
+      });
 }
 void MainWindow::restoreProjectState() {
   renderSettings_.clear();

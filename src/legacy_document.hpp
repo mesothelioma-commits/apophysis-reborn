@@ -45,6 +45,11 @@ public:
     const std::string& bytes() const { return bytes_; }
     const std::vector<LegacyEntry>& entries() const { return entries_; }
     std::string_view element_bytes(std::size_t index) const; // Source encoding; valid until edit.
+    // Inspect retained attributes without constructing render models or consulting
+    // the live plugin registry. An explicit saved identity/version must match.
+    bool references_plugin(std::string_view variation, std::string_view id,
+                           std::string_view version,
+                           std::optional<std::size_t> entry = {}) const;
     Flame render_model(std::size_t index) const;
     std::optional<std::string> render_issue(std::size_t index) const;
     void edit(std::size_t index, const LegacyEdits& edits);

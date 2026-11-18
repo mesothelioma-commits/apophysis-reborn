@@ -546,6 +546,56 @@ void precision_tests(const fs::path &directory) {
     }
     std::cout << "Precision: true RGB16 and straight RGBA16, coverage/background/compositing\n";
 }
+
+void empty_light_tests(const fs::path &directory) {
+    unsigned index = 0;
+    for (const auto source : {"", "Apophysis 2.09", "Apophysis 7x"}) {
+        for (bool zero_brightness : {false, true}) {
+            auto flame = fixture(source);
+            flame.width = 7;
+            flame.height = 5;
+            flame.scale = 2;
+            flame.background = {.12345, .45678, .76543};
+            flame.vibrancy = .55;
+            // Lifting the curve's black endpoint must not add light to empty
+            // pixels or turn a zero-brightness render into visible foreground.
+            flame.curves.channels[0][0].y = .35;
+            if (zero_brightness) {
+                flame.brightness = 0;
+            } else {
+                for (auto &transform : flame.transforms) transform.opacity = 0;
+                if (flame.final_transform) flame.final_transform->opacity = 0;
+            }
+            auto opt = options(129);
+            const auto dense = render(flame, opt);
+            const std::array background{flame.background.r, flame.background.g, flame.background.b};
+            const bool historical = *source != '\0';
+            for (std::size_t i = 0; i < dense.image.rgb.size(); ++i) {
+                const auto expected = historical ? std::floor(background[i % 3] * 255)
+                                                 : std::lround(background[i % 3] * 255);
+                require(dense.image.rgb[i] == expected, "Empty dense pixel changed background quantization");
+            }
+            for (auto format : {ImageFormat::ppm8, ImageFormat::ppm16,
+                                ImageFormat::tiff8, ImageFormat::tiff16}) {
+                auto file = file_options(3);
+                const bool alpha = format == ImageFormat::tiff8 || format == ImageFormat::tiff16;
+                file.image = {format, alpha};
+                const auto output = directory / ("empty-light-" + std::to_string(index++) +
+                                                  std::string(image_format_extension(format)));
+                render_to_file(flame, opt, output, file);
+                const auto decoded = alpha ? tiff(output) : ppm(output);
+                for (std::size_t i = 0; i < decoded.samples.size(); ++i) {
+                    const auto expected = alpha ? 0.0
+                        : decoded.bits == 8 ? double(dense.image.rgb[i])
+                        : std::floor(background[i % 3] * 65535 + .5);
+                    require(decoded.samples[i] == expected,
+                            "Empty streamed pixel changed background, precision or transparent black");
+                }
+            }
+        }
+    }
+    std::cout << "Empty light: exact historical/modern backgrounds and transparent zeros with active curves\n";
+}
 void fallback_checkpoint(const fs::path &directory) {
     const auto flame = fixture();
     auto opt = options(65539);
@@ -682,6 +732,7 @@ int main(int argc, char **argv) {
         cpu_exact(temporary.directory);
         checkpoint_tests(temporary.directory);
         precision_tests(temporary.directory);
+        empty_light_tests(temporary.directory);
         fallback_checkpoint(temporary.directory);
         if (!cpu_only)
             gpu_exact(temporary.directory, require_vulkan, selector);

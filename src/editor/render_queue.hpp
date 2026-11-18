@@ -88,7 +88,8 @@ private:
   std::unique_ptr<Impl> impl_;
   void launchNext();
   void finishActive();
-  void updateProgress(const QString &id, const FileRenderProgress &progress);
+  void updateProgress(const QString &id, const FileRenderProgress &progress,
+                      bool notifyObservers = true);
 };
 
 class RenderQueueDialog : public QDialog {

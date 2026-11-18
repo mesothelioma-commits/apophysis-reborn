@@ -135,7 +135,8 @@ struct RenderControls {
 };
 
 RenderControls renderControls(QFormLayout *form, QDialog *dialog,
-                              const PreviewSettings &settings) {
+                              const PreviewSettings &settings,
+                              std::shared_ptr<DeviceDiscovery> discovery) {
   RenderControls controls{new QComboBox, new QComboBox, new QSpinBox,
                           new QCheckBox};
   controls.backend->setObjectName("renderBackend");
@@ -151,31 +152,16 @@ RenderControls renderControls(QFormLayout *form, QDialog *dialog,
       QComboBox::AdjustToMinimumContentsLengthWithIcon);
   controls.device->setMinimumContentsLength(24);
   controls.device->addItem("Automatic selection", QString{});
-  auto report = std::make_shared<ComputeInfo>();
-  try {
-    *report = compute_devices();
-  } catch (const std::exception &error) {
-    report->diagnostic = error.what();
+  if (!settings.device.empty()) {
+    controls.device->addItem("Saved device (not yet checked)", text(settings.device));
+    controls.device->setCurrentIndex(1);
   }
-  for (const auto &device : report->devices) {
-    const auto label = text(device.name) +
-                       (device.software ? " (software)" : "") +
-                       (device.usable ? "" : " (unavailable)");
-    controls.device->addItem(label, text(device.id));
-  }
-  auto savedDevice = text(settings.device);
-  for (const auto &device : report->devices)
-    if (savedDevice == QString::number(device.index)) {
-      savedDevice = text(device.id);
-      break;
-    }
-  int selected = controls.device->findData(savedDevice);
-  if (selected < 0) {
-    controls.device->addItem("Saved device is currently unavailable",
-                             text(settings.device));
-    selected = controls.device->count() - 1;
-  }
-  controls.device->setCurrentIndex(selected);
+  struct InventoryView {
+    ComputeInfo report;
+    bool ready = false;
+    std::uint64_t revision = 0;
+  };
+  auto inventory = std::make_shared<InventoryView>();
   controls.gpuMemory->setObjectName("gpuMemory");
   controls.gpuMemory->setRange(1, 1048576);
   controls.gpuMemory->setValue(
@@ -186,6 +172,9 @@ RenderControls renderControls(QFormLayout *form, QDialog *dialog,
   controls.fallback->setChecked(settings.allow_cpu_fallback);
   form->addRow("Renderer", controls.backend);
   form->addRow("Preferred device", controls.device);
+  auto refreshDevices = new QPushButton("Refresh devices");
+  refreshDevices->setObjectName("refreshRenderDevices");
+  form->addRow(QString{}, refreshDevices);
   form->addRow("GPU working budget", controls.gpuMemory);
   form->addRow(QString{}, controls.fallback);
   auto details = new QLabel;
@@ -196,22 +185,59 @@ RenderControls renderControls(QFormLayout *form, QDialog *dialog,
   details->setTextInteractionFlags(Qt::TextSelectableByMouse);
   details->setMinimumWidth(360);
   form->addRow(details);
-  auto update = [controls, details, report, dialog] {
+  auto poll = new QTimer(dialog);
+  poll->setObjectName("computeDiscoveryPoll");
+  poll->setInterval(50);
+  auto update = [controls, details, inventory, discovery, dialog, poll, refreshDevices] {
     const auto backend =
         static_cast<RenderBackend>(controls.backend->currentData().toInt());
     const bool usesGpu = backend != RenderBackend::cpu;
+    if (usesGpu)
+      discovery->request();
+    const auto snapshot = discovery->snapshot();
+    if (snapshot.report && (!inventory->ready || inventory->revision != snapshot.revision)) {
+      const QSignalBlocker block(controls.device);
+      auto savedDevice = controls.device->currentData().toString();
+      inventory->report = *snapshot.report;
+      inventory->ready = true;
+      inventory->revision = snapshot.revision;
+      controls.device->clear();
+      controls.device->addItem("Automatic selection", QString{});
+      for (const auto &device : inventory->report.devices) {
+        const auto label = text(device.name) + (device.software ? " (software)" : "") +
+                           (device.usable ? "" : " (unavailable)");
+        controls.device->addItem(label, text(device.id));
+        if (savedDevice == QString::number(device.index))
+          savedDevice = text(device.id);
+      }
+      int selected = controls.device->findData(savedDevice);
+      if (selected < 0) {
+        controls.device->addItem("Saved device is currently unavailable", savedDevice);
+        selected = controls.device->count() - 1;
+      }
+      controls.device->setCurrentIndex(selected);
+    }
+    if (snapshot.pending)
+      poll->start();
+    else
+      poll->stop();
     controls.device->setEnabled(usesGpu);
+    refreshDevices->setEnabled(usesGpu && !snapshot.pending);
     controls.gpuMemory->setEnabled(usesGpu);
     controls.fallback->setEnabled(usesGpu);
     QString description;
+    const auto &report = inventory->report;
     const auto key = controls.device->currentData().toString();
     const auto selected = std::find_if(
-        report->devices.begin(), report->devices.end(),
+        report.devices.begin(), report.devices.end(),
         [&](const auto &device) { return text(device.id) == key; });
     if (!usesGpu) {
       description = "CPU rendering keeps the existing 64-bit double-precision "
                     "reference path.";
-    } else if (selected != report->devices.end()) {
+    } else if (!inventory->ready) {
+      description = "Checking Vulkan devices in the background… You can continue "
+                    "using this dialog, choose CPU, or close it.";
+    } else if (selected != report.devices.end()) {
       description =
           QString("%1 · Vulkan %2 · %3 MiB device memory\n"
                   "Maximum storage buffer: %4 MiB · FP64 capability: %5 · "
@@ -233,14 +259,16 @@ RenderControls renderControls(QFormLayout *form, QDialog *dialog,
                     "enable CPU fallback.";
     } else {
       const auto usable = std::count_if(
-          report->devices.begin(), report->devices.end(),
+          report.devices.begin(), report.devices.end(),
           [](const auto &device) { return device.usable && !device.software; });
       description = QString("%1 usable hardware Vulkan device(s) found. ")
                         .arg(qlonglong(usable)) +
                     "Automatic selection skips software devices.";
-      if (!report->diagnostic.empty())
-        description += "\n" + text(report->diagnostic);
+      if (!report.diagnostic.empty())
+        description += "\n" + text(report.diagnostic);
     }
+    if (usesGpu && inventory->ready && snapshot.pending)
+      description += "\nRefreshing the device list in the background…";
     if (usesGpu)
       description += "\nVulkan uses 32-bit orbit calculations and CPU image "
                      "reconstruction; "
@@ -248,8 +276,10 @@ RenderControls renderControls(QFormLayout *form, QDialog *dialog,
                      "streams and rounding "
                      "differ, so identical pixels across backends or devices "
                      "are not guaranteed.";
-    details->setText(description);
     controls.device->setToolTip(key);
+    if (details->text() == description)
+      return;
+    details->setText(description);
     // A dialog first opened on the short CPU description keeps its initial
     // height when a word-wrapped QLabel later grows. Measure after layout
     // has assigned the real width, then expand to include every line. Keep
@@ -283,6 +313,9 @@ RenderControls renderControls(QFormLayout *form, QDialog *dialog,
                    update);
   QObject::connect(controls.device, &QComboBox::currentIndexChanged, dialog,
                    update);
+  QObject::connect(poll, &QTimer::timeout, dialog, update);
+  QObject::connect(refreshDevices, &QPushButton::clicked, dialog,
+                   [discovery, update] { discovery->request(true); update(); });
   update();
   return controls;
 }
@@ -338,8 +371,11 @@ void applyDarkTheme() {
 }
 
 MainWindow::MainWindow(bool useSettings, QWidget *parent,
-                       const QString &queueDirectory)
+                       const QString &queueDirectory,
+                       std::shared_ptr<DeviceDiscovery> deviceDiscovery)
     : QMainWindow(parent), session_(this), preview_(this),
+      deviceDiscovery_(deviceDiscovery ? std::move(deviceDiscovery)
+                                       : std::make_shared<DeviceDiscovery>()),
       useSettings_(useSettings) {
   const auto pluginWarnings =
       useSettings_ ? loadApprovedPlugins(settings_) : QStringList{};
@@ -543,13 +579,15 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   connect(previewCanvas_, &PreviewCanvas::viewportChanged, this,
           [this] { requestPreview(); });
   auto timer = new QTimer(this);
+  timer->setObjectName("recoveryTimer");
   timer->setInterval(45000);
+  connect(&session_, &DocumentSession::recoverySaved, this,
+          [this] { record("Recovery copy updated"); });
+  connect(&session_, &DocumentSession::recoveryFailed, this,
+          [this](const QString &message) { record(message); });
   connect(timer, &QTimer::timeout, this, [this] {
     try {
-      if (session_.isProject() && session_.isModified())
-        captureProjectState();
-      if (!session_.writeRecovery().isEmpty())
-        record("Recovery copy updated");
+      requestRecovery();
     } catch (const std::exception &e) {
       record(text(e.what()));
     }
@@ -1657,6 +1695,8 @@ void MainWindow::refreshTransform() {
   refreshing_ = false;
 }
 void MainWindow::requestPreview() {
+  if (closing_)
+    return;
   if (model_) {
     preview_.request(*model_, previewCanvas_->size());
     return;
@@ -1839,6 +1879,8 @@ void MainWindow::record(const QString &message) {
                    .toUtf8());
 }
 void MainWindow::run(const std::function<void()> &operation) {
+  if (closing_)
+    return;
   try {
     operation();
   } catch (const std::exception &error) {
@@ -1862,6 +1904,8 @@ bool MainWindow::confirmDiscard() {
   return true;
 }
 bool MainWindow::openFile(const QString &path) {
+  if (closing_)
+    return false;
   if (!confirmDiscard())
     return false;
   try {
@@ -2092,7 +2136,7 @@ void MainWindow::renderImage() {
   computeForm->addRow("Working disk budget", disk);
   computeForm->addRow("Random seed", seed);
   const auto compute =
-      renderControls(computeForm, &dialog, preview_.settings());
+      renderControls(computeForm, &dialog, preview_.settings(), deviceDiscovery_);
   columns->addWidget(computeGroup, 1);
   layout->addLayout(columns);
   auto destinationRow = new QHBoxLayout;
@@ -2471,7 +2515,7 @@ void MainWindow::preferences() {
   form->addRow("System preview budget", memory);
   form->addRow("Random seed", seed);
   form->addRow("Final preview samples", limit);
-  const auto compute = renderControls(form, &dialog, preview_.settings());
+  const auto compute = renderControls(form, &dialog, preview_.settings(), deviceDiscovery_);
   layout->addLayout(form);
   auto buttons =
       new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -2551,34 +2595,56 @@ void MainWindow::recoverPreviousSession() {
   }
 }
 void MainWindow::closeEvent(QCloseEvent *event) {
-  if (!confirmDiscard()) {
-    event->ignore();
-    return;
-  }
-  if (queue_->isBusy()) {
+  event->ignore();
+  if (!closing_) {
+    const QPointer<MainWindow> alive(this);
+    if (!confirmDiscard() || !alive)
+      return;
+    // Approval belongs to this close operation. Freeze editing before any
+    // completion signals can run; repeated close events must not ask again or
+    // allow new edits after a Save/Discard decision.
+    closing_ = true;
+    setEnabled(false);
+    setAcceptDrops(false);
+    for (auto action : findChildren<QAction *>())
+      action->setEnabled(false);
+    if (queueDialog_) {
+      queueDialog_->setEnabled(false);
+      queueDialog_->hide();
+    }
+    if (auto recoveryTimer = findChild<QTimer *>("recoveryTimer"))
+      recoveryTimer->stop();
+    preview_.stop();
+    if (!alive)
+      return;
+    session_.discardRecovery();
     queue_->pause();
-    statusBar()->showMessage("Saving the render checkpoint before closing…");
-    event->ignore();
-    auto timer = new QTimer(this);
-    timer->setInterval(50);
-    connect(timer, &QTimer::timeout, this, [this, timer] {
-      if (queue_->isBusy())
-        return;
-      timer->stop();
-      timer->deleteLater();
-      close();
-    });
-    timer->start();
+    if (!alive)
+      return;
+  }
+  if (queue_->isBusy() || session_.isRecoveryBusy()) {
+    statusBar()->showMessage("Finishing the render checkpoint and recovery cleanup before closing…");
+    if (!closeTimer_) {
+      closeTimer_ = new QTimer(this);
+      closeTimer_->setObjectName("pendingCloseTimer");
+      closeTimer_->setInterval(50);
+      connect(closeTimer_, &QTimer::timeout, this, [this] {
+        if (!queue_->isBusy() && !session_.isRecoveryBusy())
+          close();
+      });
+    }
+    if (!closeTimer_->isActive())
+      closeTimer_->start();
     return;
   }
+  if (closeTimer_)
+    closeTimer_->stop();
   if (useSettings_) {
     settings_.setValue("window/geometry", saveGeometry());
     settings_.setValue("window/layout", saveState(1));
     settings_.setValue("preview/samples",
                        qulonglong(preview_.settings().sample_limit));
   }
-  preview_.stop();
-  session_.discardRecovery();
   event->accept();
 }
 

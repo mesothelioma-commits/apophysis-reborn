@@ -372,6 +372,67 @@ struct ImageStreamWriter::Impl {
         }
     }
 
+    template <unsigned Channels, bool SixteenBit, bool Bgr = false, bool LittleEndian = false>
+    void quantize_row(std::span<const std::array<double, 4>> rgba, std::size_t offset = 0) {
+        constexpr unsigned bytes_per_sample = SixteenBit ? 2 : 1;
+        constexpr unsigned bytes_per_pixel = Channels * bytes_per_sample;
+        constexpr double maximum = SixteenBit ? 65535 : 255;
+        if constexpr (!SixteenBit) {
+            // Dense RGB8 images have little repeated-pixel work to save. Write
+            // directly instead of maintaining a four-double run cache and
+            // copying a three-byte encoded pixel for each input pixel.
+            auto *destination = row.data() + offset;
+            for (const auto &pixel : rgba) {
+                for (double value : pixel)
+                    if (!std::isfinite(value))
+                        throw std::invalid_argument("Image samples must be finite");
+                for (unsigned c = 0; c < Channels; ++c) {
+                    const auto component = Bgr ? 2 - c : c;
+                    const auto quantized = static_cast<std::uint32_t>(
+                        std::clamp(pixel[component], 0.0, 1.0) * maximum + 0.5);
+                    destination[c] = static_cast<unsigned char>(quantized);
+                }
+                destination += bytes_per_pixel;
+            }
+            return;
+        }
+        std::array<unsigned char, bytes_per_pixel> encoded{};
+        std::array<double, 4> previous{};
+        bool have_previous = false;
+        auto *destination = row.data() + offset;
+        for (const auto &pixel : rgba) {
+            // Empty/background areas often contain long identical runs. Reuse
+            // their exact encoded bytes, including alpha, rather than repeating
+            // validation and floating-point quantization for every channel.
+            // NaN never compares equal; an invalid unused alpha is still checked.
+            if (!have_previous || pixel != previous) {
+                for (double value : pixel)
+                    if (!std::isfinite(value))
+                        throw std::invalid_argument("Image samples must be finite");
+                for (unsigned c = 0; c < Channels; ++c) {
+                    constexpr auto depth = bytes_per_sample;
+                    const auto component = Bgr ? 2 - c : c;
+                    // The clamped value is nonnegative, so truncation after
+                    // adding 0.5 is exactly the existing floor/round-half-up rule.
+                    const auto quantized = static_cast<std::uint32_t>(
+                        std::clamp(pixel[component], 0.0, 1.0) * maximum + 0.5);
+                    if constexpr (SixteenBit) {
+                        encoded[c * depth] = static_cast<unsigned char>(
+                            LittleEndian ? quantized : quantized >> 8);
+                        encoded[c * depth + 1] = static_cast<unsigned char>(
+                            LittleEndian ? quantized >> 8 : quantized);
+                    } else {
+                        encoded[c] = static_cast<unsigned char>(quantized);
+                    }
+                }
+                previous = pixel;
+                have_previous = true;
+            }
+            std::copy(encoded.begin(), encoded.end(), destination);
+            destination += bytes_per_pixel;
+        }
+    }
+
     void write(std::span<const std::array<double, 4>> rgba) {
         if (finished || failed)
             throw std::logic_error("Image writer is already finished or failed");
@@ -379,27 +440,34 @@ struct ImageStreamWriter::Impl {
             throw std::invalid_argument("Too many image rows");
         if (rgba.size() != static_cast<std::size_t>(width))
             throw std::invalid_argument("Image row width does not match the output");
-        std::size_t at = png(options.format) ? 1 : 0;
-        for (const auto &pixel : rgba) {
-            for (double value : pixel)
-                if (!std::isfinite(value))
-                    throw std::invalid_argument("Image samples must be finite");
-            for (unsigned c = 0; c < channels; ++c) {
-                const auto component = options.format == ImageFormat::bmp8 ? 2 - c : c;
-                const auto quantized = static_cast<std::uint32_t>(std::floor(
-                    std::clamp(pixel[component], 0.0, 1.0) * (bits == 16 ? 65535 : 255) + 0.5));
-                if (bits == 16) {
-                    if (tiff(options.format)) {
-                        row[at++] = static_cast<unsigned char>(quantized);
-                        row[at++] = static_cast<unsigned char>(quantized >> 8);
-                    } else {
-                        row[at++] = static_cast<unsigned char>(quantized >> 8);
-                        row[at++] = static_cast<unsigned char>(quantized);
-                    }
-                } else {
-                    row[at++] = static_cast<unsigned char>(quantized);
-                }
-            }
+        // Format, depth and channel order are fixed for the whole image. Select
+        // once per row so the inner pixel loop has no format/depth branches.
+        switch (options.format) {
+        case ImageFormat::bmp8:
+            quantize_row<3, false, true>(rgba);
+            break;
+        case ImageFormat::ppm8:
+            quantize_row<3, false>(rgba);
+            break;
+        case ImageFormat::ppm16:
+            quantize_row<3, true>(rgba);
+            break;
+        case ImageFormat::png8:
+            if (options.alpha) quantize_row<4, false>(rgba, 1);
+            else quantize_row<3, false>(rgba, 1);
+            break;
+        case ImageFormat::png16:
+            if (options.alpha) quantize_row<4, true>(rgba, 1);
+            else quantize_row<3, true>(rgba, 1);
+            break;
+        case ImageFormat::tiff8:
+            if (options.alpha) quantize_row<4, false>(rgba);
+            else quantize_row<3, false>(rgba);
+            break;
+        case ImageFormat::tiff16:
+            if (options.alpha) quantize_row<4, true, false, true>(rgba);
+            else quantize_row<3, true, false, true>(rgba);
+            break;
         }
         try {
             if (png(options.format)) {

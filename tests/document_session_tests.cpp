@@ -2,6 +2,7 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -10,6 +11,11 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUuid>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 using namespace apo;
 using namespace apo::editor;
@@ -50,6 +56,31 @@ void renameFirst(DocumentSession& session, const std::string& name) {
         document.edit(0, edits);
     });
 }
+
+// Bounded injected work makes GUI responsiveness and teardown deterministic;
+// no actual slow drive or device-specific timing is needed for these checks.
+struct RecoveryGate {
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool released = false;
+    std::atomic<unsigned> entered = 0, finished = 0;
+    std::atomic<bool> timedOut = false;
+    void wait() {
+        ++entered;
+        std::unique_lock lock(mutex);
+        if (!changed.wait_for(lock, std::chrono::seconds(10), [&] { return released; }))
+            timedOut = true;
+        ++finished;
+    }
+    void release() {
+        { std::lock_guard lock(mutex); released = true; }
+        changed.notify_all();
+    }
+};
+struct ReleaseRecoveryGate {
+    std::shared_ptr<RecoveryGate> gate;
+    ~ReleaseRecoveryGate() { gate->release(); }
+};
 }
 
 class DocumentSessionTests : public QObject {
@@ -328,7 +359,7 @@ private slots:
         // Session destruction releases its lock while retaining unsaved recovery data.
         QVERIFY(QFileInfo::exists(recovery));
         QVERIFY(QFileInfo::exists(recovery + ".json"));
-        QVERIFY(!QFileInfo::exists(recovery + ".lock"));
+        QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo::exists(recovery + ".lock"), 5000);
 
         DocumentSession recovered;
         recovered.recover(recovery);
@@ -343,6 +374,7 @@ private slots:
         QCOMPARE(readBytes(source), asBytes(fixture()));
         QVERIFY(!recovered.isModified());
         QVERIFY(recovered.recoveryPath().isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(!recovered.isRecoveryBusy(), 5000);
         QVERIFY(!QFileInfo::exists(recovery));
         QVERIFY(!QFileInfo::exists(recovery + ".json"));
         QVERIFY(!QFileInfo::exists(recovery + ".lock"));
@@ -379,6 +411,7 @@ private slots:
         const auto secondRecovery = session.writeRecovery();
         QVERIFY(QFileInfo::exists(secondRecovery));
         session.save(source);
+        QTRY_VERIFY_WITH_TIMEOUT(!session.isRecoveryBusy(), 5000);
         QVERIFY(!QFileInfo::exists(secondRecovery));
         QVERIFY(!QFileInfo::exists(secondRecovery + ".json"));
         QVERIFY(session.recoveryPath().isEmpty());
@@ -386,10 +419,238 @@ private slots:
         renameFirst(session, "Discard recovery");
         const auto thirdRecovery = session.writeRecovery();
         session.discardRecovery();
+        QTRY_VERIFY_WITH_TIMEOUT(!session.isRecoveryBusy(), 5000);
         QVERIFY(!QFileInfo::exists(thirdRecovery));
         QVERIFY(!QFileInfo::exists(thirdRecovery + ".json"));
         QVERIFY(session.recoveryPath().isEmpty());
         QVERIFY(session.isModified());
+    }
+
+    void recoveryRunsOffGuiAndCoalescesLatestSnapshot() {
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        ProjectFile project;
+        project.library_bytes = fixture();
+        project.metadata["vendor"] = "preserve this";
+        project.animation_data = "opaque future animation";
+        const auto source = folder.filePath("source.apoproject");
+        writeBytes(source, asBytes(serialize_project(project)));
+        DocumentSession session;
+        session.load(source);
+        renameFirst(session, "First snapshot");
+        QSignalSpy saved(&session, &DocumentSession::recoverySaved);
+        QSignalSpy failed(&session, &DocumentSession::recoveryFailed);
+        auto gate = std::make_shared<RecoveryGate>();
+        ReleaseRecoveryGate release{gate};
+        auto preparationCalls = std::make_shared<std::atomic<unsigned>>(0);
+        auto wrongThread = std::make_shared<std::atomic<bool>>(false);
+        const auto guiThread = std::this_thread::get_id();
+        QElapsedTimer capture;
+        capture.start();
+        session.requestRecovery(session.projectSnapshot(),
+            [gate, preparationCalls, wrongThread, guiThread](ProjectFile &snapshot) {
+                ++*preparationCalls;
+                *wrongThread = std::this_thread::get_id() == guiThread;
+                gate->wait();
+                snapshot.preview_settings["prepared"] = "first";
+            });
+        QVERIFY2(capture.elapsed() < 500, "Submitting recovery waited for background preparation");
+        const auto recovery = session.recoveryPath();
+        QVERIFY(!recovery.isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(gate->entered.load(), 1U, 3000);
+        QVERIFY(session.isRecoveryBusy());
+        unsigned heartbeats = 0;
+        QTimer heartbeat;
+        heartbeat.setInterval(5);
+        connect(&heartbeat, &QTimer::timeout, this, [&] { ++heartbeats; });
+        heartbeat.start();
+        QTRY_VERIFY_WITH_TIMEOUT(heartbeats >= 8, 1000);
+        // The worker is blocked. Each new request replaces its one pending job.
+        for (unsigned i = 0; i < 12; ++i) {
+            renameFirst(session, "Latest snapshot " + std::to_string(i));
+            auto snapshot = session.projectSnapshot();
+            snapshot.workspace["snapshot"] = std::to_string(i);
+            session.requestRecovery(std::move(snapshot), [preparationCalls](ProjectFile &p) {
+                ++*preparationCalls;
+                p.preview_settings["prepared"] = "latest";
+            });
+        }
+        QCOMPARE(preparationCalls->load(), 1U);
+        gate->release();
+        QTRY_VERIFY_WITH_TIMEOUT(!session.isRecoveryBusy(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!saved.empty(), 3000);
+        QCOMPARE(failed.size(), 0);
+        QCOMPARE(preparationCalls->load(), 2U);
+        QVERIFY(!wrongThread->load());
+        QVERIFY(!gate->timedOut.load());
+        const auto recovered = parse_project(readBytes(recovery).toStdString());
+        QCOMPARE(recovered.library_bytes, session.document().bytes());
+        QCOMPARE(recovered.workspace.at("snapshot"), std::string("11"));
+        QCOMPARE(recovered.preview_settings.at("prepared"), std::string("latest"));
+        QCOMPARE(recovered.metadata.at("vendor"), std::string("preserve this"));
+        QCOMPARE(recovered.animation_data, project.animation_data);
+        QVERIFY(recovered.library_bytes.find("<!-- owner caf\xe9 -->\r\n") != std::string::npos);
+        const auto metadata = QJsonDocument::fromJson(readBytes(recovery + ".json")).object();
+        QCOMPARE(metadata.value("source").toString(), source);
+        const auto originalHash = QCryptographicHash::hash(readBytes(source), QCryptographicHash::Sha256).toHex();
+        QCOMPARE(metadata.value("original_sha256").toString(), QString::fromLatin1(originalHash));
+        QCOMPARE(session.projectSnapshot().workspace.count("snapshot"), std::size_t(0));
+        session.discardRecovery();
+        QTRY_VERIFY_WITH_TIMEOUT(!session.isRecoveryBusy(), 5000);
+        QVERIFY(!QFileInfo::exists(recovery));
+    }
+
+    void openingNewDocumentInvalidatesBlockedRecovery() {
+        ProjectFile oldProject;
+        oldProject.library_bytes = fixture();
+        oldProject.metadata["generation"] = "old";
+        DocumentSession session;
+        session.loadBytes(serialize_project(oldProject), {}, true);
+        auto gate = std::make_shared<RecoveryGate>();
+        ReleaseRecoveryGate release{gate};
+        QSignalSpy saved(&session, &DocumentSession::recoverySaved);
+        QSignalSpy failed(&session, &DocumentSession::recoveryFailed);
+        session.requestRecovery(session.projectSnapshot(), [gate](ProjectFile &) { gate->wait(); });
+        const auto obsolete = session.recoveryPath();
+        QTRY_COMPARE_WITH_TIMEOUT(gate->entered.load(), 1U, 3000);
+        ProjectFile nextProject;
+        nextProject.library_bytes = "<flame name='New document'><xform linear='1'/></flame>";
+        nextProject.metadata["generation"] = "new";
+        session.loadBytes(serialize_project(nextProject), {}, true);
+        QVERIFY(session.recoveryPath().isEmpty());
+        session.requestRecovery();
+        const auto current = session.recoveryPath();
+        QVERIFY(current != obsolete);
+        gate->release();
+        QTRY_VERIFY_WITH_TIMEOUT(!session.isRecoveryBusy(), 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(saved.size(), 1, 3000);
+        QCOMPARE(saved.front().front().toString(), current);
+        QCOMPARE(failed.size(), 0);
+        QVERIFY(!QFileInfo::exists(obsolete));
+        QVERIFY(!QFileInfo::exists(obsolete + ".json"));
+        QVERIFY(!QFileInfo::exists(obsolete + ".lock"));
+        const auto recovered = parse_project(readBytes(current).toStdString());
+        QCOMPARE(recovered.library_bytes, nextProject.library_bytes);
+        QCOMPARE(recovered.metadata.at("generation"), std::string("new"));
+        QVERIFY(!gate->timedOut.load());
+        session.discardRecovery();
+        QTRY_VERIFY_WITH_TIMEOUT(!session.isRecoveryBusy(), 5000);
+    }
+
+    void savingInvalidatesRecoveryAndCloseDoesNotJoinPreparation() {
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        ProjectFile project;
+        project.library_bytes = fixture();
+        auto session = std::make_unique<DocumentSession>();
+        session->loadBytes(serialize_project(project), {}, true);
+        auto gate = std::make_shared<RecoveryGate>();
+        ReleaseRecoveryGate release{gate};
+        auto witness = std::make_shared<int>(0);
+        std::weak_ptr<int> workLifetime = witness;
+        session->requestRecovery(session->projectSnapshot(),
+            [gate, witness](ProjectFile &) { gate->wait(); });
+        witness.reset();
+        const auto recovery = session->recoveryPath();
+        QTRY_COMPARE_WITH_TIMEOUT(gate->entered.load(), 1U, 3000);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        const auto destination = folder.filePath("saved.apoproject");
+        session->save(destination);
+        QVERIFY(session->recoveryPath().isEmpty());
+        session.reset();
+        QVERIFY2(elapsed.elapsed() < 500, "Saving/closing waited for stale recovery preparation");
+        QCOMPARE(gate->finished.load(), 0U);
+        gate->release();
+        QTRY_VERIFY_WITH_TIMEOUT(workLifetime.expired(), 5000);
+        // A stale worker may never recreate its retired path after save/close.
+        QVERIFY(!QFileInfo::exists(recovery));
+        QVERIFY(!QFileInfo::exists(recovery + ".json"));
+        QVERIFY(!QFileInfo::exists(recovery + ".lock"));
+        QCOMPARE(parse_project(readBytes(destination).toStdString()).library_bytes, project.library_bytes);
+        QVERIFY(!gate->timedOut.load());
+    }
+
+    void recoveryCompletionCanEnqueueAgainAndDeleteSession() {
+        auto session = std::make_unique<DocumentSession>();
+        session->loadBytes(fixture(), {}, true);
+        QString recovery;
+        unsigned completions = 0;
+        connect(session.get(), &DocumentSession::recoverySaved, this, [&](const QString &path) {
+            recovery = path;
+            if (++completions == 1) {
+                renameFirst(*session, "Enqueued by completion");
+                session->requestRecovery();
+            } else {
+                session.reset();
+            }
+        });
+        session->requestRecovery();
+        QTRY_VERIFY_WITH_TIMEOUT(!session, 10000);
+        QCOMPARE(completions, 2U);
+        QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo::exists(recovery + ".lock"), 5000);
+        QVERIFY(readBytes(recovery).contains("Enqueued by completion"));
+        QVERIFY(QFile::remove(recovery));
+        QVERIFY(QFile::remove(recovery + ".json"));
+    }
+
+    void failedRecoveryCompletionCanDeleteSession() {
+        auto session = std::make_unique<DocumentSession>();
+        ProjectFile project;
+        project.library_bytes = fixture();
+        session->loadBytes(serialize_project(project), {}, true);
+        QString error;
+        connect(session.get(), &DocumentSession::recoveryFailed, this, [&](const QString &message) {
+            error = message;
+            session.reset();
+        });
+        session->requestRecovery(session->projectSnapshot(), [](ProjectFile &) {
+            throw std::runtime_error("Injected preparation failure");
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(!session, 5000);
+        QCOMPARE(error, QString("Injected preparation failure"));
+    }
+
+    void recoverySnapshotCaptureIsBoundedAndPreservesRetainedData() {
+        ProjectFile project;
+        project.library_bytes = fixture();
+        project.library_bytes.insert(project.library_bytes.find("</Flames>"),
+            "<!--" + std::string(8 * 1024 * 1024, 'p') + "-->\r\n");
+        project.metadata["retained"] = "metadata";
+        project.animation_data = "opaque timeline";
+        DocumentSession session;
+        session.loadBytes(serialize_project(project), {}, true);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        auto snapshot = session.projectSnapshot();
+        const auto captureNs = elapsed.nsecsElapsed();
+        qInfo("Recovery capture: %llu library bytes, %.3f ms (before encoding/writing)",
+              static_cast<unsigned long long>(snapshot.library_bytes.size()),
+              double(captureNs) / 1000000.0);
+        QVERIFY2(captureNs < 500000000, "An 8 MiB immutable snapshot took more than 500 ms to capture");
+        QCOMPARE(snapshot.library_bytes, project.library_bytes);
+        QCOMPARE(snapshot.metadata, project.metadata);
+        QCOMPARE(snapshot.animation_data, project.animation_data);
+        QVERIFY(snapshot.retained_source != nullptr);
+    }
+
+    void pluginReferencesUseRetainedIdentityWithoutLoadingCode() {
+        const auto document = LegacyDocument::parse(
+            "<?xml version='1.0' encoding='ISO-8859-1'?>"
+            "<Flames><flame name='Caf\xe9' vendor='unsupported'>"
+            "<xform linear='1' reborn_wave='0.2' reborn_plugin_id_reborn_wave='wave-id' "
+            "reborn_plugin_version_reborn_wave='2'/></flame>"
+            "<flame name='Final'><xform linear='1'/><finalxform old_wave='0'/>"
+            "<history><xform history_only='1'/></history></flame></Flames>");
+        QVERIFY(document.references_plugin("reborn_wave", "wave-id", "2"));
+        QVERIFY(document.references_plugin("reborn_wave", "wave-id", "2", 0));
+        QVERIFY(!document.references_plugin("reborn_wave", "other-id", "2"));
+        QVERIFY(!document.references_plugin("reborn_wave", "wave-id", "1"));
+        QVERIFY(!document.references_plugin("reborn_wave", "wave-id", "2", 1));
+        QVERIFY(!document.references_plugin("wave", "wave-id", "2"));
+        QVERIFY(document.references_plugin("old_wave", "legacy-id", "1", 1));
+        QVERIFY(!document.references_plugin("history_only", "legacy-id", "1"));
+        QCOMPARE(document.entries().front().name, std::string("Caf\xc3\xa9"));
     }
 };
 

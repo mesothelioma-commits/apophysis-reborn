@@ -1,6 +1,6 @@
-# Apophysis Reborn 0.10.0 — User manual
+# Apophysis Reborn 0.10.1 — User manual
 
-Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and release-hardening checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
+Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
 ## Contents
 
@@ -29,7 +29,7 @@ The primary target is Windows 11 x64. Choose one of these distributions:
 | Windows setup EXE | Run the supplied setup EXE. | Install for the current Windows user with versioned shortcuts and an uninstall entry. |
 | Complete source/history ZIP | Open `bin/windows-x64/apophysis-reborn.exe` after extraction, or build the source. | Development, complete verification tools, source history and release evidence. |
 
-The installer is `apophysis-reborn-0.10.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Its destination must be empty; a different release uses a separate version directory and does not automatically remove older releases. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
+The installer is `apophysis-reborn-0.10.1-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.1`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Its destination must be empty; a different release uses a separate version directory and does not automatically remove older releases. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
 
 Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application's per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.
 
@@ -76,7 +76,7 @@ When the current file changes outside the editor after opening, Save offers **Sa
 
 ### Recover an interrupted editing session
 
-Unsaved documents receive a recovery copy every 45 seconds. On a later launch, a stale recovery copy offers **Recover edits**, **Discard recovery copy**, or **Later**. Recovery opens an unsaved document so you can inspect it and choose where to save. Copies owned by another live editor are skipped. Native recovery retains the project envelope and timeline.
+Every 45 seconds, modified documents request a background recovery save. Thumbnail preparation, serialization and disk writes run off the interface thread; a pending request is replaced by the newest snapshot. Recovery completes when that worker finishes. On a later launch, a stale recovery copy offers **Recover edits**, **Discard recovery copy**, or **Later**. Recovery opens an unsaved document so you can inspect it and choose where to save. Copies owned by another live editor are skipped. Native recovery retains the project envelope and timeline.
 
 Recovery, the automatic queue and the rotating Activity log use the application's per-user local data directory. Recovery is not a replacement for a backup of your artwork folder. Its interval is currently fixed, and uninstalling a version does not intentionally clear those user-data locations. Queue checkpoints are separate from editing recovery files.
 
@@ -157,6 +157,8 @@ Sixteen-bit output is quantized directly from reconstructed values, not expanded
 ## CPU and Vulkan
 
 **Edit → Preferences** sets preview workers, final sample limit, seed, host budget, requested renderer, device, GPU budget and fallback policy. Render dialogs retain separate export choices. Creative previews inherit the renderer settings with smaller preview budgets.
+
+CPU-only controls do not load Vulkan for device discovery. Automatic and Vulkan modes check devices in the background; you can continue using or close the dialog while discovery runs. The result is cached. Use **Refresh devices** to request a new inventory.
 
 The CPU path uses double-precision orbit calculations and the established CPU random stream. Vulkan samples with FP32 and a separate portable random stream, then uses CPU reconstruction. The same seed does not promise identical pixels between CPU and Vulkan, different drivers or different builds. Numerical tests describe the admitted comparison envelope; unsupported FP32 inputs may still be valid on CPU.
 

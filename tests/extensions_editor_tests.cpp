@@ -1,5 +1,6 @@
 #include "editor/main_window.hpp"
 #include "editor/script_dialog.hpp"
+#include "build_info.hpp"
 #include "flame_io.hpp"
 #include "project_io.hpp"
 #include <QAction>
@@ -121,6 +122,9 @@ private slots:
     QCOMPARE(session.document().bytes(), before);
     session.discardRecovery();
     restored.discardRecovery();
+    // Discard is asynchronous; release both worker-owned leases before the
+    // temporary directory is removed by this test's fixture teardown.
+    QTRY_VERIFY_WITH_TIMEOUT(!session.isRecoveryBusy() && !restored.isRecoveryBusy(), 5000);
   }
   void privateScriptRunApplyAndUndo() {
     MainWindow window(false);
@@ -235,7 +239,7 @@ private slots:
     widget<QAction>(window, "actionSave")->trigger();
     const auto saved = load_project(filesystemPath(path));
     QCOMPARE(saved.metadata.at("foreign"), std::string("preserved"));
-    QCOMPARE(saved.metadata.at("application-version"), std::string("0.10.0"));
+    QCOMPARE(saved.metadata.at("application-version"), std::string(application_version()));
     QCOMPARE(saved.render_presets.size(), std::size_t(1));
     QVERIFY(saved.workspace.contains("qt-layout"));
     QCOMPARE(saved.preview_settings.at("seed"),

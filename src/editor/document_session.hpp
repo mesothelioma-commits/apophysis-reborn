@@ -5,6 +5,7 @@
 #include <QLockFile>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QUndoStack>
 #include <functional>
 #include <memory>
@@ -57,6 +58,13 @@ public:
               int nextTransform = -1, bool nextFinal = false,
               int nextFlame = -1);
   QString writeRecovery();
+  // Normal autosave: captures immutable bytes on the GUI thread, then prepares,
+  // serializes and writes them on a single background worker. Pending requests
+  // coalesce. Preparation must own its inputs and must not access Qt widgets.
+  using RecoveryPreparation = std::function<void(ProjectFile &)>;
+  void requestRecovery(std::optional<ProjectFile> project = {},
+                       RecoveryPreparation prepare = {});
+  bool isRecoveryBusy() const;
   void recover(const QString &path);
   void discardRecovery();
   QString recoveryPath() const { return recoveryPath_; }
@@ -64,18 +72,26 @@ signals:
   void changed();
   void selectionChanged();
   void modifiedChanged(bool modified);
+  void recoverySaved(const QString &path);
+  void recoveryFailed(const QString &message);
 
 private:
   friend class DocumentChange;
   friend class AnimationChange;
   void restore(const std::string &bytes, int flame, int transform, bool final);
   void restoreAnimation(const std::optional<std::string> &bytes);
+  struct RecoveryWorker;
+  std::unique_ptr<RecoveryWorker> recoveryWorker_;
+  QTimer recoveryPoll_;
+  std::uint64_t recoveryGeneration_ = 0;
+  std::uint64_t queueRecovery(std::optional<ProjectFile> project,
+                              RecoveryPreparation prepare);
+  void pollRecovery();
   std::optional<LegacyDocument> document_;
   std::optional<ProjectFile> project_;
   bool projectDirty_ = false;
   QUndoStack undo_;
   QString path_, recoveryPath_;
-  std::unique_ptr<QLockFile> recoveryLock_;
   QByteArray diskDigest_;
   int flame_ = 0, transform_ = 0;
   bool final_ = false;

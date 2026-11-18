@@ -4,6 +4,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QMetaObject>
+#include <QPointer>
 
 #include <algorithm>
 #include <condition_variable>
@@ -44,10 +45,17 @@ QImage copiedImage(const Image &image) {
 
 struct PreviewController::Worker {
     struct Job {
-        Flame flame;
+        std::shared_ptr<const Flame> source;
         RenderOptions options;
         quint64 generation;
         QString output;
+        QSize viewport;
+    };
+    struct ProgressMailbox {
+        std::mutex mutex;
+        quint64 generation = 0;
+        int percent = 0;
+        bool queued = false;
     };
 
     PreviewController *const owner;
@@ -56,6 +64,7 @@ struct PreviewController::Worker {
     std::optional<Job> pending;
     std::stop_source active;
     bool closing = false;
+    std::shared_ptr<ProgressMailbox> progress = std::make_shared<ProgressMailbox>();
     std::jthread thread;
 
     explicit Worker(PreviewController *controller) : owner(controller), thread([this] { run(); }) {}
@@ -97,6 +106,35 @@ struct PreviewController::Worker {
             Qt::QueuedConnection);
     }
 
+    void postProgress(quint64 generation, int percent) {
+        // Replace an undelivered update instead of adding an event per batch.
+        // The state outlives the worker if its Qt callback is still queued.
+        const auto mailbox = progress;
+        {
+            std::lock_guard lock(mailbox->mutex);
+            mailbox->generation = generation;
+            mailbox->percent = percent;
+            if (mailbox->queued)
+                return;
+            mailbox->queued = true;
+        }
+        QMetaObject::invokeMethod(
+            owner,
+            [controller = owner, mailbox] {
+                quint64 generation;
+                int percent;
+                {
+                    std::lock_guard lock(mailbox->mutex);
+                    generation = mailbox->generation;
+                    percent = mailbox->percent;
+                    mailbox->queued = false;
+                }
+                if (controller->generation_ == generation)
+                    emit controller->progressChanged(percent);
+            },
+            Qt::QueuedConnection);
+    }
+
     void run() {
         for (;;) {
             std::optional<Job> job;
@@ -116,9 +154,14 @@ struct PreviewController::Worker {
                 // The GUI already published the replacement, pause or stop state.
             } catch (const std::exception &error) {
                 const auto message = QString::fromUtf8(error.what());
-                post(job->generation, [controller = owner, message] {
+                post(job->generation, [controller = owner, generation = job->generation, message] {
+                    const QPointer<PreviewController> alive(controller);
                     controller->setBusy(false);
+                    if (!alive || controller->generation_ != generation)
+                        return;
                     emit controller->statusChanged(message);
+                    if (!alive || controller->generation_ != generation)
+                        return;
                     emit controller->failed(message);
                 });
             }
@@ -127,6 +170,18 @@ struct PreviewController::Worker {
 
     void renderJob(Job &job) {
         const bool file = !job.output.isEmpty();
+        if (job.options.stop_token.stop_requested())
+            throw RenderCancelled();
+        std::optional<Flame> preview;
+        if (!file) {
+            // Validation can traverse a large imported model. Neither it nor
+            // the second, fitted model copy belongs in the GUI's timer callback.
+            validate(*job.source);
+            if (job.options.stop_token.stop_requested())
+                throw RenderCancelled();
+            preview = fittedPreview(*job.source, job.viewport);
+        }
+        const auto &flame = file ? *job.source : *preview;
         std::vector<std::uint64_t> passes =
             file ? std::vector<std::uint64_t>{job.options.samples}
                  : std::vector<std::uint64_t>{std::min(UINT64_C(80000), job.options.samples),
@@ -146,8 +201,7 @@ struct PreviewController::Worker {
                 if (percent == lastPercent)
                     return;
                 lastPercent = percent;
-                post(job.generation,
-                     [controller = owner, percent] { emit controller->progressChanged(percent); });
+                postProgress(job.generation, percent);
             };
             RenderResult result;
             if (file) {
@@ -160,9 +214,9 @@ struct PreviewController::Worker {
                         : 70 + int(std::uint64_t(state.completed_strips) * 29 / state.total_strips);
                     if (lastPercent == percent) return;
                     lastPercent = percent;
-                    post(job.generation, [controller = owner, percent] { emit controller->progressChanged(percent); });
+                    postProgress(job.generation, percent);
                 };
-                const auto saved = render_to_file(job.flame, options, nativePath(job.output), fileOptions);
+                const auto saved = render_to_file(flame, options, nativePath(job.output), fileOptions);
                 result.plotted = saved.plotted;
                 result.invalid = saved.invalid;
                 result.workers = saved.workers;
@@ -170,7 +224,7 @@ struct PreviewController::Worker {
                 result.device_name = saved.device_name;
                 result.fallback_reason = saved.fallback_reason;
             } else {
-                result = render(job.flame, options);
+                result = render(flame, options);
             }
             if (options.stop_token.stop_requested())
                 throw RenderCancelled();
@@ -183,25 +237,42 @@ struct PreviewController::Worker {
             const qint64 duration = elapsed.elapsed();
             if (file) {
                 post(job.generation,
-                     [controller = owner, path = job.output, backend, device, fallback, execution] {
+                     [controller = owner, generation = job.generation, path = job.output,
+                      backend, device, fallback, execution] {
+                         const QPointer<PreviewController> alive(controller);
                          controller->setBusy(false);
+                         if (!alive || controller->generation_ != generation)
+                             return;
                          emit controller->progressChanged(100);
+                         if (!alive || controller->generation_ != generation)
+                             return;
                          emit controller->backendResolved(backend, device, fallback);
+                         if (!alive || controller->generation_ != generation)
+                             return;
                          emit controller->statusChanged(QStringLiteral("Render saved · ") + execution);
+                         if (!alive || controller->generation_ != generation)
+                             return;
                          emit controller->fileReady(path);
                      });
             } else {
                 auto image = copiedImage(result.image);
-                post(job.generation, [controller = owner, image = std::move(image),
+                post(job.generation, [controller = owner, generation = job.generation, image = std::move(image),
                                       samples = options.samples, plotted = result.plotted,
                                       invalid = result.invalid, workers = result.workers, duration,
                                       finalPass, backend, device, fallback, execution] {
+                    const QPointer<PreviewController> alive(controller);
                     if (finalPass)
                         controller->setBusy(false);
+                    if (!alive || controller->generation_ != generation)
+                        return;
                     emit controller->backendResolved(backend, device, fallback);
+                    if (!alive || controller->generation_ != generation)
+                        return;
                     emit controller->statusChanged((finalPass ? QStringLiteral("Preview ready · ")
                                                               : QStringLiteral("Refining preview · ")) +
                                                    execution);
+                    if (!alive || controller->generation_ != generation)
+                        return;
                     emit controller->imageReady(image, samples, plotted, invalid, workers, duration,
                                                 finalPass);
                 });
@@ -229,11 +300,12 @@ void PreviewController::setBusy(bool busy) {
     emit busyChanged(busy);
 }
 
-void PreviewController::invalidate() {
-    ++generation_;
+quint64 PreviewController::invalidate() {
+    const auto generation = ++generation_;
     debounce_.stop();
     worker_->cancel();
     emit progressChanged(0);
+    return generation;
 }
 
 void PreviewController::setSettings(const PreviewSettings &settings) {
@@ -246,19 +318,30 @@ void PreviewController::setSettings(const PreviewSettings &settings) {
         throw std::invalid_argument("Choose CPU, Automatic or Vulkan rendering");
     settings_ = settings;
     if (latest_)
-        request(*latest_, viewport_);
+        schedulePreview();
 }
 
 void PreviewController::request(const Flame &flame, QSize viewport) {
-    latest_ = flame;
+    latest_ = std::make_shared<const Flame>(flame);
     viewport_ = viewport;
-    invalidate();
+    schedulePreview();
+}
+
+void PreviewController::schedulePreview() {
+    const QPointer<PreviewController> alive(this);
+    const auto generation = invalidate();
+    if (!alive || generation_ != generation)
+        return;
     setBusy(!paused_);
+    if (!alive || generation_ != generation)
+        return;
     if (paused_) {
         emit statusChanged(QStringLiteral("Preview paused"));
         return;
     }
     emit statusChanged(QStringLiteral("Updating preview"));
+    if (!alive || generation_ != generation)
+        return;
     debounce_.start(settings_.debounce_ms);
 }
 
@@ -278,31 +361,36 @@ void PreviewController::queuePreview() {
         const auto hardware = std::thread::hardware_concurrency();
         options.threads = hardware > 1 ? hardware - 1 : 1;
     }
-    try {
-        validate(*latest_);
-        worker_->submit({fittedPreview(*latest_, viewport_), options, generation_, {}});
-    } catch (const std::exception &error) {
-        setBusy(false);
-        const auto message = QString::fromUtf8(error.what());
-        emit statusChanged(message);
-        emit failed(message);
-    }
+    worker_->submit({latest_, options, generation_, {}, viewport_});
 }
 
 void PreviewController::requestFileRender(const Flame &flame, const QString &path,
                                           RenderOptions options) {
-    invalidate();
+    auto snapshot = path.isEmpty() ? std::shared_ptr<const Flame>{}
+                                  : std::make_shared<const Flame>(flame);
+    const QPointer<PreviewController> alive(this);
+    const auto generation = invalidate();
+    if (!alive || generation_ != generation)
+        return;
     latest_.reset();
     paused_ = false;
     if (path.isEmpty()) {
         setBusy(false);
+        if (!alive || generation_ != generation)
+            return;
         emit statusChanged(QStringLiteral("Choose an output file"));
+        if (!alive || generation_ != generation)
+            return;
         emit failed(QStringLiteral("Choose an output file"));
         return;
     }
     setBusy(true);
+    if (!alive || generation_ != generation)
+        return;
     emit statusChanged(QStringLiteral("Rendering image"));
-    worker_->submit({flame, std::move(options), generation_, path});
+    if (!alive || generation_ != generation)
+        return;
+    worker_->submit({std::move(snapshot), std::move(options), generation, path, {}});
 }
 
 void PreviewController::setPaused(bool paused) {
@@ -310,24 +398,34 @@ void PreviewController::setPaused(bool paused) {
         return;
     paused_ = paused;
     if (!paused_ && latest_) {
-        request(*latest_, viewport_);
+        schedulePreview();
         return;
     }
-    invalidate();
+    const QPointer<PreviewController> alive(this);
+    const auto generation = invalidate();
+    if (!alive || generation_ != generation)
+        return;
     setBusy(false);
+    if (!alive || generation_ != generation)
+        return;
     emit statusChanged(paused_ ? QStringLiteral("Preview paused") : QStringLiteral("Preview ready"));
 }
 
 void PreviewController::restart() {
     paused_ = false;
     if (latest_)
-        request(*latest_, viewport_);
+        schedulePreview();
 }
 
 void PreviewController::stop() {
-    invalidate();
+    const QPointer<PreviewController> alive(this);
+    const auto generation = invalidate();
+    if (!alive || generation_ != generation)
+        return;
     latest_.reset();
     setBusy(false);
+    if (!alive || generation_ != generation)
+        return;
     emit statusChanged(QStringLiteral("Stopped"));
 }
 } // namespace apo::editor

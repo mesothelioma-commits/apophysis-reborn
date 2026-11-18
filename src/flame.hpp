@@ -113,6 +113,9 @@ class TransformChooser {
 public:
     // Flame must have passed validate(). Each row is weighted by destination weight and source chaos.
     explicit TransformChooser(const Flame& flame);
+    // Heap storage for the selector tables, without constructing them. Empty
+    // and all-one chaos rows share the initial distribution.
+    static std::uint64_t storage_bytes(const Flame& flame);
     std::size_t pick(double unit, std::optional<std::size_t> previous = {}) const;
     const std::vector<double>& initial() const { return initial_; }
     const std::vector<std::vector<double>>& rows() const { return rows_; }

@@ -176,6 +176,10 @@ Image develop(const Flame& f, const std::vector<Bin>& bins, double ppu, std::uin
     const double vibrancy = apophysis ? std::nearbyint(f.vibrancy*256)/256 : f.vibrancy;
     const double mass_unit = apophysis ? apophysis_white : quantum;
     const std::array bg{f.background.r, f.background.g, f.background.b};
+    std::array<std::uint8_t, 3> empty_pixel{};
+    for (unsigned c = 0; c < 3; ++c)
+        empty_pixel[c] = apophysis ? static_cast<std::uint8_t>(std::floor(bg[c] * 255))
+                                  : static_cast<std::uint8_t>(std::lround(255 * std::clamp(bg[c], 0.0, 1.0)));
     Image image{f.width, f.height, std::vector<std::uint8_t>(width * f.height * 3)};
     for (int y = 0; y < f.height; ++y) {
         check_cancelled(stop);
@@ -194,7 +198,15 @@ Image develop(const Flame& f, const std::vector<Bin>& bins, double ppu, std::uin
                     for (unsigned c = 0; c < 3; ++c) sum[c] += light * (double(bin[c]) / double(bin[3]));
                 }
             }
-            const double alpha = gamma_alpha(sum[3] * f.brightness, gamma, f.gamma_threshold);
+            // Empty areas have a defined background even when a curve lifts
+            // black. Avoid gamma/power and channel work for their zero light.
+            const double light = sum[3] * f.brightness;
+            if (light == 0) {
+                std::copy(empty_pixel.begin(), empty_pixel.end(),
+                          image.rgb.begin() + (std::size_t(y) * width + x) * 3);
+                continue;
+            }
+            const double alpha = gamma_alpha(light, gamma, f.gamma_threshold);
             for (unsigned c = 0; c < 3; ++c) {
                 const double average = sum[3] > 0 ? sum[c] / sum[3] : 0;
                 double foreground = 0;
@@ -282,13 +294,19 @@ RenderResult render_impl(const Flame& f, const RenderOptions& opt, bool portable
     const std::uint64_t batch_size = portable ? gpu::samples_per_chain : legacy_batch_size;
     const auto batch_count = (opt.samples + batch_size - 1) / batch_size;
     const auto per_worker = sizeof(Hit) * std::min(batch_size, opt.samples);
-    const auto fits = (remaining - kernel_bytes) / per_worker;
+    const auto chooser_bytes = TransformChooser::storage_bytes(f);
+    const auto visibility_bytes = checked_product(f.transforms.size(), sizeof(double));
+    const auto sampling_budget = remaining - kernel_bytes;
+    if (chooser_bytes > sampling_budget || visibility_bytes > sampling_budget - chooser_bytes)
+        throw std::invalid_argument("Transform selection tables exceed --memory-mib; increase the buffer budget or simplify chaos");
+    const auto fits = (sampling_budget - chooser_bytes - visibility_bytes) / per_worker;
     if (!fits) throw std::invalid_argument("Worker hit buffer exceeds --memory-mib");
     const unsigned hardware = std::max(1u, std::thread::hardware_concurrency());
     const unsigned workers = static_cast<unsigned>(std::min({batch_count, fits,
         std::uint64_t(opt.threads ? opt.threads : hardware)}));
     TransformChooser choose(f);
     std::vector<double> visibility;
+    visibility.reserve(f.transforms.size());
     for (const auto& t : f.transforms) visibility.push_back(apophysis ? t.opacity : std::pow(t.opacity, std::log2(10.0)));
 
     check_cancelled(opt.stop_token);
@@ -391,6 +409,7 @@ CpuHits sample_cpu_hits(const Flame& f, const RenderOptions& opt, const RenderGe
     const unsigned workers = std::min(count, opt.threads ? opt.threads : hardware);
     TransformChooser chooser(f);
     std::vector<double> visibility;
+    visibility.reserve(f.transforms.size());
     for (const auto& t : f.transforms)
         visibility.push_back(geometry.historical ? t.opacity : std::pow(t.opacity, std::log2(10.0)));
     std::vector<std::vector<Hit>> blocks(count);
@@ -453,6 +472,11 @@ void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const
     const double vibrancy = historical ? std::nearbyint(f.vibrancy * 256) / 256 : f.vibrancy;
     const double mass_unit = historical ? apophysis_white : quantum;
     const std::array bg{f.background.r, f.background.g, f.background.b};
+    std::array<double, 4> empty_pixel{0, 0, 0, transparent ? 0.0 : 1.0};
+    if (!transparent)
+        for (unsigned c = 0; c < 3; ++c)
+            empty_pixel[c] = historical && !sixteen_bit ? std::floor(bg[c] * 255) / 255
+                                                       : std::clamp(bg[c], 0.0, 1.0);
     for (std::size_t x = 0; x < rgba.size(); ++x) {
         if ((x & 255u) == 0) check_cancelled(stop);
         std::array<double, 4> sum{};
@@ -469,7 +493,12 @@ void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const
                 for (unsigned c = 0; c < 3; ++c) sum[c] += light * (double(bin[c]) / double(bin[3]));
             }
         }
-        const double alpha = gamma_alpha(sum[3] * f.brightness, gamma, f.gamma_threshold);
+        const double light = sum[3] * f.brightness;
+        if (light == 0) {
+            rgba[x] = empty_pixel;
+            continue;
+        }
+        const double alpha = gamma_alpha(light, gamma, f.gamma_threshold);
         const double a = std::clamp(alpha, 0.0, 1.0);
         rgba[x][3] = transparent ? a : 1;
         for (unsigned c = 0; c < 3; ++c) {

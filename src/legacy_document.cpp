@@ -337,6 +337,27 @@ std::string_view LegacyDocument::element_bytes(std::size_t index) const {
     const auto& range = ranges_.at(index);
     return Text(bytes_).substr(range.begin, range.end-range.begin);
 }
+bool LegacyDocument::references_plugin(std::string_view variation, std::string_view id,
+                                      std::string_view version,
+                                      std::optional<std::size_t> entry) const {
+    const std::string name(variation);
+    const std::string id_key = "reborn_plugin_id_" + name;
+    const std::string version_key = "reborn_plugin_version_" + name;
+    const auto matches = [&](const TransformSource &source) {
+        const auto &attributes = source.attributes;
+        if (!attributes.contains(name)) return false;
+        const auto saved_id = attributes.find(id_key);
+        if (saved_id != attributes.end() && saved_id->second != id) return false;
+        const auto saved_version = attributes.find(version_key);
+        return saved_version == attributes.end() || saved_version->second == version;
+    };
+    const auto uses = [&](const EntrySource &source) {
+        return std::any_of(source.transforms.begin(), source.transforms.end(), matches) ||
+               (source.final_transform && matches(*source.final_transform));
+    };
+    return entry ? uses(sources_.at(*entry))
+                 : std::any_of(sources_.begin(), sources_.end(), uses);
+}
 Flame LegacyDocument::render_model(std::size_t index) const {
     const auto element = element_bytes(index);
     if (!wrapper_issue_.empty()) throw std::runtime_error(wrapper_issue_);

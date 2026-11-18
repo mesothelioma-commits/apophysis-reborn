@@ -473,6 +473,28 @@ Flame demo_flame() {
     return flame;
 }
 
+std::uint64_t TransformChooser::storage_bytes(const Flame& flame) {
+    const auto n = std::uint64_t(flame.transforms.size());
+    std::uint64_t distributions = 1;
+    for (const auto& t : flame.transforms)
+        if (t.weight != 0 && std::any_of(t.chaos.begin(), t.chaos.end(),
+                                       [](double weight) { return weight != 1; })) {
+            if (distributions == UINT64_MAX)
+                throw std::invalid_argument("Transform selector storage overflows");
+            ++distributions;
+        }
+    const auto multiply = [](std::uint64_t a, std::uint64_t b) {
+        if (b && a > UINT64_MAX / b)
+            throw std::invalid_argument("Transform selector storage overflows");
+        return a * b;
+    };
+    const auto headers = multiply(n, sizeof(std::vector<double>));
+    const auto entries = multiply(multiply(n, distributions), sizeof(double));
+    if (entries > UINT64_MAX - headers)
+        throw std::invalid_argument("Transform selector storage overflows");
+    return headers + entries;
+}
+
 TransformChooser::TransformChooser(const Flame& flame)
     : initial_(cumulative_weights(flame, {})), rows_(flame.transforms.size()) {
     for (std::size_t i = 0; i < rows_.size(); ++i) {

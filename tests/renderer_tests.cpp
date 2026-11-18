@@ -205,6 +205,36 @@ void test_cancellation_and_progress() {
             "cancelled output left a staged file");
     std::filesystem::remove_all(folder);
 }
+void test_chaos_selector_budget() {
+    auto f = point_flame();
+    f.transforms.resize(2048, f.transforms.front());
+    RenderOptions options{64, 19, 1, 1};
+    const auto ordinary_bytes = TransformChooser::storage_bytes(f);
+    require(render(f, options).plotted == options.samples,
+            "ordinary large transform list should use a shared distribution");
+    for (auto& transform : f.transforms) transform.chaos = {1, 1};
+    require(TransformChooser::storage_bytes(f) == ordinary_bytes,
+            "all-one chaos rows must reuse the ordinary distribution");
+    for (auto& transform : f.transforms) transform.chaos = {0};
+    require(TransformChooser::storage_bytes(f) > 32 * 1024 * 1024,
+            "nondefault chaos table estimate omitted per-row distributions");
+    bool sampled = false;
+    options.progress = [&](std::uint64_t, std::uint64_t) { sampled = true; };
+    try {
+        render(f, options);
+        throw std::runtime_error("chaos tables escaped the renderer memory budget");
+    } catch (const std::invalid_argument& error) {
+        require(std::string(error.what()).find("selection tables") != std::string::npos,
+                "large chaos model failed for an unrelated reason");
+    }
+    require(!sampled, "over-budget selector reached sampling");
+    f.transforms.front().weight = 0;
+    const auto without_unreachable = TransformChooser::storage_bytes(f);
+    f.transforms.front().chaos.clear();
+    require(TransformChooser::storage_bytes(f) == without_unreachable,
+            "unreachable transform must not allocate a chaos distribution");
+}
+
 void test_limits() {
     auto f = point_flame();
     f.width = f.height = 16384;
@@ -224,6 +254,7 @@ int main() {
         test_projection_and_color();
         test_final_feedback_and_worker_order();
         test_limits();
+        test_chaos_selector_budget();
         test_legacy_reconstruction();
         test_cancellation_and_progress();
         return 0;

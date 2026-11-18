@@ -4,6 +4,7 @@
 #include "../animation_export.hpp"
 #include "canvases.hpp"
 #include "document_session.hpp"
+#include "device_discovery.hpp"
 #include "preview_controller.hpp"
 #include "render_queue.hpp"
 #include <QMainWindow>
@@ -25,6 +26,7 @@ class QSpinBox;
 class QTabWidget;
 class QTableWidget;
 class QToolBar;
+class QTimer;
 
 namespace apo::editor {
 
@@ -32,7 +34,8 @@ class MainWindow : public QMainWindow {
   Q_OBJECT
 public:
   explicit MainWindow(bool useSettings = true, QWidget *parent = nullptr,
-                      const QString &queueDirectory = {});
+                      const QString &queueDirectory = {},
+                      std::shared_ptr<DeviceDiscovery> deviceDiscovery = {});
   ~MainWindow() override;
   DocumentSession &session() { return session_; }
   PreviewController &previewController() { return preview_; }
@@ -59,9 +62,11 @@ private:
   DocumentSession session_;
   PreviewController preview_;
   std::unique_ptr<RenderQueue> queue_;
+  std::shared_ptr<DeviceDiscovery> deviceDiscovery_;
   QPointer<RenderQueueDialog> queueDialog_;
   QSettings settings_;
-  bool useSettings_, refreshing_ = false;
+  bool useSettings_, refreshing_ = false, closing_ = false;
+  QTimer *closeTimer_ = nullptr;
   std::optional<Flame> model_;
   std::optional<Transform> copiedTransform_;
   QDockWidget *libraryDock_, *transformDock_, *propertiesDock_, *logDock_;
@@ -102,6 +107,8 @@ private:
   bool importUpr(const QString &path);
   void exportUpr();
   void captureProjectState();
+  ProjectFile projectViewSnapshot() const;
+  void requestRecovery();
   void restoreProjectState();
   void makeLibrary();
   void makePreview();

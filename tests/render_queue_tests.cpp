@@ -1,10 +1,12 @@
 #include "editor/document_session.hpp"
 #include "editor/render_queue.hpp"
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -242,6 +244,133 @@ private slots:
     QVERIFY(!restored.isRunning());
     QVERIFY(!restored.isBusy());
     QVERIFY(!QFileInfo::exists(dir.filePath("large.ppm")));
+  }
+  void pauseAndWaitFromStartedSignalAllowsWorkerReuse() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    RenderQueue queue({}, dir.filePath("checkpoints"));
+    const auto first = queue.add(fixture(), settings(131075), fileSettings(),
+                                 dir.filePath("first.ppm"));
+    const auto second = queue.add(fixture(), settings(32771), fileSettings(),
+                                  dir.filePath("second.ppm"));
+    bool stopped = false;
+    connect(&queue, &RenderQueue::busyChanged, &queue, [&](bool busy) {
+      if (busy && !stopped) {
+        stopped = true;
+        queue.pauseAndWait();
+      }
+    });
+    queue.start();
+    QVERIFY(stopped);
+    QVERIFY(!queue.isBusy());
+    QVERIFY(!queue.isRunning());
+    QCOMPARE(queue.job(first)->state, RenderJobState::paused);
+    QCOMPARE(queue.job(second)->state, RenderJobState::queued);
+    queue.restart(first);
+    QCOMPARE(queue.job(first)->progress, 0);
+    QSignalSpy completed(&queue, &RenderQueue::jobFinished);
+    queue.start();
+    QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 2, 20000);
+    QVERIFY(completed[0][1].toBool());
+    QVERIFY(completed[1][1].toBool());
+    QCOMPARE(queue.job(first)->state, RenderJobState::complete);
+    QCOMPARE(queue.job(second)->state, RenderJobState::complete);
+  }
+  void completionCanRestartTheSameJobWithoutStaleProgress() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    RenderQueue queue({}, dir.filePath("checkpoints"));
+    const auto id = queue.add(fixture(), settings(131075), fileSettings(),
+                              dir.filePath("twice.ppm"));
+    QSignalSpy completed(&queue, &RenderQueue::jobFinished);
+    bool restarted = false;
+    connect(&queue, &RenderQueue::busyChanged, &queue, [&](bool busy) {
+      if (!busy && !restarted && queue.job(id)->state == RenderJobState::complete) {
+        restarted = true;
+        queue.restart(id);
+        QCOMPARE(queue.job(id)->progress, 0);
+        QCOMPARE(queue.job(id)->completed_samples, UINT64_C(0));
+        queue.start();
+        QVERIFY(queue.isBusy());
+        QCOMPARE(queue.job(id)->state, RenderJobState::running);
+      }
+    });
+    queue.start();
+    QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 2, 20000);
+    QVERIFY(restarted);
+    QVERIFY(completed[0][1].toBool());
+    QVERIFY(completed[1][1].toBool());
+    QCOMPARE(queue.job(id)->state, RenderJobState::complete);
+    QCOMPARE(queue.job(id)->progress, 100);
+    QVERIFY(!queue.isBusy());
+  }
+  void nestedPauseAndWaitDoesNotWaitForConsumedCompletion() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    RenderQueue queue({}, dir.filePath("checkpoints"));
+    const auto id = queue.add(fixture(), settings(20000003), fileSettings(),
+                              dir.filePath("paused.ppm"));
+    queue.start();
+    bool nested = false;
+    connect(&queue, &RenderQueue::changed, &queue, [&] {
+      if (!nested && queue.isBusy() && !queue.isRunning()) {
+        nested = true;
+        queue.pauseAndWait();
+      }
+    });
+    queue.pauseAndWait();
+    QVERIFY(nested);
+    QVERIFY(!queue.isBusy());
+    QCOMPARE(queue.job(id)->state, RenderJobState::paused);
+  }
+  void completionMayDestroyQueueFromDirectSignal() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    auto queue = std::make_unique<RenderQueue>(QString{}, dir.filePath("checkpoints"));
+    QPointer<RenderQueue> alive(queue.get());
+    queue->add(fixture(), settings(32771), fileSettings(), dir.filePath("finished.ppm"));
+    connect(queue.get(), &RenderQueue::busyChanged, this, [&](bool busy) {
+      if (!busy)
+        queue.reset();
+    });
+    queue->start();
+    QTRY_VERIFY_WITH_TIMEOUT(alive.isNull(), 15000);
+    QVERIFY(QFileInfo::exists(dir.filePath("finished.ppm")));
+  }
+  void progressBacklogIsBoundedAndCompletionIsAccurate() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    RenderQueue queue(dir.filePath("queue.json"), dir.filePath("checkpoints"));
+    auto f = fixture();
+    f.width = 8;
+    f.height = 2048;
+    f.oversample = 1;
+    f.filter_radius = 0;
+    auto file = fileSettings();
+    file.strip_rows = 1;
+    const auto output = dir.filePath("many-strips.ppm");
+    const auto id = queue.add(f, settings(32771), file, output);
+    QSignalSpy changed(&queue, &RenderQueue::changed);
+    queue.start();
+    changed.clear();
+    const auto admitted = bytes(dir.filePath("queue.json"));
+    // Hold the GUI event loop while the worker publishes many strip updates.
+    // Completion is independently observed through the atomic output file.
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (!QFileInfo::exists(output) && elapsed.elapsed() < 15000)
+      QTest::qSleep(2);
+    QVERIFY(QFileInfo::exists(output));
+    QCOMPARE(bytes(dir.filePath("queue.json")), admitted);
+    QTRY_VERIFY_WITH_TIMEOUT(!queue.isBusy(), 5000);
+    QVERIFY2(changed.size() <= 5, "Worker progress flooded the GUI event queue");
+    QCOMPARE(queue.job(id)->progress, 100);
+    QCOMPARE(queue.job(id)->completed_samples, UINT64_C(32771));
+    QCOMPARE(queue.job(id)->total_strips, 2048u);
+    QCOMPARE(queue.job(id)->completed_strips, 2048u);
+    QCOMPARE(queue.job(id)->state, RenderJobState::complete);
+    QVERIFY(bytes(dir.filePath("queue.json")) != admitted);
+    QVERIFY(bytes(output).startsWith("P6\n8 2048\n255\n"));
   }
 };
 QTEST_MAIN(RenderQueueTests)

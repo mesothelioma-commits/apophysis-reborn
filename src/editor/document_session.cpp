@@ -10,7 +10,13 @@
 #include <QStandardPaths>
 #include <QUuid>
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
 #include <fstream>
+#include <map>
+#include <mutex>
+#include <thread>
+#include <utility>
 
 namespace apo::editor {
 
@@ -34,6 +40,186 @@ QByteArray digest(const QString &path) {
   return hash.result();
 }
 } // namespace
+
+struct DocumentSession::RecoveryWorker {
+  struct Job {
+    std::uint64_t serial = 0, generation = 0;
+    QString destination, source;
+    QByteArray digest;
+    std::optional<ProjectFile> project;
+    std::string library;
+    RecoveryPreparation prepare;
+  };
+  struct Completion {
+    std::uint64_t serial = 0, generation = 0;
+    QString destination, error;
+    bool cancelled = false;
+  };
+  struct Lease {
+    QString path;
+    std::unique_ptr<QLockFile> lock;
+  };
+  struct State {
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::optional<Job> pending;
+    std::optional<Completion> completed;
+    std::vector<QString> retired;
+    std::vector<Lease> adopted;
+    std::atomic<std::uint64_t> generation{0};
+    std::uint64_t serial = 0;
+    bool active = false, closing = false;
+  };
+  std::shared_ptr<State> state;
+
+  explicit RecoveryWorker(std::uint64_t generation) : state(std::make_shared<State>()) {
+    state->generation = generation;
+    // The worker owns only immutable snapshots and its private state. No queued
+    // callback captures a DocumentSession; teardown cannot wait on slow storage.
+    std::thread([shared = state] { run(shared); }).detach();
+  }
+  ~RecoveryWorker() {
+    { std::lock_guard lock(state->mutex); state->closing = true; }
+    state->wake.notify_one();
+  }
+  std::uint64_t submit(Job job) {
+    std::lock_guard lock(state->mutex);
+    job.serial = ++state->serial;
+    const auto serial = job.serial;
+    state->pending = std::move(job);
+    state->wake.notify_one();
+    return serial;
+  }
+  void invalidate(std::uint64_t generation, const QString &path) {
+    state->generation = generation;
+    {
+      std::lock_guard lock(state->mutex);
+      if (state->pending && state->pending->generation != generation)
+        state->pending.reset();
+      if (!path.isEmpty())
+        state->retired.push_back(path);
+    }
+    state->wake.notify_one();
+  }
+  void adopt(QString path, std::unique_ptr<QLockFile> lock) {
+    { std::lock_guard guard(state->mutex); state->adopted.push_back({std::move(path), std::move(lock)}); }
+    state->wake.notify_one();
+  }
+  bool busy() const {
+    std::lock_guard lock(state->mutex);
+    return state->active || state->pending || !state->retired.empty() || !state->adopted.empty();
+  }
+  std::pair<std::optional<Completion>, bool> poll() {
+    std::lock_guard lock(state->mutex);
+    // Completion and idleness must be observed together. Separate reads can
+    // miss a just-finished job and stop GUI polling before delivering its result.
+    return {std::exchange(state->completed, {}),
+            state->active || state->pending || !state->retired.empty() || !state->adopted.empty()};
+  }
+  Completion wait(std::uint64_t serial) {
+    std::unique_lock lock(state->mutex);
+    state->wake.wait(lock, [&] {
+      return state->completed && state->completed->serial >= serial;
+    });
+    return *state->completed;
+  }
+  void waitIdle() {
+    std::unique_lock lock(state->mutex);
+    state->wake.wait(lock, [&] {
+      return !state->active && !state->pending && state->retired.empty() && state->adopted.empty();
+    });
+  }
+  static void run(const std::shared_ptr<State> &state) {
+    std::map<QString, std::unique_ptr<QLockFile>> leases;
+    for (;;) {
+      std::optional<Job> job;
+      std::vector<QString> retired;
+      std::vector<Lease> adopted;
+      {
+        std::unique_lock lock(state->mutex);
+        state->wake.wait(lock, [&] {
+          return state->closing || state->pending || !state->retired.empty() || !state->adopted.empty();
+        });
+        job = std::exchange(state->pending, {});
+        retired.swap(state->retired);
+        adopted.swap(state->adopted);
+        if (state->closing && !job && retired.empty() && adopted.empty())
+          return;
+        state->active = true;
+      }
+      for (auto &lease : adopted)
+        leases[lease.path] = std::move(lease.lock);
+      for (const auto &path : retired) {
+        QFile::remove(path);
+        QFile::remove(path + ".json");
+        leases.erase(path);
+      }
+      std::optional<Completion> completed;
+      if (job) {
+        completed = Completion{job->serial, job->generation, job->destination, {}, false};
+        const auto current = [&] { return state->generation.load() == job->generation; };
+        struct Obsolete {};
+        const auto check = [&] { if (!current()) throw Obsolete{}; };
+        try {
+          check();
+          if (job->project && job->prepare)
+            job->prepare(*job->project);
+          check();
+          const auto bytes = job->project ? serialize_project(*job->project) : std::move(job->library);
+          check();
+          if (!leases.contains(job->destination)) {
+            if (!QDir().mkpath(QFileInfo(job->destination).absolutePath()))
+              throw std::runtime_error("Could not create the recovery folder");
+            auto lock = std::make_unique<QLockFile>(job->destination + ".lock");
+            lock->setStaleLockTime(0);
+            if (!lock->tryLock())
+              throw std::runtime_error("Could not reserve the recovery file");
+            leases.emplace(job->destination, std::move(lock));
+          }
+          const auto write = [&](const QString &path, std::string_view contents) {
+            write_atomic(filesystemPath(path), [&](std::ostream &out) {
+              for (std::size_t offset = 0; offset < contents.size();) {
+                check();
+                const auto count = std::min<std::size_t>(65536, contents.size() - offset);
+                out.write(contents.data() + offset, std::streamsize(count));
+                offset += count;
+              }
+            }, check);
+          };
+          write(job->destination, bytes);
+          const auto info = QJsonDocument(QJsonObject{{"source", job->source},
+              {"original_sha256", QString::fromLatin1(job->digest.toHex())}}).toJson();
+          write(job->destination + ".json", std::string_view(info.constData(), std::size_t(info.size())));
+          check();
+        } catch (const Obsolete &) {
+          completed->cancelled = true;
+        } catch (const std::exception &error) {
+          completed->error = QString::fromUtf8(error.what());
+        } catch (...) {
+          completed->error = "Recovery saving failed with an unknown error";
+        }
+        // Invalidation can race the final atomic rename, but this path is unique
+        // to the retired document and remains locked until its cleanup below.
+        if (!current()) {
+          completed->cancelled = true;
+          QFile::remove(job->destination);
+          QFile::remove(job->destination + ".json");
+          leases.erase(job->destination);
+        }
+      }
+      // Idle is also a lifetime boundary for ordinary application close: release
+      // the preparation closure and its owned QImage before advertising it.
+      job.reset();
+      {
+        std::lock_guard lock(state->mutex);
+        state->active = false;
+        if (completed)
+          state->completed = std::move(completed);
+      }
+      state->wake.notify_all();
+    }
+  }
+};
 
 class DocumentChange : public QUndoCommand {
 public:
@@ -78,6 +264,8 @@ private:
 
 DocumentSession::DocumentSession(QObject *parent)
     : QObject(parent), undo_(this) {
+  recoveryPoll_.setInterval(25);
+  connect(&recoveryPoll_, &QTimer::timeout, this, &DocumentSession::pollRecovery);
   undo_.setUndoLimit(100);
   connect(&undo_, &QUndoStack::cleanChanged, this, [this](bool clean) {
     if (clean && !projectDirty_)
@@ -87,6 +275,8 @@ DocumentSession::DocumentSession(QObject *parent)
 }
 DocumentSession::~DocumentSession() {
   disconnect(&undo_, nullptr, this, nullptr);
+  recoveryPoll_.stop();
+  recoveryWorker_.reset();
 }
 
 void DocumentSession::load(const QString &path) {
@@ -168,7 +358,21 @@ void DocumentSession::save(const QString &path, bool replaceExternalChange) {
 ProjectFile DocumentSession::projectSnapshot() const {
   if (!document_)
     throw std::runtime_error("Open a document before creating a project");
-  auto state = project_.value_or(ProjectFile{});
+  ProjectFile state;
+  if (project_) {
+    // The envelope's cached legacy bytes may already be large and are replaced
+    // by the current document below. Copy each retained field once instead of
+    // copying and immediately discarding an entire old library snapshot.
+    state.version = project_->version;
+    state.render_settings = project_->render_settings;
+    state.preview_settings = project_->preview_settings;
+    state.workspace = project_->workspace;
+    state.metadata = project_->metadata;
+    state.render_presets = project_->render_presets;
+    state.plugin_references = project_->plugin_references;
+    state.animation_data = project_->animation_data;
+    state.retained_source = project_->retained_source;
+  }
   state.library_bytes = document_->bytes();
   state.selected_index = std::size_t(flame_);
   return state;
@@ -253,39 +457,77 @@ void DocumentSession::restore(const std::string &bytes, int flame,
   emit changed();
 }
 
-QString DocumentSession::writeRecovery() {
+std::uint64_t DocumentSession::queueRecovery(std::optional<ProjectFile> project,
+                                             RecoveryPreparation prepare) {
   if (!document_ || !isModified()) {
     discardRecovery();
-    return {};
+    return 0;
   }
   const auto directory =
       QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) +
       "/recovery";
-  if (!QDir().mkpath(directory))
-    throw std::runtime_error("Could not create the recovery folder");
+  if (!recoveryWorker_)
+    recoveryWorker_ = std::make_unique<RecoveryWorker>(recoveryGeneration_);
   if (recoveryPath_.isEmpty()) {
-    const auto path = directory + '/' +
+    recoveryPath_ = directory + '/' +
                       QUuid::createUuid().toString(QUuid::WithoutBraces) +
                       (project_ ? ".apoproject" : ".flame");
-    auto lock = std::make_unique<QLockFile>(path + ".lock");
-    lock->setStaleLockTime(0);
-    if (!lock->tryLock())
-      throw std::runtime_error("Could not reserve the recovery file");
-    recoveryPath_ = path;
-    recoveryLock_ = std::move(lock);
   }
-  const auto bytes =
-      project_ ? serialize_project(projectSnapshot()) : document_->bytes();
-  write_atomic(filesystemPath(recoveryPath_),
-               [&](std::ostream &out) { out << bytes; });
-  const auto info =
-      QJsonDocument(QJsonObject{{"source", path_},
-                                {"original_sha256",
-                                 QString::fromLatin1(diskDigest_.toHex())}})
-          .toJson();
-  write_atomic(filesystemPath(recoveryPath_ + ".json"),
-               [&](std::ostream &out) { out.write(info.data(), info.size()); });
-  return recoveryPath_;
+  RecoveryWorker::Job job;
+  job.generation = recoveryGeneration_;
+  job.destination = recoveryPath_;
+  job.source = path_;
+  job.digest = diskDigest_;
+  if (project_) {
+    job.project = project ? std::move(project) : std::optional(projectSnapshot());
+    job.prepare = std::move(prepare);
+  } else {
+    job.library = document_->bytes();
+  }
+  recoveryPoll_.start();
+  return recoveryWorker_->submit(std::move(job));
+}
+
+void DocumentSession::requestRecovery(std::optional<ProjectFile> project,
+                                       RecoveryPreparation prepare) {
+  (void)queueRecovery(std::move(project), std::move(prepare));
+}
+
+bool DocumentSession::isRecoveryBusy() const {
+  return recoveryWorker_ && recoveryWorker_->busy();
+}
+
+void DocumentSession::pollRecovery() {
+  if (!recoveryWorker_)
+    return;
+  const auto [completed, busy] = recoveryWorker_->poll();
+  // Finish touching our state before signals. A direct slot may destroy this
+  // session or enqueue another save (which must retain its restarted timer).
+  if (!busy)
+    recoveryPoll_.stop();
+  if (completed &&
+      completed->generation == recoveryGeneration_ &&
+      completed->destination == recoveryPath_ && !completed->cancelled) {
+    if (completed->error.isEmpty())
+      emit recoverySaved(completed->destination);
+    else
+      emit recoveryFailed(completed->error);
+  }
+}
+
+QString DocumentSession::writeRecovery() {
+  const auto serial = queueRecovery({}, {});
+  if (!serial) {
+    if (recoveryWorker_)
+      recoveryWorker_->waitIdle();
+    return {};
+  }
+  const auto completed = recoveryWorker_->wait(serial);
+  if (!completed.error.isEmpty())
+    throw std::runtime_error(completed.error.toStdString());
+  if (completed.cancelled)
+    return {};
+  return completed.destination;
 }
 
 void DocumentSession::recover(const QString &path) {
@@ -304,15 +546,18 @@ void DocumentSession::recover(const QString &path) {
     throw std::runtime_error("Could not read the complete recovery document");
   loadBytes(bytes.toStdString(), {}, true);
   recoveryPath_ = path;
-  recoveryLock_ = std::move(lock);
+  if (!recoveryWorker_)
+    recoveryWorker_ = std::make_unique<RecoveryWorker>(recoveryGeneration_);
+  recoveryWorker_->adopt(path, std::move(lock));
 }
 
 void DocumentSession::discardRecovery() {
   if (recoveryPath_.isEmpty())
     return;
-  QFile::remove(recoveryPath_);
-  QFile::remove(recoveryPath_ + ".json");
+  ++recoveryGeneration_;
+  if (recoveryWorker_)
+    recoveryWorker_->invalidate(recoveryGeneration_, recoveryPath_);
   recoveryPath_.clear();
-  recoveryLock_.reset();
+  recoveryPoll_.start();
 }
 } // namespace apo::editor

@@ -68,6 +68,8 @@ Normal editor sessions save `render-queue.json` in Qt's application-local data d
 
 Each job saves its source label and destination, embedded flame XML, transform math conventions, plugin identity when needed, all render/export settings, status, progress, elapsed time, actual device/backend, fallback reason, and error. Full-width integer counters and seeds are stored as decimal strings. Queue files use `QSaveFile` to commit atomically. Invalid JSON, incompatible versions, duplicate identifiers, invalid snapshots, mismatched plugin identities and invalid render settings fail before replacing the current list or its automatic save file.
 
+Starting with 0.10.1, one persistent worker handles successive jobs, preserving its per-thread Vulkan context between renders. A 50 ms GUI timer reads the latest progress snapshot; workers do not enqueue one UI event per strip. Cosmetic progress updates do not rewrite the whole queue. Admission, starting, pause/cancel requests and final outcomes still save durable state, and the renderer independently commits resumable sampling checkpoints. After an interruption, a saved progress percentage can lag the actual checkpoint; validated checkpoint data determines what can resume.
+
 At normal startup the editor loads unchanged, explicitly approved plugins and then restores its saved list. Interrupted running jobs become paused, and **no restored job starts without an explicit Start / resume action**. An automatic file that fails restoration is retained; the editor reports the error and disables writes to that file so a new session cannot overwrite the recovery evidence.
 
 Pausing first shows a stopping state. The worker returns after stopping safely, then the queue checks the committed checkpoint before showing **Paused · checkpoint saved**. If no sampling chunk was committed yet, the status says the job is ready to restart. A chunk consists of immutable sampled hits followed by an atomic manifest commit. Only complete, referenced chunks participate in a resume. The core validates checkpoint identity and chunk integrity when resuming.
@@ -93,6 +95,8 @@ M8 native variations have CPU implementations only. CPU rendering is supported d
 ## Verification modes
 
 `render-queue-tests` covers immutable snapshots, exact 64-bit settings, model math conventions, queue ordering, atomic restore rollback, responsive timer callbacks during real queued work, pause/checkpoint/restore/resume, byte equality with uninterrupted rendering, destination preservation, failure/retry, and graceful destruction into a stopped resumable queue. The existing editor regression also checks that renderer details remain visible when backend selection changes.
+
+The 0.10.1 regressions additionally exercise synchronous and nested pause requests with a persistent worker, restarting the same job from its completion signal, and a backlog of 2,048 strip updates while the GUI is occupied. Completion must still report the correct sample/strip totals and final state with bounded UI notifications.
 
 M8's `extensions-editor-tests` exercises private script application, document undo and validated batches. `plugin-dialog-tests` covers explicit approvals, disabled-plugin snapshot lifetime, exact plugin identities and restoration failure without overwriting queue state. These checks run natively; the Windows binaries are cross-compiled and statically audited in this environment. Windows runtime execution remains a separate acceptance step.
 

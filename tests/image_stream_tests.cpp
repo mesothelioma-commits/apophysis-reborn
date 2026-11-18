@@ -369,6 +369,71 @@ void validate_contract() {
     rejects([] { image_format_for_path("image.png", 12); }, "unsupported bit depth accepted");
     rejects([] { image_format_for_path("image.bin"); }, "unknown extension accepted");
 }
+
+void repeated_quantization_tests() {
+    const auto check_quantization = [](const Decoded &decoded, unsigned width, unsigned height,
+                                       const std::vector<Pixel> &pixels, ImageExport settings) {
+        const unsigned channels = settings.alpha ? 4 : 3;
+        const unsigned bits = image_format_bits(settings.format);
+        require(decoded.width == width && decoded.height == height && decoded.bits == bits &&
+                    decoded.channels == channels && decoded.samples.size() == pixels.size() * channels,
+                "Repeated-pixel output shape/depth/channel mismatch");
+        const double maximum = bits == 16 ? 65535 : 255;
+        for (std::size_t i = 0; i < pixels.size(); ++i)
+            for (unsigned c = 0; c < channels; ++c)
+                require(decoded.samples[i * channels + c] ==
+                            std::lround(std::clamp(pixels[i][c], 0.0, 1.0) * maximum),
+                        "Repeated-pixel clamp/rounding/channel mismatch");
+    };
+    const double half_step = (12345.0 + .5) / 65535;
+    const std::array<Pixel, 10> values{{
+        {0, 0, 0, 0}, {-0.0, 0, -0.0, 0}, {0, 0, 0, 1},
+        {.12345, .45678, .76543, .25}, {.12345, .45678, .76543, .75},
+        {-2, 2, .5, -5}, {1, 1, 1, 1},
+        {half_step, .5, 0, 1},
+        {std::nextafter(half_step, 0.0), .5, 0, 1},
+        {std::nextafter(half_step, 1.0), .5, 0, 1}
+    }};
+    constexpr unsigned repeats = 9, height = 3;
+    const unsigned width = unsigned(values.size()) * repeats;
+    std::vector<Pixel> pixels;
+    for (unsigned y = 0; y < height; ++y)
+        for (const auto &value : values)
+            for (unsigned n = 0; n < repeats; ++n)
+                pixels.push_back(value);
+    for (auto format : {ImageFormat::bmp8, ImageFormat::ppm8, ImageFormat::ppm16,
+                        ImageFormat::png8, ImageFormat::png16, ImageFormat::tiff8,
+                        ImageFormat::tiff16}) {
+        for (bool alpha : {false, true}) {
+            if (alpha && !image_format_supports_alpha(format)) continue;
+            const ImageExport settings{format, alpha};
+            const auto data = encode(width, height, pixels, settings);
+            const auto decoded = format == ImageFormat::bmp8 ? decode_bmp(data)
+                : (format == ImageFormat::ppm8 || format == ImageFormat::ppm16) ? decode_ppm(data)
+                : (format == ImageFormat::png8 || format == ImageFormat::png16) ? decode_png(data)
+                : decode_tiff(data);
+            check_quantization(decoded, width, height, pixels, settings);
+        }
+        // A run of identical RGB values must not bypass finite validation of
+        // an unused alpha channel. A rejected input row remains retryable.
+        std::vector<Pixel> row(17, Pixel{.25, .5, .75, 1});
+        std::ostringstream output(std::ios::binary);
+        ImageStreamWriter writer(output, 17, 1, {format, false});
+        row.back()[3] = std::numeric_limits<double>::quiet_NaN();
+        rejects([&] { writer.write_row(row); }, "repeated RGB run accepted nonfinite alpha");
+        row.back()[3] = std::numeric_limits<double>::infinity();
+        rejects([&] { writer.write_row(row); }, "repeated RGB run accepted infinite alpha");
+        row.back()[3] = 1;
+        writer.write_row(row);
+        writer.finish();
+        const auto data = output.str();
+        const auto decoded = format == ImageFormat::bmp8 ? decode_bmp(data)
+            : (format == ImageFormat::ppm8 || format == ImageFormat::ppm16) ? decode_ppm(data)
+            : (format == ImageFormat::png8 || format == ImageFormat::png16) ? decode_png(data)
+            : decode_tiff(data);
+        check_quantization(decoded, 17, 1, row, {format, false});
+    }
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -416,10 +481,11 @@ int main(int argc, char **argv) {
         check(decode_tiff(encode(2, 3, small, {ImageFormat::tiff16, true})), 2, 3, small,
               {ImageFormat::tiff16, true});
         validate_contract();
+        repeated_quantization_tests();
         std::cout << combinations
                   << " RGB/RGBA format/depth combinations decoded exactly; "
                      "16-bit precision, PNG CRC/deflate, TIFF strips/alpha, row "
-                     "limits and write failures passed\n";
+                     "limits, repeated pixels and write failures passed\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

@@ -62,14 +62,17 @@ class PreviewController : public QObject {
     std::unique_ptr<Worker> worker_;
     QTimer debounce_;
     PreviewSettings settings_;
-    std::optional<Flame> latest_;
+    // request() takes one immutable copy on the Qt thread. Debouncing, settings
+    // changes and restarts then share it; validation/fitting run on the worker.
+    std::shared_ptr<const Flame> latest_;
     QSize viewport_;
     quint64 generation_ = 0;
     bool paused_ = false;
     bool busy_ = false;
 
     void queuePreview();
-    void invalidate();
+    void schedulePreview();
+    quint64 invalidate();
     void setBusy(bool busy);
 };
 } // namespace apo::editor

@@ -1,5 +1,6 @@
 #include "editor/creative_widgets.hpp"
 #include "editor/main_window.hpp"
+#include "flame_io.hpp"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -10,12 +11,18 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QElapsedTimer>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <cmath>
 
 using namespace apo;
@@ -85,6 +92,200 @@ class EditorTests : public QObject {
         QCoreApplication::setApplicationName("EditorWorkflow");
         applyDarkTheme();
     }
+    void deviceDiscoveryDoesNotBlockDialogsOrDestruction() {
+        struct Gate {
+            std::mutex mutex;
+            std::condition_variable changed;
+            bool release = false;
+            std::atomic<unsigned> calls = 0;
+            std::atomic<bool> returned = false;
+        };
+        auto gate = std::make_shared<Gate>();
+        struct ReleaseGate {
+            std::shared_ptr<Gate> gate;
+            ~ReleaseGate() {
+                { std::lock_guard lock(gate->mutex); gate->release = true; }
+                gate->changed.notify_all();
+            }
+        } release{gate};
+        auto discovery = std::make_shared<DeviceDiscovery>([gate] {
+            ++gate->calls;
+            std::unique_lock lock(gate->mutex);
+            gate->changed.wait_for(lock, std::chrono::seconds(10), [&] { return gate->release; });
+            ComputeInfo result;
+            result.compiled = result.loader_available = true;
+            result.diagnostic = "Injected delayed driver completed";
+            gate->returned = true;
+            return result;
+        });
+        auto window = std::make_unique<MainWindow>(false, nullptr, QString{}, discovery);
+        window->previewController().setPaused(true);
+        window->show();
+        // CPU-only preferences do not enter a graphics driver at all.
+        QVERIFY(throughAction<QDialog>(*window, "actionPreferences", [&](QDialog &dialog) {
+            QCOMPARE(gate->calls.load(), 0U);
+            dialog.reject();
+        }));
+        QVERIFY(throughAction<QDialog>(*window, "actionPreferences", [&](QDialog &dialog) {
+            auto backend = widget<QComboBox>(dialog, "renderBackend");
+            backend->setCurrentIndex(backend->findData(int(RenderBackend::vulkan)));
+            QTRY_COMPARE_WITH_TIMEOUT(gate->calls.load(), 1U, 3000);
+            QVERIFY(discovery->snapshot().pending);
+            QVERIFY(widget<QLabel>(dialog, "computeDetails")->text().contains("background"));
+            unsigned heartbeats = 0;
+            QTimer heartbeat;
+            heartbeat.setInterval(5);
+            connect(&heartbeat, &QTimer::timeout, &dialog, [&] { ++heartbeats; });
+            heartbeat.start();
+            QTRY_VERIFY_WITH_TIMEOUT(heartbeats >= 8, 1000);
+            for (int i = 0; i < 8; ++i) {
+                backend->setCurrentIndex(backend->findData(int(RenderBackend::cpu)));
+                backend->setCurrentIndex(backend->findData(int(RenderBackend::vulkan)));
+                QVERIFY(!discovery->request(true));
+            }
+            QCOMPARE(gate->calls.load(), 1U); // No background-probe backlog.
+            dialog.reject();
+        }));
+        QElapsedTimer elapsed;
+        elapsed.start();
+        window.reset();
+        discovery.reset();
+        QVERIFY2(elapsed.elapsed() < 500, "Closing the UI waited for a blocked driver probe");
+        QVERIFY(!gate->returned.load());
+        { std::lock_guard lock(gate->mutex); gate->release = true; }
+        gate->changed.notify_all();
+        QTRY_VERIFY_WITH_TIMEOUT(gate->returned.load(), 3000);
+    }
+    void periodicRecoveryCapturesViewAndThumbnailWithoutChangingDocument() {
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        ProjectFile project;
+        project.library_bytes = serialize_flame(demo_flame());
+        project.metadata["vendor"] = "retain native envelope";
+        project.animation_data = "opaque future timeline";
+        project.plugin_references.push_back({"missing-plugin", "3", "vendor.apoplugin", "hash",
+                                             {{"vendor-setting", "retain"}}});
+        window.session().loadBytes(serialize_project(project), {}, true);
+        const auto original = window.session().document().bytes();
+        auto settings = window.previewController().settings();
+        settings.seed = 123789;
+        settings.threads = 1;
+        window.previewController().setSettings(settings);
+        QImage image(768, 384, QImage::Format_RGB32);
+        image.fill(QColor(50, 80, 140));
+        const auto canvas = window.findChild<PreviewCanvas *>();
+        QVERIFY(canvas);
+        canvas->setImage(image);
+        QSignalSpy saved(&window.session(), &DocumentSession::recoverySaved);
+        QSignalSpy failed(&window.session(), &DocumentSession::recoveryFailed);
+        auto timer = widget<QTimer>(window, "recoveryTimer");
+        QCOMPARE(timer->interval(), 45000);
+        timer->setSingleShot(true);
+        timer->start(1);
+        QTRY_COMPARE_WITH_TIMEOUT(saved.size(), 1, 10000);
+        QCOMPARE(failed.size(), 0);
+        const auto recovery = window.session().recoveryPath();
+        QFile file(recovery);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto snapshot = parse_project(file.readAll().toStdString());
+        file.close();
+        QCOMPARE(snapshot.library_bytes, original);
+        QCOMPARE(snapshot.metadata.at("vendor"), project.metadata.at("vendor"));
+        QCOMPARE(snapshot.animation_data, project.animation_data);
+        QCOMPARE(snapshot.plugin_references, project.plugin_references);
+        QCOMPARE(snapshot.preview_settings.at("seed"), std::string("123789"));
+        QVERIFY(!snapshot.workspace.at("qt-layout").empty());
+        const auto encoded = QByteArray::fromStdString(snapshot.preview_settings.at("thumbnail-png"));
+        const auto thumbnail = QImage::fromData(QByteArray::fromBase64(encoded), "PNG");
+        QCOMPARE(thumbnail.size(), QSize(384, 192));
+        QCOMPARE(thumbnail.pixelColor(0, 0), QColor(50, 80, 140));
+        QCOMPARE(window.session().document().bytes(), original);
+        QCOMPARE(window.session().undoStack().count(), 0);
+        QCOMPARE(window.session().projectSnapshot().preview_settings.count("thumbnail-png"), std::size_t(0));
+        QVERIFY(window.session().isModified());
+        window.session().undoStack().setClean();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.session().isRecoveryBusy(), 5000);
+        QVERIFY(!QFileInfo::exists(recovery));
+    }
+    void closeWaitsResponsivelyForDiscardedRecoveryAndConfirmsOnce() {
+        struct QuitPolicy {
+            bool previous = QApplication::quitOnLastWindowClosed();
+            QuitPolicy() { QApplication::setQuitOnLastWindowClosed(false); }
+            ~QuitPolicy() { QApplication::setQuitOnLastWindowClosed(previous); }
+        } policy;
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        ProjectFile project;
+        project.library_bytes = serialize_flame(demo_flame());
+        window.session().loadBytes(serialize_project(project), {}, true);
+        window.show();
+        window.showRenderQueue();
+        const auto queueView = window.findChild<RenderQueueDialog *>();
+        QVERIFY(queueView && queueView->isVisible());
+        const auto recovery = window.session().writeRecovery();
+        QVERIFY(QFileInfo::exists(recovery));
+        struct Gate {
+            std::mutex mutex;
+            std::condition_variable changed;
+            bool release = false;
+            std::atomic<bool> entered = false, timedOut = false;
+        };
+        auto gate = std::make_shared<Gate>();
+        struct ReleaseGate {
+            std::shared_ptr<Gate> gate;
+            ~ReleaseGate() {
+                { std::lock_guard lock(gate->mutex); gate->release = true; }
+                gate->changed.notify_all();
+            }
+        } release{gate};
+        window.session().requestRecovery(window.session().projectSnapshot(), [gate](ProjectFile &) {
+            gate->entered = true;
+            std::unique_lock lock(gate->mutex);
+            if (!gate->changed.wait_for(lock, std::chrono::seconds(10), [&] { return gate->release; }))
+                gate->timedOut = true;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(gate->entered.load(), 3000);
+        unsigned prompts = 0, heartbeats = 0;
+        QTimer driver, heartbeat;
+        driver.setInterval(5);
+        heartbeat.setInterval(5);
+        connect(&driver, &QTimer::timeout, this, [&] {
+            const auto box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            if (box && box->windowTitle() == "Unsaved flame edits") {
+                ++prompts;
+                box->button(QMessageBox::Discard)->click();
+            }
+        });
+        connect(&heartbeat, &QTimer::timeout, this, [&] { ++heartbeats; });
+        driver.start();
+        heartbeat.start();
+        QVERIFY(!window.close()); // The worker is still blocked; close is deferred.
+        QCOMPARE(prompts, 1U);
+        QVERIFY(window.isVisible());
+        QVERIFY(!queueView->isVisible());
+        QVERIFY(!window.isEnabled());
+        QVERIFY(!widget<QLineEdit>(window, "flameName")->isEnabled());
+        QVERIFY(!widget<QAction>(window, "actionNew")->isEnabled());
+        QVERIFY(!widget<QTimer>(window, "recoveryTimer")->isActive());
+        const auto before = heartbeats;
+        QTRY_VERIFY_WITH_TIMEOUT(heartbeats >= before + 8, 1000);
+        for (unsigned i = 0; i < 4; ++i)
+            QVERIFY(!window.close());
+        QCOMPARE(window.findChildren<QTimer *>("pendingCloseTimer").size(), 1);
+        QCOMPARE(prompts, 1U);
+        QVERIFY(QFileInfo::exists(recovery));
+        { std::lock_guard lock(gate->mutex); gate->release = true; }
+        gate->changed.notify_all();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isVisible(), 5000);
+        QVERIFY(!window.session().isRecoveryBusy());
+        QVERIFY(!widget<QTimer>(window, "pendingCloseTimer")->isActive());
+        QCOMPARE(prompts, 1U);
+        QVERIFY(!QFileInfo::exists(recovery));
+        QVERIFY(!QFileInfo::exists(recovery + ".json"));
+        QVERIFY(!QFileInfo::exists(recovery + ".lock"));
+        QVERIFY(!gate->timedOut.load());
+        QCOMPARE(window.session().document().bytes(), project.library_bytes);
+    }
     void rendererPreferencesPersistAndCancel() {
         QTemporaryDir identity;
         QVERIFY(identity.isValid());
@@ -115,7 +316,7 @@ class EditorTests : public QObject {
                 backend->setCurrentIndex(backend->findData(int(RenderBackend::vulkan)));
                 widget<QSpinBox>(dialog, "gpuMemory")->setValue(96);
                 widget<QCheckBox>(dialog, "cpuFallback")->setChecked(false);
-                QVERIFY(widget<QLabel>(dialog, "computeDetails")->text().contains("unavailable"));
+                QTRY_VERIFY_WITH_TIMEOUT(widget<QLabel>(dialog, "computeDetails")->text().contains("unavailable"), 10000);
                 dialog.reject();
             }));
             QCOMPARE(window.previewController().settings().backend, RenderBackend::automatic);
