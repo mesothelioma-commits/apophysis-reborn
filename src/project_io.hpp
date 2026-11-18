@@ -41,6 +41,8 @@ struct ProjectFile {
 };
 inline constexpr std::size_t project_file_limit = 96 * 1024 * 1024;
 inline constexpr std::size_t project_library_limit = 64 * 1024 * 1024;
+void validate_project_render_settings(const ProjectSettings &settings,
+                                      const std::vector<ProjectPreset> &presets);
 ProjectFile parse_project(std::string bytes);
 ProjectFile load_project(const std::filesystem::path &path);
 std::string serialize_project(const ProjectFile &project);

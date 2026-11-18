@@ -426,6 +426,7 @@ bool has_render_checkpoint(const fs::path& directory) noexcept {
 
 FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
                                const fs::path& output, const FileRenderOptions& supplied) {
+    gpu::ContextScope contextScope;
     auto file = supplied;
     RenderOptions opt = original;
     const auto started = Clock::now();

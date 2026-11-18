@@ -151,6 +151,7 @@ std::vector<ExpectedProbe> build_probes(const Flame &f) {
 }
 
 void formula_probes(const RenderOptions &options) {
+    gpu::ContextScope contextScope;
     std::uint64_t comparisons = 0;
     double worst = 0;
     for (unsigned producer = 0; producer < 3; ++producer) {

@@ -13,6 +13,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScopeGuard>
+#include <QSemaphore>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QStandardPaths>
@@ -24,6 +26,7 @@
 #include <QToolButton>
 #include <QUuid>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <memory>
 
@@ -540,6 +543,76 @@ class CreativeEditorTests : public QObject {
         QCOMPARE(dialog.acceptedFlames().size(), std::size_t(2));
         QCOMPARE(serialize_flame(dialog.acceptedFlames()[0]), promoted);
         QCOMPARE(serialize_flame(dialog.acceptedFlames()[1]), child);
+    }
+
+    void closingExplorerWhileRenderersAreBlocked_data() {
+        QTest::addColumn<bool>("mutate");
+        QTest::newRow("Mutate") << true;
+        QTest::newRow("Random") << false;
+    }
+
+    void closingExplorerWhileRenderersAreBlocked() {
+        QFETCH(bool, mutate);
+        const auto mode = mutate ? ExploreDialog::Mode::mutation : ExploreDialog::Mode::random;
+        struct Gate {
+            QSemaphore release;
+            std::atomic<int> entered = 0, returned = 0, cancelled = 0;
+        };
+        const auto gate = std::make_shared<Gate>();
+        auto held = [gate](const Flame &, const RenderOptions &options) -> RenderResult {
+            ++gate->entered;
+            // Simulate a driver inside an operation which cannot poll cancellation.
+            // The deadline also makes a regression in the old join path terminate.
+            gate->release.tryAcquire(1, 10000);
+            if (options.stop_token.stop_requested())
+                ++gate->cancelled;
+            if (options.progress)
+                options.progress(1, 1);
+            ++gate->returned;
+            throw std::runtime_error("Late result from closed explorer");
+        };
+        const auto releaseOnFailure = qScopeGuard([gate] { gate->release.release(2); });
+        auto open = [&](PreviewController::Renderer renderer) {
+            auto dialog = std::make_unique<ExploreDialog>(mode, sample(), nullptr, PreviewSettings{},
+                                                          std::move(renderer));
+            quickPreviews(*dialog);
+            control<QSpinBox>(*dialog, "exploreCount")->setValue(2);
+            showDialog(*dialog);
+            return dialog;
+        };
+        auto first = open(held);
+        QTRY_COMPARE_WITH_TIMEOUT(gate->entered.load(), 2, 5000);
+        QVERIFY(first->close());
+        first.reset();
+        QCOMPARE(gate->returned.load(), 0);
+
+        // Repeated opens while both workers are held must not start new driver
+        // calls or retain jobs belonging to the subsequently closed dialogs.
+        for (int i = 0; i < 3; ++i) {
+            auto abandoned = open(held);
+            QTRY_VERIFY_WITH_TIMEOUT(!abandoned->candidates().empty(), 5000);
+            QTest::qWait(10);
+            abandoned->reject();
+        }
+        auto replacement = open(render);
+        QTRY_VERIFY_WITH_TIMEOUT(!replacement->candidates().empty(), 5000);
+
+        PreviewController mainPreview(nullptr, PreviewController::Purpose::main);
+        PreviewSettings settings;
+        settings.sample_limit = 500;
+        settings.threads = 1;
+        settings.debounce_ms = 0;
+        mainPreview.setSettings(settings);
+        QSignalSpy images(&mainPreview, &PreviewController::imageReady);
+        mainPreview.request(sample(), {40, 30});
+        QTRY_COMPARE_WITH_TIMEOUT(images.count(), 1, 5000);
+        QCOMPARE(gate->entered.load(), 2);
+        QCOMPARE(gate->returned.load(), 0);
+        gate->release.release(2);
+        QTRY_COMPARE_WITH_TIMEOUT(gate->cancelled.load(), 2, 5000);
+        auto status = control<QLabel>(*replacement, "exploreStatus");
+        QTRY_VERIFY_WITH_TIMEOUT(status->text().startsWith("Rendered 2 of 2"), 10000);
+        QCOMPARE(gate->entered.load(), 2);
     }
 
     void destructionWithPendingInputAndGeneration() {

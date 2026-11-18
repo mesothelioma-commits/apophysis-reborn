@@ -38,6 +38,7 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QProgressBar>
+#include <QScopedValueRollback>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -373,7 +374,7 @@ void applyDarkTheme() {
 MainWindow::MainWindow(bool useSettings, QWidget *parent,
                        const QString &queueDirectory,
                        std::shared_ptr<DeviceDiscovery> deviceDiscovery)
-    : QMainWindow(parent), session_(this), preview_(this),
+    : QMainWindow(parent), session_(this), preview_(this, PreviewController::Purpose::main),
       deviceDiscovery_(deviceDiscovery ? std::move(deviceDiscovery)
                                        : std::make_shared<DeviceDiscovery>()),
       useSettings_(useSettings) {
@@ -679,6 +680,7 @@ void MainWindow::makeActions() {
   auto saveAs =
       file->addAction("Save &as…", this, [this] { saveDocument(true); });
   saveAs->setShortcut(QKeySequence::SaveAs);
+  saveAs->setObjectName("actionSaveAs");
   file->addSeparator();
   file->addAction("Export flame library…", this, &MainWindow::exportFlameLibrary)
       ->setObjectName("actionExportLibrary");
@@ -1904,7 +1906,7 @@ bool MainWindow::confirmDiscard() {
   return true;
 }
 bool MainWindow::openFile(const QString &path) {
-  if (closing_)
+  if (closing_ || saving_)
     return false;
   if (!confirmDiscard())
     return false;
@@ -1965,8 +1967,9 @@ void MainWindow::newDocument() {
   });
 }
 bool MainWindow::saveDocument(bool saveAs) {
-  if (!session_.hasDocument())
+  if (saving_ || !session_.hasDocument())
     return false;
+  const QScopedValueRollback saving(saving_, true);
   QString path = session_.path();
   const bool needsNative = session_.hasAnimation();
   if (needsNative && !path.isEmpty() && !is_project_path(filesystemPath(path))) {
@@ -1974,45 +1977,42 @@ bool MainWindow::saveDocument(bool saveAs) {
     path = info.absolutePath() + "/" + info.completeBaseName() + ".apoproject";
     saveAs = true;
   }
-  if (saveAs || path.isEmpty())
-    path = QFileDialog::getSaveFileName(
-        this, "Save project or flame library",
-        path.isEmpty() ? "my-project.apoproject" : path,
-        needsNative ? "Native projects (*.apoproject)"
-                    : "Native projects (*.apoproject);;Flame libraries (*.flame);;XML files (*.xml)");
-  if (path.isEmpty())
-    return false;
-  try {
-    if (is_project_path(filesystemPath(path)))
-      captureProjectState();
-    session_.save(path);
-    record("Saved " + path);
-    return true;
-  } catch (const FileConflict &) {
-    QMessageBox box(QMessageBox::Warning, "File changed on disk",
-                    "Another change was made to this file after you opened it.",
-                    QMessageBox::NoButton, this);
-    auto copy = box.addButton("Save a copy…", QMessageBox::AcceptRole);
-    auto replace =
-        box.addButton("Replace disk version", QMessageBox::DestructiveRole);
-    box.addButton(QMessageBox::Cancel);
-    box.exec();
-    if (box.clickedButton() == copy)
-      return saveDocument(true);
-    if (box.clickedButton() == replace) {
-      try {
-        session_.save(path, true);
-        record("Replaced disk version " + path);
-        return true;
-      } catch (const std::exception &e) {
-        QMessageBox::warning(this, "Save failed", text(e.what()));
+  for (;;) {
+    if (saveAs || path.isEmpty())
+      path = QFileDialog::getSaveFileName(
+          this, "Save project or flame library",
+          path.isEmpty() ? "my-project.apoproject" : path,
+          needsNative ? "Native projects (*.apoproject)"
+                      : "Native projects (*.apoproject);;Flame libraries (*.flame);;XML files (*.xml)");
+    if (path.isEmpty())
+      return false;
+    try {
+      return saveToPath(path);
+    } catch (const FileConflict &) {
+      QMessageBox box(QMessageBox::Warning, "File changed on disk",
+                      "Another change was made to this file after you opened it.",
+                      QMessageBox::NoButton, this);
+      auto copy = box.addButton("Save a copy…", QMessageBox::AcceptRole);
+      auto replace = box.addButton("Replace disk version", QMessageBox::DestructiveRole);
+      box.addButton(QMessageBox::Cancel);
+      box.exec();
+      if (box.clickedButton() == copy) {
+        saveAs = true;
+        continue;
       }
+      if (box.clickedButton() == replace) {
+        try {
+          return saveToPath(path, true);
+        } catch (const std::exception &error) {
+          QMessageBox::warning(this, "Save failed", text(error.what()));
+        }
+      }
+    } catch (const std::exception &error) {
+      record(text(error.what()));
+      QMessageBox::warning(this, "Save failed", text(error.what()));
     }
-  } catch (const std::exception &e) {
-    record(text(e.what()));
-    QMessageBox::warning(this, "Save failed", text(e.what()));
+    return false;
   }
-  return false;
 }
 
 void MainWindow::showRenderQueue() {
@@ -2396,6 +2396,17 @@ void MainWindow::renderImage() {
     ratio = double(width->value()) / height->value();
     update();
   });
+  auto updatePresets = [&](std::vector<ProjectPreset> next) {
+    try {
+      session_.setProjectRenderSettings(renderSettings_, next);
+      renderPresets_ = std::move(next);
+      populatePresets();
+      return true;
+    } catch (const std::exception &error) {
+      estimate->setText(text(error.what()));
+      return false;
+    }
+  };
   connect(savePreset, &QPushButton::clicked, &dialog, [&] {
     bool ok = false;
     const auto name =
@@ -2410,28 +2421,26 @@ void MainWindow::renderImage() {
       return;
     }
     const auto nameUtf8 = name.toStdString();
+    auto next = renderPresets_;
     auto found =
-        std::find_if(renderPresets_.begin(), renderPresets_.end(),
+        std::find_if(next.begin(), next.end(),
                      [&](const auto &p) { return p.name == nameUtf8; });
     ProjectPreset saved{nameUtf8, captureSettings()};
-    if (found == renderPresets_.end())
-      renderPresets_.push_back(std::move(saved));
+    if (found == next.end())
+      next.push_back(std::move(saved));
     else
       *found = std::move(saved);
-    populatePresets();
-    if (session_.isProject())
-      captureProjectState();
+    if (!updatePresets(std::move(next)))
+      return;
     record("Saved render preset " + name +
            ". Save as a native project to retain it.");
   });
   connect(removePreset, &QPushButton::clicked, &dialog, [&] {
     if (savedPresets->currentIndex() < 1)
       return;
-    renderPresets_.erase(renderPresets_.begin() + savedPresets->currentIndex() -
-                         1);
-    populatePresets();
-    if (session_.isProject())
-      captureProjectState();
+    auto next = renderPresets_;
+    next.erase(next.begin() + savedPresets->currentIndex() - 1);
+    updatePresets(std::move(next));
   });
   connect(aspect, &QCheckBox::toggled, &dialog, [&](bool checked) {
     if (checked)
@@ -2482,9 +2491,9 @@ void MainWindow::renderImage() {
   if (dialog.exec() != QDialog::Accepted)
     return;
   run([&] {
-    renderSettings_ = captureSettings();
-    if (session_.isProject())
-      captureProjectState();
+    auto next = captureSettings();
+    session_.setProjectRenderSettings(next, renderPresets_);
+    renderSettings_ = std::move(next);
     const auto id = queue_->add(resized(), options(), fileOptions(),
                                 destination->text(), session_.path());
     if (startNow)
@@ -2510,6 +2519,7 @@ void MainWindow::preferences() {
   memory->setSuffix(" MiB");
   memory->setValue(int(preview_.settings().memory_mib));
   auto seed = new QLineEdit(QString::number(preview_.settings().seed));
+  seed->setObjectName("previewSeed");
   auto limit = new QLineEdit(QString::number(preview_.settings().sample_limit));
   form->addRow("CPU workers", threads);
   form->addRow("System preview budget", memory);
@@ -2596,6 +2606,8 @@ void MainWindow::recoverPreviousSession() {
 }
 void MainWindow::closeEvent(QCloseEvent *event) {
   event->ignore();
+  if (saving_)
+    return;
   if (!closing_) {
     const QPointer<MainWindow> alive(this);
     if (!confirmDiscard() || !alive)

@@ -76,6 +76,19 @@ signals:
   void recoveryFailed(const QString &message);
 
 private:
+  friend class MainWindow;
+  struct SaveSnapshot {
+    QString destination, originalPath;
+    QByteArray digest;
+    ProjectFile project;
+    std::uint64_t documentGeneration, revision;
+    bool native;
+    void write(bool replaceExternalChange, const RecoveryPreparation &prepare = {});
+  };
+  SaveSnapshot snapshotForSave(const QString &path, std::optional<ProjectFile> project = {}) const;
+  bool finishSave(SaveSnapshot saved);
+  void setProjectRenderSettings(ProjectSettings settings, std::vector<ProjectPreset> presets);
+  std::uint64_t documentGeneration_ = 0, revision_ = 0;
   friend class DocumentChange;
   friend class AnimationChange;
   void restore(const std::string &bytes, int flame, int transform, bool final);

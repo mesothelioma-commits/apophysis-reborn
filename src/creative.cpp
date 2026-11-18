@@ -533,7 +533,7 @@ bool fit_camera(Flame &flame, std::uint64_t seed, std::size_t samples, double co
     return true;
 }
 
-std::vector<Flame> random_flames(const RandomOptions &options) {
+std::vector<Flame> random_flames(const RandomOptions &options, std::stop_token stop) {
     check_random(options);
     const auto choices = variation_choices(options.allowed_variations);
     const auto ordinary = ordinary_choices(choices);
@@ -542,6 +542,8 @@ std::vector<Flame> random_flames(const RandomOptions &options) {
     for (std::size_t sequence = 0; sequence < options.batch_size; ++sequence) {
         bool accepted = false;
         for (unsigned attempt = 0; attempt < 12 && !accepted; ++attempt) {
+            if (stop.stop_requested())
+                return {};
             const auto candidate_seed = stream_seed(options.seed, sequence * 16 + attempt);
             Rng rng(candidate_seed);
             Flame flame;
@@ -629,12 +631,16 @@ Flame mutate_flame(const Flame &parent, const MutationOptions &options, std::siz
     validate(result);
     return result;
 }
-std::vector<Flame> mutation_candidates(const Flame &parent, const MutationOptions &options) {
+std::vector<Flame> mutation_candidates(const Flame &parent, const MutationOptions &options,
+                                       std::stop_token stop) {
     check_mutation(options);
     std::vector<Flame> result;
     result.reserve(options.count);
-    for (std::size_t i = 0; i < options.count; ++i)
+    for (std::size_t i = 0; i < options.count; ++i) {
+        if (stop.stop_requested())
+            return {};
         result.push_back(mutate_flame(parent, options, i));
+    }
     return result;
 }
 

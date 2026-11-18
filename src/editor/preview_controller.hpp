@@ -28,7 +28,10 @@ struct PreviewSettings {
 class PreviewController : public QObject {
     Q_OBJECT
   public:
-    explicit PreviewController(QObject *parent = nullptr);
+    enum class Purpose { main, dialog, thumbnail };
+    using Renderer = std::function<RenderResult(const Flame &, const RenderOptions &)>;
+    explicit PreviewController(QObject *parent = nullptr, Purpose purpose = Purpose::dialog,
+                               Renderer renderer = apo::render);
     ~PreviewController() override;
 
     void setSettings(const PreviewSettings &settings);
@@ -59,7 +62,7 @@ class PreviewController : public QObject {
 
   private:
     struct Worker;
-    std::unique_ptr<Worker> worker_;
+    std::shared_ptr<Worker> worker_;
     QTimer debounce_;
     PreviewSettings settings_;
     // request() takes one immutable copy on the Qt thread. Debouncing, settings

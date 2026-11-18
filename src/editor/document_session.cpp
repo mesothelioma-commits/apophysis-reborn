@@ -29,7 +29,7 @@ std::filesystem::path filesystemPath(const QString &path) {
 }
 
 namespace {
-QByteArray digest(const QString &path) {
+QByteArray fileDigest(const QString &path) {
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly))
     throw std::runtime_error(file.errorString().toStdString());
@@ -303,6 +303,7 @@ void DocumentSession::loadBytes(std::string bytes, const QString &path,
       QByteArray::fromRawData(source.data(), qsizetype(source.size())),
       QCryptographicHash::Sha256);
   discardRecovery();
+  ++documentGeneration_;
   document_ = std::move(next.document);
   project_ = std::move(next.project);
   projectDirty_ = false;
@@ -318,41 +319,77 @@ void DocumentSession::loadBytes(std::string bytes, const QString &path,
   emit modifiedChanged(isModified());
 }
 
-void DocumentSession::save(const QString &path, bool replaceExternalChange) {
+DocumentSession::SaveSnapshot DocumentSession::snapshotForSave(
+    const QString &path, std::optional<ProjectFile> project) const {
   if (!document_)
     throw std::runtime_error("Open a flame before saving");
-  const auto absolute = QFileInfo(path).absoluteFilePath();
-  const bool sameFile =
-      !path_.isEmpty() &&
-      (absolute == path_ ||
-       (QFileInfo(path).exists() && QFileInfo(path).canonicalFilePath() ==
-                                        QFileInfo(path_).canonicalFilePath()));
-  const auto checkConflict = [&] {
-    if (sameFile && !replaceExternalChange &&
-        (!QFileInfo(path).exists() || digest(path) != diskDigest_))
-      throw FileConflict();
-  };
-  checkConflict();
+  if (path.isEmpty())
+    throw std::invalid_argument("Choose a destination before saving");
   const bool native = is_project_path(filesystemPath(path));
   if (!native && hasAnimation())
     throw std::invalid_argument(
         "This document contains animation. Save it as .apoproject to retain "
         "the timeline, or export a separate flame library.");
-  auto project = projectSnapshot();
-  const auto bytes = native ? serialize_project(project) : document_->bytes();
-  write_atomic(
-      filesystemPath(absolute), [&](std::ostream &out) { out << bytes; },
-      checkConflict);
-  path_ = absolute;
-  project_ = native ? std::optional(std::move(project)) : std::nullopt;
+  SaveSnapshot snapshot{QFileInfo(path).absoluteFilePath(), path_, diskDigest_,
+                        {}, documentGeneration_, revision_, native};
+  if (native)
+    snapshot.project = project ? std::move(*project) : projectSnapshot();
+  else
+    snapshot.project.library_bytes = document_->bytes();
+  return snapshot;
+}
+
+void DocumentSession::SaveSnapshot::write(bool replaceExternalChange,
+                                          const RecoveryPreparation &prepare) {
+  const bool sameFile = !originalPath.isEmpty() &&
+      (destination == originalPath ||
+       (QFileInfo::exists(destination) && QFileInfo(destination).canonicalFilePath() ==
+                                              QFileInfo(originalPath).canonicalFilePath()));
+  const auto checkConflict = [&] {
+    if (sameFile && !replaceExternalChange &&
+        (!QFileInfo::exists(destination) || fileDigest(destination) != digest))
+      throw FileConflict();
+  };
+  checkConflict();
+  if (native && prepare)
+    prepare(project);
+  const std::string serialized = native ? serialize_project(project) : std::string{};
+  const auto &bytes = native ? serialized : project.library_bytes;
+  const auto newDigest = QCryptographicHash::hash(
+      QByteArray::fromRawData(bytes.data(), qsizetype(bytes.size())), QCryptographicHash::Sha256);
+  write_atomic(filesystemPath(destination), [&](std::ostream &out) { out << bytes; }, checkConflict);
+  digest = newDigest;
+}
+
+bool DocumentSession::finishSave(SaveSnapshot saved) {
+  if (saved.documentGeneration != documentGeneration_)
+    return false;
+  path_ = std::move(saved.destination);
+  diskDigest_ = std::move(saved.digest);
+  if (saved.revision != revision_) {
+    // A queued edit during the write belongs to the live document. Keep its
+    // content and recovery, and never mark it clean against the older file.
+    if (saved.native && !project_)
+      project_ = std::move(saved.project);
+    projectDirty_ = true;
+    undo_.resetClean();
+    emit modifiedChanged(true);
+    return false;
+  }
+  project_ = saved.native ? std::optional(std::move(saved.project)) : std::nullopt;
   projectDirty_ = false;
-  diskDigest_ = QCryptographicHash::hash(
-      QByteArray::fromRawData(bytes.data(), qsizetype(bytes.size())),
-      QCryptographicHash::Sha256);
   undo_.setClean();
   discardRecovery();
-  emit changed();
-  emit modifiedChanged(isModified());
+  // Saving changes the path and clean indicator. Rebuilding the entire flame
+  // library here would parse every flame and restart the unchanged preview.
+  emit modifiedChanged(false);
+  return true;
+}
+
+void DocumentSession::save(const QString &path, bool replaceExternalChange) {
+  auto snapshot = snapshotForSave(path);
+  snapshot.write(replaceExternalChange);
+  finishSave(std::move(snapshot));
 }
 
 ProjectFile DocumentSession::projectSnapshot() const {
@@ -387,7 +424,22 @@ void DocumentSession::setProjectState(ProjectFile state) {
   const auto bytes = serialize_project(state);
   if (project_ && bytes == serialize_project(projectSnapshot()))
     return;
+  ++revision_;
   project_ = std::move(state);
+  projectDirty_ = true;
+  emit modifiedChanged(true);
+}
+
+void DocumentSession::setProjectRenderSettings(ProjectSettings settings,
+                                             std::vector<ProjectPreset> presets) {
+  if (project_ && project_->render_settings == settings && project_->render_presets == presets)
+    return;
+  validate_project_render_settings(settings, presets);
+  if (!project_)
+    return;
+  project_->render_settings = std::move(settings);
+  project_->render_presets = std::move(presets);
+  ++revision_;
   projectDirty_ = true;
   emit modifiedChanged(true);
 }
@@ -407,6 +459,7 @@ void DocumentSession::restoreAnimation(
     const std::optional<std::string> &bytes) {
   auto state = projectSnapshot();
   state.animation_data = bytes;
+  ++revision_;
   project_ = std::move(state);
   emit changed();
 }
@@ -454,6 +507,7 @@ void DocumentSession::restore(const std::string &bytes, int flame,
   flame_ = std::clamp(flame, 0, int(document_->entries().size()) - 1);
   transform_ = transform;
   final_ = final;
+  ++revision_;
   emit changed();
 }
 

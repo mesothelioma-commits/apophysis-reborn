@@ -1,4 +1,5 @@
 #include "preview_controller.hpp"
+#include "background_jobs.hpp"
 #include "../render_file.hpp"
 
 #include <QElapsedTimer>
@@ -7,7 +8,6 @@
 #include <QPointer>
 
 #include <algorithm>
-#include <condition_variable>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -15,6 +15,18 @@
 
 namespace apo::editor {
 namespace {
+Q_APPLICATION_STATIC(ApplicationJobs, mainPreviewJobs)
+Q_APPLICATION_STATIC(ApplicationJobs, dialogPreviewJobs)
+Q_APPLICATION_STATIC(ApplicationJobs, thumbnailJobs)
+
+std::shared_ptr<BackgroundJobs> previewJobs(PreviewController::Purpose purpose) {
+    if (purpose == PreviewController::Purpose::main)
+        return mainPreviewJobs->jobs;
+    if (purpose == PreviewController::Purpose::thumbnail)
+        return thumbnailJobs->jobs;
+    return dialogPreviewJobs->jobs;
+}
+
 std::filesystem::path nativePath(const QString &value) {
 #ifdef _WIN32
     return std::filesystem::path(value.toStdWString());
@@ -43,7 +55,7 @@ QImage copiedImage(const Image &image) {
 }
 } // namespace
 
-struct PreviewController::Worker {
+struct PreviewController::Worker : std::enable_shared_from_this<Worker> {
     struct Job {
         std::shared_ptr<const Flame> source;
         RenderOptions options;
@@ -58,52 +70,33 @@ struct PreviewController::Worker {
         bool queued = false;
     };
 
-    PreviewController *const owner;
-    std::mutex mutex;
-    std::condition_variable wake;
-    std::optional<Job> pending;
-    std::stop_source active;
-    bool closing = false;
+    BackgroundReceiver<PreviewController> receiver;
+    std::shared_ptr<BackgroundJobs> jobs;
+    Renderer renderer;
     std::shared_ptr<ProgressMailbox> progress = std::make_shared<ProgressMailbox>();
-    std::jthread thread;
 
-    explicit Worker(PreviewController *controller) : owner(controller), thread([this] { run(); }) {}
-    ~Worker() {
-        {
-            std::lock_guard lock(mutex);
-            closing = true;
-            pending.reset();
-            active.request_stop();
-        }
-        wake.notify_one();
-        thread.join();
+    Worker(PreviewController *controller, Purpose purpose, Renderer render)
+        : receiver(controller), jobs(previewJobs(purpose)), renderer(std::move(render)) {}
+
+    void close() {
+        receiver.close();
+        cancel();
     }
 
-    void cancel() {
-        std::lock_guard lock(mutex);
-        pending.reset();
-        active.request_stop();
-    }
+    void cancel() { jobs->cancel(this); }
 
     void submit(Job job) {
-        {
-            std::lock_guard lock(mutex);
-            active.request_stop();
-            pending = std::move(job);
-        }
-        wake.notify_one();
+        jobs->submit(this, [self = shared_from_this(), job = std::move(job)](std::stop_token stop) mutable {
+            job.options.stop_token = stop;
+            self->run(job);
+        });
     }
 
-    // Qt owns the event callback. Destruction removes queued callbacks after the
-    // worker has joined, and generation filtering rejects an already queued old image.
-    void post(quint64 generation, std::function<void()> callback) {
-        QMetaObject::invokeMethod(
-            owner,
-            [controller = owner, generation, callback = std::move(callback)] {
-                if (controller->generation_ == generation)
-                    callback();
-            },
-            Qt::QueuedConnection);
+    template <class Callback> void post(quint64 generation, Callback callback) {
+        receiver.post([generation, callback = std::move(callback)](PreviewController *controller) {
+            if (controller->generation_ == generation)
+                callback(controller);
+        });
     }
 
     void postProgress(quint64 generation, int percent) {
@@ -118,53 +111,37 @@ struct PreviewController::Worker {
                 return;
             mailbox->queued = true;
         }
-        QMetaObject::invokeMethod(
-            owner,
-            [controller = owner, mailbox] {
-                quint64 generation;
-                int percent;
-                {
-                    std::lock_guard lock(mailbox->mutex);
-                    generation = mailbox->generation;
-                    percent = mailbox->percent;
-                    mailbox->queued = false;
-                }
-                if (controller->generation_ == generation)
-                    emit controller->progressChanged(percent);
-            },
-            Qt::QueuedConnection);
+        receiver.post([mailbox](PreviewController *controller) {
+            quint64 generation;
+            int percent;
+            {
+                std::lock_guard lock(mailbox->mutex);
+                generation = mailbox->generation;
+                percent = mailbox->percent;
+                mailbox->queued = false;
+            }
+            if (controller->generation_ == generation)
+                emit controller->progressChanged(percent);
+        });
     }
 
-    void run() {
-        for (;;) {
-            std::optional<Job> job;
-            {
-                std::unique_lock lock(mutex);
-                wake.wait(lock, [this] { return closing || pending.has_value(); });
-                if (closing)
+    void run(Job &job) {
+        try {
+            renderJob(job);
+        } catch (const RenderCancelled &) {
+            // The GUI already published the replacement, pause or stop state.
+        } catch (const std::exception &error) {
+            const auto message = QString::fromUtf8(error.what());
+            post(job.generation, [generation = job.generation, message](PreviewController *controller) {
+                const QPointer<PreviewController> alive(controller);
+                controller->setBusy(false);
+                if (!alive || controller->generation_ != generation)
                     return;
-                job = std::move(pending);
-                pending.reset();
-                active = std::stop_source();
-                job->options.stop_token = active.get_token();
-            }
-            try {
-                renderJob(*job);
-            } catch (const RenderCancelled &) {
-                // The GUI already published the replacement, pause or stop state.
-            } catch (const std::exception &error) {
-                const auto message = QString::fromUtf8(error.what());
-                post(job->generation, [controller = owner, generation = job->generation, message] {
-                    const QPointer<PreviewController> alive(controller);
-                    controller->setBusy(false);
-                    if (!alive || controller->generation_ != generation)
-                        return;
-                    emit controller->statusChanged(message);
-                    if (!alive || controller->generation_ != generation)
-                        return;
-                    emit controller->failed(message);
-                });
-            }
+                emit controller->statusChanged(message);
+                if (!alive || controller->generation_ != generation)
+                    return;
+                emit controller->failed(message);
+            });
         }
     }
 
@@ -224,7 +201,7 @@ struct PreviewController::Worker {
                 result.device_name = saved.device_name;
                 result.fallback_reason = saved.fallback_reason;
             } else {
-                result = render(flame, options);
+                result = renderer(flame, options);
             }
             if (options.stop_token.stop_requested())
                 throw RenderCancelled();
@@ -237,8 +214,8 @@ struct PreviewController::Worker {
             const qint64 duration = elapsed.elapsed();
             if (file) {
                 post(job.generation,
-                     [controller = owner, generation = job.generation, path = job.output,
-                      backend, device, fallback, execution] {
+                     [generation = job.generation, path = job.output,
+                      backend, device, fallback, execution](PreviewController *controller) {
                          const QPointer<PreviewController> alive(controller);
                          controller->setBusy(false);
                          if (!alive || controller->generation_ != generation)
@@ -256,10 +233,10 @@ struct PreviewController::Worker {
                      });
             } else {
                 auto image = copiedImage(result.image);
-                post(job.generation, [controller = owner, generation = job.generation, image = std::move(image),
+                post(job.generation, [generation = job.generation, image = std::move(image),
                                       samples = options.samples, plotted = result.plotted,
                                       invalid = result.invalid, workers = result.workers, duration,
-                                      finalPass, backend, device, fallback, execution] {
+                                      finalPass, backend, device, fallback, execution](PreviewController *controller) {
                     const QPointer<PreviewController> alive(controller);
                     if (finalPass)
                         controller->setBusy(false);
@@ -281,16 +258,16 @@ struct PreviewController::Worker {
     }
 };
 
-PreviewController::PreviewController(QObject *parent) : QObject(parent) {
+PreviewController::PreviewController(QObject *parent, Purpose purpose, Renderer renderer)
+    : QObject(parent), worker_(std::make_shared<Worker>(this, purpose, std::move(renderer))) {
     debounce_.setSingleShot(true);
     connect(&debounce_, &QTimer::timeout, this, &PreviewController::queuePreview);
-    worker_ = std::make_unique<Worker>(this);
 }
 
 PreviewController::~PreviewController() {
     debounce_.stop();
     ++generation_;
-    worker_.reset();
+    worker_->close();
 }
 
 void PreviewController::setBusy(bool busy) {

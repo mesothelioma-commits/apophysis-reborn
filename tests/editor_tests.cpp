@@ -7,8 +7,10 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QLabel>
+#include <QInputDialog>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
@@ -155,6 +157,190 @@ class EditorTests : public QObject {
         { std::lock_guard lock(gate->mutex); gate->release = true; }
         gate->changed.notify_all();
         QTRY_VERIFY_WITH_TIMEOUT(gate->returned.load(), 3000);
+    }
+    void changeSeedThenSaveKeepsPreviewAndNewerEdits() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath("seed.apoproject");
+        ProjectFile original;
+        original.library_bytes = serialize_flame(demo_flame());
+        original.library_bytes += "<!--" + std::string(2 * 1024 * 1024, 'x') + "-->\n";
+        original.metadata["vendor"] = "preserved";
+        save_project(original, filesystemPath(path));
+        MainWindow window(false);
+        fastPreview(window);
+        window.show();
+        QVERIFY(window.openFile(path));
+        QVERIFY(throughAction<QDialog>(window, "actionPreferences", [&](QDialog &dialog) {
+            widget<QLineEdit>(dialog, "previewSeed")->setText("18446744073709551614");
+            dialog.accept();
+        }));
+        QCOMPARE(window.previewController().settings().seed, UINT64_C(18446744073709551614));
+        QTRY_VERIFY_WITH_TIMEOUT(!window.previewController().isBusy(), 10000);
+        QSignalSpy busy(&window.previewController(), &PreviewController::busyChanged);
+        QSignalSpy changed(&window.session(), &DocumentSession::changed);
+        bool dispatched = false;
+        QMetaObject::invokeMethod(&window, [&] {
+            const auto dialog = QApplication::activeModalWidget();
+            dispatched = dialog && dialog->objectName() == "savingDocumentDialog";
+        }, Qt::QueuedConnection);
+        int heartbeats = 0;
+        qint64 previous = 0, longestGap = 0;
+        QElapsedTimer elapsed;
+        QTimer heartbeat;
+        heartbeat.setTimerType(Qt::PreciseTimer);
+        connect(&heartbeat, &QTimer::timeout, &window, [&] {
+            const auto now = elapsed.elapsed();
+            longestGap = std::max(longestGap, now - previous);
+            previous = now;
+            ++heartbeats;
+        });
+        elapsed.start();
+        heartbeat.start(1);
+        widget<QAction>(window, "actionSave")->trigger();
+        heartbeat.stop();
+        const auto duration = elapsed.elapsed();
+        longestGap = std::max(longestGap, duration - previous);
+        qInfo("Explicit save: %llu library bytes in %lld ms, %d GUI heartbeats, longest gap %lld ms",
+              static_cast<unsigned long long>(original.library_bytes.size()),
+              static_cast<long long>(duration), heartbeats, static_cast<long long>(longestGap));
+        QVERIFY(dispatched);
+        QVERIFY2(heartbeats >= 2, "The UI timer stalled while saving the project");
+        QCOMPARE(changed.size(), 0);
+        QCOMPARE(busy.size(), 0);
+        QVERIFY(!window.session().isModified());
+        auto saved = load_project(filesystemPath(path));
+        QCOMPARE(saved.preview_settings.at("seed"), std::string("18446744073709551614"));
+        QCOMPARE(saved.metadata.at("vendor"), std::string("preserved"));
+        QCOMPARE(saved.library_bytes, original.library_bytes);
+
+        // Model work already queued before Save may arrive while its snapshot
+        // is being written. It must survive both the write and a close request.
+        QMetaObject::invokeMethod(&window, [&] {
+            window.close();
+            window.session().change("New edit during save", [](LegacyDocument &document) {
+                LegacyEdits edit;
+                edit.name = "Edited while saving";
+                document.edit(0, edit);
+            });
+        }, Qt::QueuedConnection);
+        widget<QAction>(window, "actionSave")->trigger();
+        QVERIFY(window.isVisible());
+        QVERIFY(window.session().isModified());
+        QCOMPARE(window.session().document().entries()[0].name, std::string("Edited while saving"));
+        QCOMPARE(load_project(filesystemPath(path)).library_bytes, original.library_bytes);
+        widget<QAction>(window, "actionSave")->trigger();
+        QVERIFY(!window.session().isModified());
+        QCOMPARE(load_project(filesystemPath(path)).library_bytes, window.session().document().bytes());
+    }
+    void saveAsCancelAndConflictCopyPreserveBothDocuments() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto source = directory.filePath("original.apoproject");
+        const auto copy = directory.filePath("copy.apoproject");
+        ProjectFile project;
+        project.library_bytes = serialize_flame(demo_flame());
+        save_project(project, filesystemPath(source));
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        window.show();
+        QVERIFY(window.openFile(source));
+        window.session().change("Local edit", [](LegacyDocument &document) {
+            LegacyEdits edit;
+            edit.name = "Local edit";
+            document.edit(0, edit);
+        });
+        const auto local = window.session().document().bytes();
+        project.metadata["external"] = "external edit";
+        save_project(project, filesystemPath(source));
+
+        struct NativeDialogPolicy {
+            bool previous = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+            NativeDialogPolicy() { QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true); }
+            ~NativeDialogPolicy() { QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, previous); }
+        } policy;
+        QVERIFY(throughAction<QFileDialog>(window, "actionSaveAs", [&](QFileDialog &dialog) {
+            dialog.reject();
+        }));
+        QVERIFY(window.session().isModified());
+        QCOMPARE(window.session().path(), source);
+
+        QTimer drive;
+        drive.setInterval(5);
+        bool chooseCopy = false;
+        int conflicts = 0, filenames = 0;
+        connect(&drive, &QTimer::timeout, &window, [&] {
+            auto modal = QApplication::activeModalWidget();
+            if (auto box = qobject_cast<QMessageBox *>(modal)) {
+                if (box->windowTitle() == "File changed on disk") {
+                    ++conflicts;
+                    if (chooseCopy) {
+                        for (auto button : box->buttons())
+                            if (box->buttonRole(button) == QMessageBox::AcceptRole) {
+                                button->click();
+                                return;
+                            }
+                    }
+                }
+                box->reject();
+            } else if (auto file = qobject_cast<QFileDialog *>(modal)) {
+                ++filenames;
+                file->selectFile(copy);
+                static_cast<QDialog *>(file)->accept();
+            }
+        });
+        drive.start();
+        widget<QAction>(window, "actionSave")->trigger();
+        QCOMPARE(conflicts, 1);
+        QVERIFY(window.session().isModified());
+        QCOMPARE(window.session().path(), source);
+        chooseCopy = true;
+        widget<QAction>(window, "actionSave")->trigger();
+        drive.stop();
+        QCOMPARE(conflicts, 2);
+        QCOMPARE(filenames, 1);
+        QCOMPARE(window.session().path(), copy);
+        QVERIFY(!window.session().isModified());
+        QCOMPARE(load_project(filesystemPath(copy)).library_bytes, local);
+        const auto external = load_project(filesystemPath(source));
+        QCOMPARE(external.library_bytes, project.library_bytes);
+        QCOMPARE(external.metadata.at("external"), std::string("external edit"));
+    }
+    void savingRenderPresetCapturesSeedWithoutRebuildingProject() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const auto path = directory.filePath("render-preset.apoproject");
+        ProjectFile original;
+        original.library_bytes = serialize_flame(demo_flame());
+        save_project(original, filesystemPath(path));
+        MainWindow window(false);
+        window.previewController().setPaused(true);
+        window.show();
+        QVERIFY(window.openFile(path));
+        QImage image(32, 32, QImage::Format_RGB32);
+        image.fill(Qt::blue);
+        window.findChild<PreviewCanvas *>()->setImage(image);
+        QVERIFY(throughAction<QDialog>(window, "actionRender", [&](QDialog &dialog) {
+            widget<QLineEdit>(dialog, "outputSeed")->setText("1729");
+            QTimer::singleShot(0, &dialog, [] {
+                if (auto name = qobject_cast<QInputDialog *>(QApplication::activeModalWidget())) {
+                    name->setTextValue("Seed 1729");
+                    name->accept();
+                }
+            });
+            widget<QPushButton>(dialog, "saveRenderPreset")->click();
+            dialog.reject();
+        }));
+        auto project = window.session().projectSnapshot();
+        QVERIFY(window.session().isModified());
+        QCOMPARE(project.render_presets.size(), std::size_t(1));
+        QCOMPARE(project.render_presets[0].settings.at("outputSeed"), std::string("1729"));
+        QCOMPARE(project.preview_settings.count("thumbnail-png"), std::size_t(0));
+        widget<QAction>(window, "actionSave")->trigger();
+        const auto saved = load_project(filesystemPath(path));
+        QCOMPARE(saved.render_presets, project.render_presets);
+        QCOMPARE(saved.preview_settings.count("thumbnail-png"), std::size_t(1));
+        QVERIFY(!window.session().isModified());
     }
     void periodicRecoveryCapturesViewAndThumbnailWithoutChangingDocument() {
         MainWindow window(false);

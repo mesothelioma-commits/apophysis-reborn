@@ -3,6 +3,7 @@
 #include "../legacy_formats.hpp"
 #include "../output_file.hpp"
 #include "../plugin.hpp"
+#include "../project_document.hpp"
 #include "../script_host.hpp"
 #include "main_window.hpp"
 #include "build_info.hpp"
@@ -27,6 +28,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QProgressBar>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -35,8 +37,10 @@
 #include <QVBoxLayout>
 #include <algorithm>
 #include <charconv>
+#include <exception>
 #include <limits>
 #include <set>
+#include <thread>
 
 namespace apo::editor {
 namespace {
@@ -470,28 +474,64 @@ void completeProjectSnapshot(ProjectFile &project, const QImage &image,
     }
   }
 }
-} // namespace
-void MainWindow::captureProjectState() {
-  if (!session_.hasDocument())
-    return;
-  auto project = projectViewSnapshot();
-  completeProjectSnapshot(project, previewCanvas_->image(), enabled_plugins());
-  session_.setProjectState(std::move(project));
+DocumentSession::RecoveryPreparation prepareProjectSnapshot(QImage image) {
+  return [image = std::move(image), plugins = enabled_plugins()](ProjectFile &snapshot) {
+    completeProjectSnapshot(snapshot, image, plugins);
+  };
 }
+
+// Once the atomic write is underway, Escape and the window close button must
+// not return a successful Save decision to a pending Open or Close operation.
+class SavingDialog final : public QDialog {
+public:
+  explicit SavingDialog(QWidget *parent) : QDialog(parent) {
+    setObjectName("savingDocumentDialog");
+    setWindowTitle("Saving document");
+    setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
+    auto layout = new QVBoxLayout(this);
+    layout->addWidget(new QLabel("Saving your document…"));
+    auto progress = new QProgressBar;
+    progress->setRange(0, 0);
+    layout->addWidget(progress);
+  }
+  void reject() override {}
+};
+} // namespace
+
+bool MainWindow::saveToPath(const QString &path, bool replaceExternalChange) {
+  const bool native = is_project_path(filesystemPath(path));
+  auto snapshot = session_.snapshotForSave(
+      path, native ? std::optional(projectViewSnapshot()) : std::nullopt);
+  const auto prepare = native ? prepareProjectSnapshot(previewCanvas_->image())
+                              : DocumentSession::RecoveryPreparation{};
+  SavingDialog progress(this);
+  std::exception_ptr error;
+  std::jthread writer([&] {
+    try {
+      snapshot.write(replaceExternalChange, prepare);
+    } catch (...) {
+      error = std::current_exception();
+    }
+    QMetaObject::invokeMethod(&progress, &QDialog::accept, Qt::QueuedConnection);
+  });
+  progress.exec();
+  writer.join();
+  if (error)
+    std::rethrow_exception(error);
+  const bool current = session_.finishSave(std::move(snapshot));
+  record(current ? "Saved " + path : "Saved earlier document state to " + path);
+  return current;
+}
+
 void MainWindow::requestRecovery() {
-  if (closing_)
+  if (closing_ || saving_)
     return;
   if (!session_.hasDocument() || !session_.isModified() || !session_.isProject()) {
     session_.requestRecovery();
     return;
   }
   auto project = projectViewSnapshot();
-  auto image = previewCanvas_->image();
-  auto plugins = enabled_plugins();
-  session_.requestRecovery(std::move(project),
-      [image = std::move(image), plugins = std::move(plugins)](ProjectFile &snapshot) {
-        completeProjectSnapshot(snapshot, image, plugins);
-      });
+  session_.requestRecovery(std::move(project), prepareProjectSnapshot(previewCanvas_->image()));
 }
 void MainWindow::restoreProjectState() {
   renderSettings_.clear();

@@ -1,8 +1,25 @@
 #pragma once
 #include "render.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
+
+namespace apo::gpu {
+// Place on the render thread's stack to reuse its device and pipeline across
+// calls. Nested scopes share the outer cache. Ordinary unscoped calls own their
+// device until the caller returns.
+class ContextScope {
+  public:
+    ContextScope() noexcept;
+    ~ContextScope();
+    ContextScope(const ContextScope &) = delete;
+    ContextScope &operator=(const ContextScope &) = delete;
+
+  private:
+    std::shared_ptr<void> context_; // Opaque Vulkan implementation.
+};
+} // namespace apo::gpu
 
 namespace apo {
 struct ComputeDevice {

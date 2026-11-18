@@ -197,19 +197,12 @@ void validate_project(const ProjectFile &p) {
   const auto doc = LegacyDocument::parse(p.library_bytes);
   if (p.selected_index >= doc.entries().size())
     fail("selected flame index is outside the collection");
-  for (const auto *s :
-       {&p.render_settings, &p.preview_settings, &p.workspace, &p.metadata})
+  validate_project_render_settings(p.render_settings, p.render_presets);
+  for (const auto *s : {&p.preview_settings, &p.workspace, &p.metadata})
     validate_settings(*s);
-  if (p.render_presets.size() > 256 || p.plugin_references.size() > 4096)
-    fail("too many presets or plugin references");
+  if (p.plugin_references.size() > 4096)
+    fail("too many plugin references");
   std::set<std::string> seen;
-  for (const auto &preset : p.render_presets) {
-    if (preset.name.empty() || preset.name.size() > 4096 ||
-        !seen.insert(preset.name).second)
-      fail("empty or duplicate preset name");
-    validate_settings(preset.settings);
-  }
-  seen.clear();
   for (const auto &ref : p.plugin_references) {
     if (ref.id.empty() || ref.id.size() > 4096 || !seen.insert(ref.id).second)
       fail("empty or duplicate plugin id");
@@ -222,6 +215,20 @@ void validate_project(const ProjectFile &p) {
     fail("animation payload exceeds 8 MiB");
 }
 } // namespace
+void validate_project_render_settings(const ProjectSettings &settings,
+                                      const std::vector<ProjectPreset> &presets) {
+  validate_settings(settings);
+  if (presets.size() > 256)
+    fail("too many render presets");
+  std::set<std::string> seen;
+  for (const auto &preset : presets) {
+    if (preset.name.empty() || preset.name.size() > 4096 ||
+        !seen.insert(preset.name).second)
+      fail("empty or duplicate preset name");
+    (void)escape(preset.name);
+    validate_settings(preset.settings);
+  }
+}
 namespace detail {
 struct ProjectSource {
   std::string bytes;

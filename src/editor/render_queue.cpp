@@ -1,4 +1,5 @@
 #include "render_queue.hpp"
+#include "../gpu.hpp"
 #include "../sha256.hpp"
 #include "../plugin.hpp"
 #include "document_session.hpp"
@@ -429,6 +430,7 @@ struct RenderQueue::Impl {
     if (worker.joinable())
       return;
     worker = std::jthread([this] {
+      gpu::ContextScope contextScope;
       for (;;) {
         std::optional<Work> work;
         {

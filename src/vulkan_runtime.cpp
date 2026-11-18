@@ -11,6 +11,22 @@
 #include <sstream>
 #include <utility>
 
+namespace apo {
+namespace {
+// TLS only points at ordinary stack storage. Windows runs TLS destructors in
+// its loader callback, where driver shutdown and FreeLibrary can deadlock.
+thread_local std::shared_ptr<void> *current_cache = nullptr;
+}
+gpu::ContextScope::ContextScope() noexcept {
+    if (!current_cache)
+        current_cache = &context_;
+}
+gpu::ContextScope::~ContextScope() {
+    if (current_cache == &context_)
+        current_cache = nullptr;
+}
+} // namespace apo
+
 namespace apo::gpu {
 namespace {
 std::uint64_t validate_hit_range(const RenderOptions &options, std::uint64_t first,
@@ -500,22 +516,26 @@ struct Context {
 };
 #undef APO_DEVICE_LIST
 
-// Each rendering worker owns one device/queue/pipeline, avoiding external
-// synchronization races and repeated shader compilation between preview passes.
-thread_local std::shared_ptr<Context> cached;
+void discard_context() {
+    if (current_cache)
+        current_cache->reset();
+}
 std::shared_ptr<Context> context(const RenderOptions &options) {
     if (const char *disabled = std::getenv("APO_DISABLE_VULKAN");
         disabled && std::string_view(disabled) == "1")
         throw Unavailable("Vulkan disabled by APO_DISABLE_VULKAN=1");
-    if (cached) {
+    if (current_cache && *current_cache) {
+        auto cached = std::static_pointer_cast<Context>(*current_cache);
         const auto &chosen = select(*cached->instance, options);
         if (chosen.info.id == cached->physical.info.id)
             return cached;
     }
     auto instance = std::make_shared<Instance>();
     const auto &chosen = select(*instance, options);
-    cached = std::make_shared<Context>(instance, chosen);
-    return cached;
+    auto created = std::make_shared<Context>(instance, chosen);
+    if (current_cache)
+        *current_cache = created;
+    return created;
 }
 
 struct Budget {
@@ -844,7 +864,7 @@ SampledHistogram sample(const Flame &flame, const RenderOptions &options, const 
         }
         return result;
     } catch (const Unavailable &) {
-        cached.reset();
+        discard_context();
         throw;
     }
 }
@@ -946,7 +966,7 @@ SampledHits sample_hits(const Flame &flame, const RenderOptions &options, const 
         cancelled(options.stop_token);
         return result;
     } catch (const Unavailable &) {
-        cached.reset();
+        discard_context();
         throw;
     }
 }
@@ -1000,7 +1020,7 @@ std::vector<std::uint32_t> run_probes(const PackedFlame &flame, std::span<const 
         std::memcpy(result.data(), probes.mapped, words.size_bytes());
         return result;
     } catch (const Unavailable &) {
-        cached.reset();
+        discard_context();
         throw;
     }
 }

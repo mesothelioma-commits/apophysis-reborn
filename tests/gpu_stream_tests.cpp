@@ -216,6 +216,7 @@ int main(int argc, char **argv) {
                          "performed.\n";
             return required || !selector.empty() ? 1 : 77;
         }
+        apo::gpu::ContextScope contextScope;
         RenderOptions options;
         options.samples = 65539;
         options.seed = UINT64_C(0x9f123456abcdef01);

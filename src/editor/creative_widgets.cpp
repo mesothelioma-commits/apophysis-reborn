@@ -1,4 +1,5 @@
 #include "creative_widgets.hpp"
+#include "background_jobs.hpp"
 #include "color_curve_dialog.hpp"
 #include "document_session.hpp"
 #include "flame_io.hpp"
@@ -47,6 +48,8 @@
 
 namespace apo::editor {
 namespace {
+Q_APPLICATION_STATIC(ApplicationJobs, candidateJobs)
+
 QString text(std::string_view s) {
     return QString::fromUtf8(s.data(), qsizetype(s.size()));
 }
@@ -1026,9 +1029,12 @@ LegacyEdits AdjustmentDialog::edits() const {
 }
 
 ExploreDialog::ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *parent,
-                             const PreviewSettings &settings)
-    : QDialog(parent), mode_(mode), initial_(parentFlame), branches_{{parentFlame, -1}}, preview_(this),
-      thumbnails_(this) {
+                             const PreviewSettings &settings, PreviewController::Renderer renderer)
+    : QDialog(parent), mode_(mode), initial_(parentFlame), branches_{{parentFlame, -1}},
+      preview_(this, PreviewController::Purpose::dialog, renderer),
+      thumbnails_(this, PreviewController::Purpose::thumbnail, std::move(renderer)),
+      generationJobs_(candidateJobs->jobs),
+      generationReceiver_(std::make_shared<BackgroundReceiver<ExploreDialog>>(this)) {
     const bool mutation = mode == Mode::mutation;
     setObjectName(mutation ? "mutationDialog" : "randomFlameDialog");
     setWindowTitle(mutation ? "Mutation explorer" : "Random flame generator");
@@ -1275,8 +1281,8 @@ ExploreDialog::ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *paren
 ExploreDialog::~ExploreDialog() {
     for (auto child : findChildren<QObject *>())
         QObject::disconnect(child, nullptr, this, nullptr);
-    if (generationThread_.joinable())
-        generationThread_.join();
+    generationReceiver_->close();
+    generationJobs_->cancel(generationReceiver_.get());
     preview_.stop();
     thumbnails_.stop();
 }
@@ -1331,7 +1337,7 @@ void ExploreDialog::generate(bool advanceSeed) {
         mutation.palette = palette_->isChecked();
         mutation.include_final = final_->isChecked();
         mutation.allowed_variations = std::move(allowed);
-        const auto parent = branches_.at(parentBranch_).flame;
+        auto parent = branches_.at(parentBranch_).flame;
         const auto initialPalette = initial_.palette;
         const auto mode = mode_;
         generating_ = true;
@@ -1339,37 +1345,34 @@ void ExploreDialog::generate(bool advanceSeed) {
         thumbnails_.stop();
         updateActions();
         status_->setText("Generating candidates…");
-        generationThread_ = std::jthread([this, mode, random, mutation, parent, initialPalette] {
-            try {
-                auto candidates = mode == Mode::random ? creative::random_flames(random)
-                                                       : creative::mutation_candidates(parent, mutation);
-                for (std::size_t i = 0; i < candidates.size(); ++i) {
-                    if (mode == Mode::mutation)
-                        candidates[i].name = text(parent.name).left(100).toUtf8().toStdString() +
-                                             " / M" + std::to_string(mutation.seed) + "." +
-                                             std::to_string(i + 1);
-                    else if (!random.randomize_palette)
-                        candidates[i].palette = initialPalette;
+        generationJobs_->submit(generationReceiver_.get(),
+            [receiver = generationReceiver_, mode, random = std::move(random), mutation = std::move(mutation),
+             parent = std::move(parent), initialPalette](std::stop_token stop) {
+                try {
+                    auto candidates = mode == Mode::random ? creative::random_flames(random, stop)
+                                                           : creative::mutation_candidates(parent, mutation, stop);
+                    if (stop.stop_requested())
+                        return;
+                    for (std::size_t i = 0; i < candidates.size(); ++i) {
+                        if (mode == Mode::mutation)
+                            candidates[i].name = text(parent.name).left(100).toUtf8().toStdString() +
+                                                 " / M" + std::to_string(mutation.seed) + "." +
+                                                 std::to_string(i + 1);
+                        else if (!random.randomize_palette)
+                            candidates[i].palette = initialPalette;
+                    }
+                    receiver->post([candidates = std::move(candidates)](ExploreDialog *dialog) mutable {
+                        dialog->generating_ = false;
+                        dialog->showCandidates(std::move(candidates));
+                    });
+                } catch (const std::exception &error) {
+                    receiver->post([message = text(error.what())](ExploreDialog *dialog) {
+                        dialog->generating_ = false;
+                        dialog->status_->setText(message);
+                        dialog->updateActions();
+                    });
                 }
-                QMetaObject::invokeMethod(
-                    this,
-                    [this, candidates = std::move(candidates)]() mutable {
-                        generating_ = false;
-                        showCandidates(std::move(candidates));
-                    },
-                    Qt::QueuedConnection);
-            } catch (const std::exception &error) {
-                const auto message = text(error.what());
-                QMetaObject::invokeMethod(
-                    this,
-                    [this, message] {
-                        generating_ = false;
-                        status_->setText(message);
-                        updateActions();
-                    },
-                    Qt::QueuedConnection);
-            }
-        });
+            });
     } catch (const std::exception &error) {
         generating_ = false;
         updateActions();

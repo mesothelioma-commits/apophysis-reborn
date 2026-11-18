@@ -252,6 +252,7 @@ void cpu_and_policy_checks(const ComputeInfo &info) {
 }
 
 void device_checks(const ComputeDevice &device) {
+    gpu::ContextScope contextScope;
     RenderOptions options{65539, UINT64_C(0x9f123456abcdef01), 2};
     options.backend = RenderBackend::vulkan;
     options.device = device.id;

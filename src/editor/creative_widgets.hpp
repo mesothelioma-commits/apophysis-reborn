@@ -7,7 +7,6 @@
 #include <QDialog>
 #include <functional>
 #include <map>
-#include <thread>
 
 class QCheckBox;
 class QComboBox;
@@ -23,6 +22,9 @@ class QTableWidget;
 class QToolButton;
 
 namespace apo::editor {
+
+class BackgroundJobs;
+template <class Target> class BackgroundReceiver;
 
 class PaletteStrip : public QWidget {
     Q_OBJECT
@@ -115,7 +117,7 @@ class ExploreDialog : public QDialog {
     enum class Mode { random, mutation };
     enum class Disposition { replace, append };
     ExploreDialog(Mode mode, const Flame &parentFlame, QWidget *parent = nullptr,
-                  const PreviewSettings &settings = {});
+                  const PreviewSettings &settings = {}, PreviewController::Renderer renderer = apo::render);
     ~ExploreDialog() override;
     const std::vector<Flame> &candidates() const {
         return candidates_;
@@ -157,7 +159,8 @@ class ExploreDialog : public QDialog {
     QListWidget *allowlist_;
     QPushButton *generate_, *useParent_, *apply_, *addSelected_, *addAll_, *addBranch_;
     std::vector<QToolButton *> tiles_;
-    std::jthread generationThread_;
+    std::shared_ptr<BackgroundJobs> generationJobs_;
+    std::shared_ptr<BackgroundReceiver<ExploreDialog>> generationReceiver_;
     bool generating_ = false;
     void generate(bool advanceSeed);
     void showCandidates(std::vector<Flame> flames);

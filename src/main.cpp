@@ -211,6 +211,7 @@ void listDevices(bool json) {
 }
 
 int run(const std::vector<fs::path> &args) {
+  apo::gpu::ContextScope contextScope;
   if (!args.empty() && args.front() == "--version") {
     if (args.size() != 1)
       throw std::invalid_argument("Use --version without rendering or plugin arguments");

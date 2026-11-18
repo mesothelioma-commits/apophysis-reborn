@@ -1,20 +1,29 @@
-# Apophysis Reborn 0.10.1 — Responsiveness and Rendering
+# Apophysis Reborn 0.10.2
 
-This maintenance release addresses preview lifecycle bugs, UI stalls during device discovery and recovery saving, render-queue event backlogs, and measured image reconstruction/encoding overhead. It builds on Milestone 10’s portable and installer editions, offline help, build diagnostics and reproducible release tooling. The native source-preserving editor, CPU/Vulkan renderer, creative tools, persistent queue, scripting/plugins, timeline, morphing and high-resolution output remain available.
+This update addresses two freezes reported during ordinary editing on Windows. Closing Mutate or Random can return to the main window while a canceled render finishes. Saving a project after editing the preview seed runs file preparation and writing on a background thread. The editor keeps processing window messages during the save.
 
-**0.10.1 is a maintenance checkpoint. Complete original Apophysis 2.x/7X/AV feature parity remains unfinished.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
+**0.10.2 is a maintenance checkpoint. Complete original Apophysis 2.x/7X/AV feature parity remains unfinished.** The [release compatibility report](docs/RELEASE_COMPATIBILITY.md) traces the original brief's 25 sections to implemented behavior and explicit remaining requirements. Windows 11 lifecycle/UI/DPI checks and physical NVIDIA/AMD/Intel acceptance remain separate from cross-compilation, Linux testing and software Vulkan.
 
 ## Choose a distribution
 
 | Edition | Entry point and contents |
 | --- | --- |
-| Lean portable | Extract `apophysis-reborn-0.10.1-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.10.1-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
-| Per-user installer | Run `apophysis-reborn-0.10.1-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.1`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
-| Complete source/history and SDK | Extract `apophysis-reborn-0.10.1-responsiveness.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
+| Lean portable | Extract `apophysis-reborn-0.10.2-windows-x64-portable.zip`; open `apophysis-reborn.exe` in its `apophysis-reborn-0.10.2-windows-x64` folder. Includes the CLI, required runtime files, examples, documents, notices and corresponding dependency sources. Keep those files together. |
+| Per-user installer | Run `apophysis-reborn-0.10.2-windows-x64-setup.exe`. Defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.2`, without administrator elevation or file-association takeover. Versioned shortcuts and an uninstall entry are supplied; the desktop shortcut is optional. |
+| Complete source/history and SDK | Extract `apophysis-reborn-0.10.2-dialog-freeze.zip`; applications are in `apophysis-reborn/bin/windows-x64`. Includes all test executables, scripts, source/history, plugin SDK examples and release evidence. Use this edition for the verification and build commands below. |
+| Git source | Extract `apophysis-reborn-0.10.2-git-source.zip` and run `git clone apophysis-reborn.bundle restored-source` in the extracted `apophysis-reborn` directory. The default `main` branch contains the release with its history and tags. |
 
 Setup requires an empty destination and keeps different versions side by side. Uninstall removes unchanged installed payload files and retains modified/extra files; external projects, settings and recovery data remain. An interrupted install can leave a partial folder; automatic repair or replacement is not provided. Portable and installed applications normally share per-user settings/data, so separate program directories are not isolated user profiles. Keep artwork outside the program folder and retain the original executable/plugins for in-progress checkpoints. [Getting started and recovery](docs/USER_MANUAL.md)
 
-## New in this maintenance release
+## Changes in 0.10.2
+
+- Mutate and Random cancel obsolete candidate and preview work when their windows close. Detail, thumbnail and main preview rendering reuse dedicated workers.
+- Native project Save captures the preview seed along with the document state. A successful save updates the file identity and clean state without regenerating the same preview.
+- Vulkan worker threads release their render contexts during normal execution. The same worker can reuse its device and rendering pipeline across jobs.
+
+The [Windows freeze investigation](docs/WINDOWS_DIALOG_FREEZE.md) describes the reproduced waits and verification limits.
+
+## Earlier responsiveness changes in 0.10.1
 
 | Area | Change |
 | --- | --- |

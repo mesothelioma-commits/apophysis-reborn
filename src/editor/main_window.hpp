@@ -65,7 +65,7 @@ private:
   std::shared_ptr<DeviceDiscovery> deviceDiscovery_;
   QPointer<RenderQueueDialog> queueDialog_;
   QSettings settings_;
-  bool useSettings_, refreshing_ = false, closing_ = false;
+  bool useSettings_, refreshing_ = false, closing_ = false, saving_ = false;
   QTimer *closeTimer_ = nullptr;
   std::optional<Flame> model_;
   std::optional<Transform> copiedTransform_;
@@ -106,7 +106,6 @@ private:
   void editPluginVariations();
   bool importUpr(const QString &path);
   void exportUpr();
-  void captureProjectState();
   ProjectFile projectViewSnapshot() const;
   void requestRecovery();
   void restoreProjectState();
@@ -127,6 +126,7 @@ private:
   void chooseOpen();
   bool confirmDiscard();
   bool saveDocument(bool saveAs = false);
+  bool saveToPath(const QString &path, bool replaceExternalChange = false);
   void renderImage();
   void preferences();
   void newDocument();

@@ -2,6 +2,7 @@
 
 #include "flame.hpp"
 #include <span>
+#include <stop_token>
 
 namespace apo::creative {
 
@@ -56,7 +57,8 @@ struct RandomOptions {
 
 // New flames have a reproducible name containing the generation seed and index.
 // The allowlist is exact; an empty list chooses the documented built-in default.
-std::vector<Flame> random_flames(const RandomOptions &options);
+// Cancelled batches discard partial results and return an empty vector.
+std::vector<Flame> random_flames(const RandomOptions &options, std::stop_token stop = {});
 
 struct MutationOptions {
     std::uint64_t seed = 1;
@@ -71,7 +73,8 @@ struct MutationOptions {
 // parameter groups change. A zero strength returns the exact original model.
 Flame mutate_flame(const Flame &parent, const MutationOptions &options,
                    std::size_t sequence = 0);
-std::vector<Flame> mutation_candidates(const Flame &parent, const MutationOptions &options);
+std::vector<Flame> mutation_candidates(const Flame &parent, const MutationOptions &options,
+                                       std::stop_token stop = {});
 
 // Fit the camera to robust quantiles of an orbit. Final transforms participate in
 // framing but never feed back. Returns false without edits for a degenerate orbit.

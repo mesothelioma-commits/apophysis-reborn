@@ -587,6 +587,7 @@ AnimationExportPlan plan_animation_export(const PreparedAnimation &animation,
 }
 AnimationExportResult export_animation_sequence(const PreparedAnimation &animation,
                                                  const AnimationExportOptions &options) {
+  gpu::ContextScope contextScope;
   auto prepared = prepare(animation, options);
   auto &plan = prepared.plan;
   auto &manifest = prepared.manifest;
