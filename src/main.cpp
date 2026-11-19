@@ -73,6 +73,7 @@ void usage(std::ostream &out) {
       << "  --bit-depth N    8 (default) or 16; BMP supports 8-bit channels "
          "only\n"
       << "  --alpha          straight RGBA output; requires PNG or TIFF\n"
+      << "  --embed-flame    include editable flame and sampling settings in PNG\n"
       << "  --disk-mib N     conservative work/output disk budget (default "
          "16384)\n"
       << "  --strip-rows N   reconstruction strip height (default chooses "
@@ -289,6 +290,10 @@ int run(const std::vector<fs::path> &args) {
       const auto option = args[i++].string();
       if (option == "--no-fallback") {
         options.allow_cpu_fallback = false;
+        continue;
+      }
+      if (option == "--embed-flame") {
+        file.embed_flame = true;
         continue;
       }
       if (option == "--alpha") {

@@ -1,5 +1,7 @@
 # Release compatibility report — 0.13.0
 
+**0.16.0 adds editable PNG export/import and a final-resolution render proof with reusable tone samples.** [Walkthrough](USER_MANUAL.md#proof-and-editable-png)
+
 **0.15.0 adds cross-project flame favorites with tags and a visual variation explorer.** [Walkthrough](USER_MANUAL.md#favorites-and-variation-explorer) · [Roadmap](ROADMAP.md)
 
 ## Release decision
@@ -185,8 +187,8 @@ Evidence links are repository-relative. Test source demonstrates what is checked
 | --- | --- | --- | --- |
 | R13-01 — PNG; TIFF; BMP; Additional PPM output | Delivered | PNG/TIFF provide RGB/RGBA8/16; PPM provides RGB8/16; BMP provides RGB8. Streaming encoders reject unsupported alpha/depth combinations. | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) · [image_stream_tests.cpp](../tests/image_stream_tests.cpp) |
 | R13-02 — JPEG; OpenEXR; WebP; Floating-point HDR output | Missing | These are not image export formats of the renderer. A Qt image plugin or a 16-bit integer container does not add these capabilities. | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) · [image_stream.cpp](../src/image_stream.cpp) |
-| R13-03 — ICC profiles/color-space conversion; Configurable compression; Embedded render/flame metadata; Import embedded flame metadata; Dithering | Missing | Outputs are tone-mapped integer channels without invented ICC/HDR metadata. PNG compression and TIFF layout are fixed; complete flame parameters are saved separately. | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) · [image_stream.cpp](../src/image_stream.cpp) |
-| R13-04 — Parameter files beside images; Batch rendering; Filename templates/conflict policies | Partial | Projects and canonical flames can be saved separately; queue/script/animation batches are supported. Animation uses a prefix and global frame number, not an arbitrary token-template language. Automatic image-sidecar/embedded metadata export is not implemented. | [RENDER_QUEUE.md](RENDER_QUEUE.md) · [ANIMATION_CLI.md](ANIMATION_CLI.md) · [SCRIPTING.md](SCRIPTING.md) |
+| R13-03 — ICC profiles/color-space conversion; Configurable compression; Embedded render/flame metadata; Import embedded flame metadata; Dithering | Partial | Optional PNG flame metadata round-trips a single rendered flame plus its seed and sample budget. ICC conversion, configurable compression and dithering remain open. | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) · [image_stream.cpp](../src/image_stream.cpp) |
+| R13-04 — Parameter files beside images; Batch rendering; Filename templates/conflict policies | Partial | Projects and canonical flames can be saved separately; queue/script/animation batches are supported. Animation uses a prefix and global frame number, not an arbitrary token-template language. Optional PNG metadata is supported. Automatic sidecar export remains open. | [RENDER_QUEUE.md](RENDER_QUEUE.md) · [ANIMATION_CLI.md](ANIMATION_CLI.md) · [SCRIPTING.md](SCRIPTING.md) |
 
 ### Brief section 14: File compatibility
 
@@ -289,7 +291,7 @@ Evidence links are repository-relative. Test source demonstrates what is checked
 ## Work that remains before a full-parity release
 
 1. **Complete the historical inventory and missing mathematics.** Audit the remaining built-ins/plugins against pinned original source; implement further variations from that inventory with parameter/default/order/RNG cases, CPU reference results, GPU admission and example flames. Extend coverage to further historical estimator profiles and the required filter families, 3D/direct-color behavior and other presently blocked source settings. Do not treat a successful import as support for these calculations.
-2. **Close export and metadata gaps.** Add the requested JPEG, WebP and OpenEXR/HDR encoders with independent decode/precision/alpha tests, then define color management, compression controls, embedded flame metadata and sidecar workflows. A Qt decoder alone is insufficient.
+2. **Close export and metadata gaps.** Add the requested JPEG, WebP and OpenEXR/HDR encoders with independent decode/precision/alpha tests, then define color management, compression controls and sidecar workflows. A Qt decoder alone is insufficient.
 3. **Complete creative/editor preferences and historical workflows.** Add persistent per-transform locks and multi-selection/synchronization, light theme, named/classic workspaces and shortcut profiles, broader preference categories and configurable recovery/storage behavior. Reconcile each original control’s purpose and defaults before marking a replacement complete.
 4. **Extend language and animation compatibility.** Broaden the documented legacy script API with original-source fixtures; add explicit timeline/curve scripting, historical animation profiles and missing track/motion sampling where required. Preserve the current source, plugin identity and checkpoint contracts.
 5. **Execute target-platform and lifecycle acceptance.** Test Windows 11 install/launch/upgrade/uninstall, high-DPI/multi-monitor behavior and physical NVIDIA/AMD/Intel devices. Record actual device/driver/build identity, strict-backend results and measured performance. Complete original-application reopen/render comparisons for the supported export profiles.

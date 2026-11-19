@@ -1,4 +1,6 @@
 #include "gpu.hpp"
+#include "editable_png.hpp"
+#include "legacy_document.hpp"
 #include "render_file.hpp"
 
 #include <algorithm>
@@ -182,6 +184,86 @@ void pixels_equal(const Decoded &decoded, const RenderResult &dense, std::string
     require(decoded.samples.size() == dense.image.rgb.size(), "Dense/stream raster sizes differ");
     require(std::equal(decoded.samples.begin(), decoded.samples.end(), dense.image.rgb.begin()),
             message);
+}
+void editable_png_roundtrip(const fs::path& dir) {
+    auto f = fixture();
+    f.name = "Editable flame & palette";
+    const auto opt = options(13123);
+    auto file = file_options();
+    file.image = {ImageFormat::png16, true};
+    const auto plain = dir / "plain.png", editable = dir / "editable.png";
+    render_to_file(f, opt, plain, file);
+    const auto message = rejects([&]{ read_editable_png(plain); }, "Accepted a plain PNG");
+    require(message.find("no editable flame") != message.npos, "Missing actionable plain-PNG diagnosis");
+    file.embed_flame = true;
+    render_to_file(f, opt, editable, file);
+    const auto payload = read_editable_png(editable);
+    require(payload.settings && payload.settings->seed == opt.seed && payload.settings->samples == opt.samples &&
+            payload.image.alpha && payload.image.format == ImageFormat::png16, "Lost embedded render settings");
+    auto recovered = LegacyDocument::parse(payload.xml);
+    require(recovered.entries().size() == 1 && recovered.entries()[0].name == f.name, "Lost embedded flame");
+    file.embed_flame = false;
+    const auto recreated = dir / "recreated.png";
+    render_to_file(recovered.render_model(0), opt, recreated, file);
+    require(read(recreated) == read(plain), "Reopening the editable flame changed its pixels");
+
+    // Legacy files can use different transform math and a Gaussian filter by default.
+    // A render recipe still needs to represent explicit box reconstruction, modern
+    // numeric values, and the actual variation order selected by the renderer.
+    auto legacy = fixture("Apophysis 7x");
+    legacy.filter_radius.reset();
+    legacy.transforms[0].color_speed = 0.187123456789;
+    legacy.transforms[0].parameters.apophysis_math = false;
+    file.embed_flame = true;
+    const auto legacyPath = dir / "legacy.png";
+    render_to_file(legacy, opt, legacyPath, file);
+    auto legacyDoc = LegacyDocument::parse(read_editable_png(legacyPath).xml);
+    auto restored = legacyDoc.render_model(0);
+    require(!restored.filter_radius && !restored.transforms[0].parameters.apophysis_math &&
+            restored.transforms[0].color_speed == legacy.transforms[0].color_speed,
+            "Lost legacy reconstruction or math settings");
+    const auto second = dir / "legacy-second.png";
+    render_to_file(restored, opt, second, file);
+    require(read(second) == read(legacyPath), "Legacy recipe changed an editable re-render");
+    LegacyTransformEdits move;
+    move.color_speed = 0.8;
+    legacyDoc.edit_transform(0, 0, move);
+    require(legacyDoc.render_model(0).transforms[0].color_speed == 0.8, "Lost editable color-speed semantics");
+
+    const auto valid = read(editable);
+    auto reject = [&](std::string bytes) {
+        std::istringstream input(std::move(bytes));
+        return rejects([&]{read_editable_png(input);}, "Accepted damaged editable PNG");
+    };
+    auto corrupt = valid;
+    const auto image = corrupt.find("IDAT");
+    require(image != corrupt.npos, "Missing PNG image data");
+    corrupt[image + 4] ^= 1;
+    require(reject(corrupt).find("checksum") != corrupt.npos, "Skipped image data checksum");
+    auto meta = valid.find("flam3_genome");
+    require(meta != valid.npos, "Missing editable PNG marker");
+    corrupt = valid;
+    corrupt[meta + 32] ^= 1;
+    require(reject(corrupt).find("checksum") != corrupt.npos, "Skipped embedded XML checksum");
+    auto length = valid.find("iTXt") - 4;
+    auto next = valid.find("arRS") - 4;
+    const auto startPixels = valid.find("IDAT") - 4;
+    require(valid.substr(0, length) + valid.substr(startPixels) == read(plain),
+            "Embedding changed image data or unrelated output chunks");
+    reject(valid.substr(0, next) + valid.substr(length, next - length) + valid.substr(next));
+    reject(valid.substr(0, valid.size() - 2));
+    reject(valid + "trailing data");
+    corrupt = valid;
+    corrupt[length] = static_cast<char>(0x80);
+    reject(corrupt);
+    std::stop_source stopped;
+    stopped.request_stop();
+    rejects([&]{ read_editable_png(editable, stopped.get_token()); }, "Ignored cancellation");
+
+    file.image.format = ImageFormat::tiff16;
+    file.embed_flame = true;
+    rejects([&]{render_to_file(f, opt, plain, file);}, "Allowed embedding into TIFF");
+    require(read(recreated) == read(plain), "A failed export replaced its destination");
 }
 void cpu_exact(const fs::path &directory) {
     struct Case {
@@ -728,6 +810,7 @@ int main(int argc, char **argv) {
         if (cpu_only && (require_vulkan || !selector.empty()))
             throw std::invalid_argument("--cpu-only cannot select or require a Vulkan device");
         Temporary temporary;
+        editable_png_roundtrip(temporary.directory);
         plan_tests(temporary.directory);
         cpu_exact(temporary.directory);
         checkpoint_tests(temporary.directory);

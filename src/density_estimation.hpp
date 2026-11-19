@@ -23,5 +23,5 @@ struct DensityKernels {
 struct RenderGeometry;
 std::vector<LightBin> density_strip(const Flame&, const RenderGeometry&,
     std::span<const std::array<std::uint64_t,4>> bins, unsigned first_input_row,
-    unsigned first_output_bin_row, unsigned output_bin_rows, std::uint64_t samples, std::stop_token);
+    unsigned first_output_bin_row, unsigned output_bin_rows, std::uint64_t samples, std::stop_token, unsigned input_width = 0);
 }

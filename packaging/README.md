@@ -1,6 +1,6 @@
 # Windows runtime and installer packaging
 
-The 0.15.0 Windows packages include the desktop editor, command-line renderer and local AI companion. [Local AI setup](../docs/LOCAL_AI.md) covers client configuration and editor permissions.
+The 0.16.0 Windows packages include the desktop editor, command-line renderer and local AI companion. [Local AI setup](../docs/LOCAL_AI.md) covers client configuration and editor permissions.
 
 ## Outputs and requirements
 
@@ -14,9 +14,9 @@ source/SDK release.
 
 | Output | Purpose |
 | --- | --- |
-| `apophysis-reborn-0.15.0-windows-x64/` | Exact, audited payload shared by the ZIP and installer |
-| `apophysis-reborn-0.15.0-windows-x64-portable.zip` | Relocatable application distribution |
-| `apophysis-reborn-0.15.0-windows-x64-setup.exe` | Per-user Windows installer |
+| `apophysis-reborn-0.16.0-windows-x64/` | Exact, audited payload shared by the ZIP and installer |
+| `apophysis-reborn-0.16.0-windows-x64-portable.zip` | Relocatable application distribution |
+| `apophysis-reborn-0.16.0-windows-x64-setup.exe` | Per-user Windows installer |
 | `package-manifest.json` and `SHA256SUMS.txt` | Runtime identity, inventory, lengths and hashes |
 | Installer work directory `installer-build.json` | Tool versions, helper imports, source/input/output hashes and execution limits |
 
@@ -56,7 +56,7 @@ length. Symbolic links and Windows reparse paths are refused before traversal.
 
 ```bash
 python3 /path/to/apophysis-reborn/scripts/package-runtime.py \
-  --verify /path/to/new-release/apophysis-reborn-0.15.0-windows-x64
+  --verify /path/to/new-release/apophysis-reborn-0.16.0-windows-x64
 ```
 
 Verification checks every file, the exact inventory, sizes and both checksum
@@ -68,8 +68,8 @@ ZIP bytes.
 
 ```bash
 bash /path/to/apophysis-reborn/scripts/build-installer.sh \
-  --payload /path/to/new-release/apophysis-reborn-0.15.0-windows-x64 \
-  --output /path/to/new-release/apophysis-reborn-0.15.0-windows-x64-setup.exe \
+  --payload /path/to/new-release/apophysis-reborn-0.16.0-windows-x64 \
+  --output /path/to/new-release/apophysis-reborn-0.16.0-windows-x64-setup.exe \
   --compiler /path/to/x86_64-w64-mingw32-clang++ \
   --makensis /path/to/makensis \
   --objdump /path/to/llvm-objdump \
@@ -95,7 +95,7 @@ installer EXEs; PE/NSIS compiler timestamps are recorded through artifact hashes
 ## Installation and removal policy
 
 The default destination is
-`%LOCALAPPDATA%\Programs\Apophysis Reborn\0.15.0`. Setup requests user privilege,
+`%LOCALAPPDATA%\Programs\Apophysis Reborn\0.16.0`. Setup requests user privilege,
 writes only a current-user uninstall entry and uses versioned folders and
 shortcuts. It supports Windows x64, Windows 10 or newer; Windows 11 is the primary
 acceptance target. It creates no file associations. Start Menu shortcuts are
@@ -159,8 +159,8 @@ checks for existing registrations and conflicting shortcuts before it begins.
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/verify-installer-windows.ps1 `
-  -Installer C:\release\apophysis-reborn-0.15.0-windows-x64-setup.exe `
-  -Payload C:\release\apophysis-reborn-0.15.0-windows-x64 `
+  -Installer C:\release\apophysis-reborn-0.16.0-windows-x64-setup.exe `
+  -Payload C:\release\apophysis-reborn-0.16.0-windows-x64 `
   -OutDirectory C:\temp\apo-installer-check
 ```
 
@@ -169,8 +169,8 @@ argument paths explicitly before calling Windows PowerShell:
 
 ```bash
 bash /path/to/apophysis-reborn/scripts/verify-installer-windows.sh \
-  --installer /c/release/apophysis-reborn-0.15.0-windows-x64-setup.exe \
-  --payload /c/release/apophysis-reborn-0.15.0-windows-x64 \
+  --installer /c/release/apophysis-reborn-0.16.0-windows-x64-setup.exe \
+  --payload /c/release/apophysis-reborn-0.16.0-windows-x64 \
   --out /c/temp/apo-installer-check \
   --no-open
 ```

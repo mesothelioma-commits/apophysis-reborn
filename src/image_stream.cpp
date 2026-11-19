@@ -1,4 +1,5 @@
 #include "image_stream.hpp"
+#include "editable_png.hpp"
 
 #include <zlib.h>
 
@@ -260,7 +261,7 @@ struct ImageStreamWriter::Impl {
     std::vector<unsigned char> row, compressed;
     std::unique_ptr<Deflater> compressor;
 
-    Impl(std::ostream &stream, int w, int h, const ImageExport &settings)
+    Impl(std::ostream &stream, int w, int h, const ImageExport &settings, const EditablePng* editable)
         : output(stream), width(w), height(h), options(settings),
           bits(image_format_bits(settings.format)), channels(settings.alpha ? 4 : 3) {
         (void)image_export_upper_bound(width, height, options);
@@ -269,6 +270,10 @@ struct ImageStreamWriter::Impl {
             size > std::uint64_t(std::numeric_limits<std::streamsize>::max()))
             throw std::invalid_argument("Image row exceeds the process address range");
         row.resize(static_cast<std::size_t>(size));
+        if (editable && (!png(options.format) || editable->xml.empty() ||
+                         editable->xml.size() > editable_xml_limit || !editable->settings ||
+                         !editable->settings->samples))
+            throw std::invalid_argument("Invalid editable PNG export parameters");
         if (png(options.format)) {
             compressed.resize(compressed_buffer_bytes);
             compressor = std::make_unique<Deflater>();
@@ -282,6 +287,17 @@ struct ImageStreamWriter::Impl {
             header[8] = static_cast<unsigned char>(bits);
             header[9] = options.alpha ? 6 : 2;
             png_chunk(output, "IHDR", header);
+            if (editable) {
+                std::string data(editable_png_prefix, sizeof(editable_png_prefix) - 1);
+                data += editable->xml;
+                png_chunk(output, "iTXt", {reinterpret_cast<const unsigned char*>(data.data()), data.size()});
+                std::array<unsigned char,17> settingsChunk{1};
+                for (unsigned i = 0; i < 8; ++i) {
+                    settingsChunk[i + 1] = static_cast<unsigned char>(editable->settings->seed >> (56 - 8 * i));
+                    settingsChunk[i + 9] = static_cast<unsigned char>(editable->settings->samples >> (56 - 8 * i));
+                }
+                png_chunk(output, "arRS", settingsChunk);
+            }
         } else if (options.format == ImageFormat::bmp8) {
             bytes(output, "BM", 2);
             le(output, static_cast<std::uint32_t>(54 + size * height), 4);
@@ -523,8 +539,8 @@ struct ImageStreamWriter::Impl {
 };
 
 ImageStreamWriter::ImageStreamWriter(std::ostream &output, int width, int height,
-                                     const ImageExport &options)
-    : impl_(std::make_unique<Impl>(output, width, height, options)) {}
+                                     const ImageExport &options, const EditablePng* editable)
+    : impl_(std::make_unique<Impl>(output, width, height, options, editable)) {}
 ImageStreamWriter::~ImageStreamWriter() = default;
 void ImageStreamWriter::write_row(std::span<const std::array<double, 4>> rgba) {
     impl_->write(rgba);

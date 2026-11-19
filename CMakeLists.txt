@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(apophysis_reborn VERSION 0.15.0 LANGUAGES CXX)
+project(apophysis_reborn VERSION 0.16.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -27,7 +27,7 @@ target_include_directories(apo-lua PUBLIC third_party/lua/src)
 set_target_properties(apo-lua PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(flame-core src/flame.cpp src/flame_io.cpp src/render.cpp src/density_estimation.cpp src/image.cpp
     src/legacy_document.cpp src/output_file.cpp src/creative.cpp src/gpu_kernel.cpp src/vulkan_runtime.cpp
-    src/render_file.cpp src/image_stream.cpp src/plugin.cpp src/project_io.cpp
+    src/render_file.cpp src/render_proof.cpp src/editable_png.cpp src/image_stream.cpp src/plugin.cpp src/project_io.cpp
     src/project_document.cpp src/legacy_formats.cpp src/script.cpp src/legacy_script.cpp
     src/script_document.cpp src/script_host.cpp src/color_curves.cpp
     src/animation.cpp src/animation_io.cpp src/animation_export.cpp src/sha256.cpp src/build_info.cpp)
@@ -51,7 +51,7 @@ if(APO_BUILD_EDITOR)
     target_link_libraries(apophysis-mcp PRIVATE Qt6::Core Qt6::Network)
     add_library(flame-editor src/editor/document_session.cpp src/editor/canvases.cpp
         src/editor/preview_controller.cpp src/editor/main_window.cpp src/editor/creative_widgets.cpp
-        src/editor/flame_favorites.cpp src/editor/variation_explorer.cpp
+        src/editor/flame_favorites.cpp src/editor/variation_explorer.cpp src/editor/render_proof_dialog.cpp
         src/editor/local_ai_connection.cpp src/editor/render_queue.cpp src/editor/script_dialog.cpp src/editor/plugin_dialog.cpp src/editor/main_window_extensions.cpp
         src/editor/color_curve_dialog.cpp src/editor/color_curve_dialog.hpp
         src/editor/animation_dialog.cpp src/editor/animation_dialog.hpp src/editor/main_window_animation.cpp
@@ -67,7 +67,7 @@ if(APO_BUILD_EDITOR)
     target_link_libraries(apophysis-reborn PRIVATE flame-editor)
     if(BUILD_TESTING)
         find_package(Qt6 REQUIRED COMPONENTS Test)
-        foreach(test_name IN ITEMS flame_favorites variation_explorer preview document_session canvas creative_editor render_queue extensions_editor color_editor animation_editor support_editor)
+        foreach(test_name IN ITEMS flame_favorites variation_explorer render_proof_dialog preview document_session canvas creative_editor render_queue extensions_editor color_editor animation_editor support_editor)
             string(REPLACE "_" "-" target_name "${test_name}-tests")
             add_executable(${target_name} tests/${test_name}_tests.cpp)
             set_target_properties(${target_name} PROPERTIES AUTOMOC ON)
@@ -145,7 +145,7 @@ if(BUILD_TESTING)
         -DEXE=$<TARGET_FILE:flame-cpu> -DSAMPLE=${CMAKE_CURRENT_SOURCE_DIR}/examples/ember-spiral.flame
         -DMANIFEST=${CMAKE_CURRENT_BINARY_DIR}/plugins/reborn-wave/reborn_wave.apoplugin
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/animation-cli -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/animation_cli.cmake)
-    foreach(test_name IN ITEMS project_io legacy_formats script script_host)
+    foreach(test_name IN ITEMS project_io legacy_formats script script_host render_proof)
         string(REPLACE "_" "-" target_name "${test_name}-tests")
         add_executable(${target_name} tests/${test_name}_tests.cpp)
         target_link_libraries(${target_name} PRIVATE flame-core)

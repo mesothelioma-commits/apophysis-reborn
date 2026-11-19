@@ -56,6 +56,27 @@ void write(const QString &path, const QByteArray &value) {
 class RenderQueueTests : public QObject {
   Q_OBJECT
 private slots:
+  void editablePngSettingPersistsAndOlderQueuesDefaultOff() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    RenderQueue queue({}, dir.filePath("checkpoints"));
+    auto file = fileSettings();
+    file.image.format = ImageFormat::png8;
+    file.embed_flame = true;
+    const auto id = queue.add(fixture(), settings(), file, dir.filePath("editable.png"));
+    const auto path = dir.filePath("options.json");
+    queue.saveTo(path);
+    RenderQueue restored({}, dir.filePath("other-checkpoints"));
+    restored.loadFrom(path);
+    QVERIFY(restored.job(id)->file.embed_flame);
+    auto legacy = QJsonDocument::fromJson(bytes(path)).object();
+    auto entry = legacy["jobs"].toArray().first().toObject();
+    entry.remove("embed_flame");
+    legacy["jobs"] = QJsonArray{entry};
+    write(path, QJsonDocument(legacy).toJson());
+    restored.loadFrom(path);
+    QVERIFY(!restored.job(id)->file.embed_flame);
+  }
   void densityEstimatorMigratesOldQueueSnapshots() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());

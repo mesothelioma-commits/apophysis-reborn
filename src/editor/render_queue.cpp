@@ -155,7 +155,7 @@ QJsonObject jobJson(const RenderJob &j) {
       {"destination", j.destination},
       {"destination_sha256", j.destination_sha256 ? QJsonValue(text(*j.destination_sha256)) : QJsonValue(QJsonValue::Null)},
       {"checkpoint", j.checkpoint},
-      {"flame", text(serialize_flame(j.flame))},
+      {"flame", text(serialize_flame(j.flame, j.file.embed_flame ? FlameXmlMode::render_snapshot : FlameXmlMode::canonical))},
       {"plugin_identity", text(plugin_identity(j.flame))},
       {"transform_math", conventions},
       {"final_math", j.flame.final_transform
@@ -171,6 +171,7 @@ QJsonObject jobJson(const RenderJob &j) {
       {"cpu_fallback", j.render.allow_cpu_fallback},
       {"format", formatName(j.file.image.format)},
       {"alpha", j.file.image.alpha},
+      {"embed_flame", j.file.embed_flame},
       {"disk_mib", QString::number(j.file.disk_mib)},
       {"strip_rows", QString::number(j.file.strip_rows)},
       {"state", stateName(j.state)},
@@ -272,6 +273,7 @@ RenderJob readJob(const QJsonObject &o, int version) {
   j.render.allow_cpu_fallback = boolean(o, "cpu_fallback");
   j.file.image.format = readFormat(requiredString(o, "format"));
   j.file.image.alpha = boolean(o, "alpha");
+  j.file.embed_flame = o.contains("embed_flame") && boolean(o, "embed_flame");
   j.file.disk_mib = integer(o, "disk_mib");
   j.file.strip_rows = unsigned(integer(o, "strip_rows", 16384));
   j.file.checkpoint_directory = filesystemPath(j.checkpoint);

@@ -1,11 +1,14 @@
 #include "main_window.hpp"
+#include "background_jobs.hpp"
 #include "local_ai_connection.hpp"
 #include "flame_favorites.hpp"
 #include "variation_explorer.hpp"
+#include "render_proof_dialog.hpp"
 #include "build_info.hpp"
 #include "support_dialogs.hpp"
 #include "creative_widgets.hpp"
 #include "flame_io.hpp"
+#include "editable_png.hpp"
 #include "gpu.hpp"
 #include "output_file.hpp"
 #include "plugin_dialog.hpp"
@@ -43,6 +46,7 @@
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QProgressBar>
+#include <QProgressDialog>
 #include <QScopedValueRollback>
 #include <QScopeGuard>
 #include <QPushButton>
@@ -67,10 +71,12 @@
 #include <charconv>
 #include <climits>
 #include <cmath>
+#include <future>
 #include <numbers>
 
 namespace apo::editor {
 namespace {
+Q_APPLICATION_STATIC(ApplicationJobs, pngReaders)
 QString text(std::string_view value) {
   return QString::fromUtf8(value.data(), qsizetype(value.size()));
 }
@@ -2127,10 +2133,50 @@ bool MainWindow::confirmDiscard() {
 bool MainWindow::openFile(const QString &path) {
   if (closing_ || saving_)
     return false;
-  if (!confirmDiscard())
-    return false;
   try {
-    if (QFileInfo(path).suffix().compare("upr", Qt::CaseInsensitive) == 0) {
+    const auto suffix = QFileInfo(path).suffix();
+    std::optional<std::string> pngProject;
+    if (suffix.compare("png", Qt::CaseInsensitive) == 0) {
+      auto read = std::make_shared<std::packaged_task<std::string(std::stop_token)>>(
+          [file = filesystemPath(path)](std::stop_token token) {
+        auto png = read_editable_png(file, token);
+        ProjectFile project;
+        project.library_bytes = std::move(png.xml);
+        project.render_settings["outputFormat"] = std::to_string(int(png.image.format));
+        project.render_settings["outputAlpha"] = png.image.alpha ? "1" : "0";
+        if (png.settings) {
+          project.preview_settings["seed"] = std::to_string(png.settings->seed);
+          project.render_settings["outputSeed"] = std::to_string(png.settings->seed);
+          project.render_settings["outputSamples"] = std::to_string(png.settings->samples);
+          project.render_settings["deriveOutputSamples"] = "0";
+        }
+        return serialize_project(project);
+      });
+      auto reader = read->get_future();
+      const auto jobs = pngReaders->jobs;
+      jobs->submit(read.get(), [read](std::stop_token stop) { (*read)(stop); });
+      if (reader.wait_for(std::chrono::milliseconds(20)) != std::future_status::ready) {
+        QProgressDialog progress("Reading editable flame from PNG…", "Cancel", 0, 0, this);
+        progress.setWindowTitle("Open editable PNG");
+        progress.setMinimumDuration(0);
+        QTimer timer;
+        connect(&timer, &QTimer::timeout, &progress, [&] {
+          if (reader.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
+            progress.accept();
+        });
+        timer.start(30);
+        if (progress.exec() != QDialog::Accepted) {
+          jobs->cancel(read.get());
+          return false;
+        }
+      }
+      pngProject = reader.get();
+    }
+    if (!confirmDiscard())
+      return false;
+    if (pngProject) {
+      session_.loadBytes(std::move(*pngProject), {}, true);
+    } else if (suffix.compare("upr", Qt::CaseInsensitive) == 0) {
       if (!importUpr(path))
         return false;
     } else
@@ -2139,7 +2185,7 @@ bool MainWindow::openFile(const QString &path) {
     librarySearch_->clear();
     triangles_->fit();
     previewCanvas_->fit();
-    record("Opened " + path);
+    record(pngProject ? "Opened editable PNG as a new project: " + path : "Opened " + path);
     if (useSettings_) {
       auto recent = settings_.value("files/recent").toStringList();
       recent.removeAll(QFileInfo(path).absoluteFilePath());
@@ -2158,8 +2204,8 @@ bool MainWindow::openFile(const QString &path) {
 void MainWindow::chooseOpen() {
   const auto path = QFileDialog::getOpenFileName(
       this, "Open project or flame library", session_.path(),
-      "Projects and flames (*.apoproject *.flame *.xml *.temp *.upr);;Native "
-      "projects (*.apoproject);;Apophysis UPR (*.upr);;All files (*)");
+      "Projects and flames (*.apoproject *.flame *.xml *.temp *.upr *.png);;Native "
+      "projects (*.apoproject);;Editable PNG (*.png);;Apophysis UPR (*.upr);;All files (*)");
   if (!path.isEmpty())
     openFile(path);
 }
@@ -2342,6 +2388,10 @@ void MainWindow::renderImage() {
   auto alpha = new QCheckBox("Transparent background (straight alpha)");
   alpha->setObjectName("outputAlpha");
   outputForm->addRow(QString{}, alpha);
+  auto embed = new QCheckBox("Include editable flame in PNG");
+  embed->setObjectName("embedEditableFlame");
+  embed->setToolTip("Anyone with this image can reopen its flame, palette and sampling settings.");
+  outputForm->addRow(QString{}, embed);
   columns->addWidget(outputGroup, 1);
 
   auto computeGroup = new QGroupBox("Device and working limits");
@@ -2399,6 +2449,8 @@ void MainWindow::renderImage() {
   buttons->button(QDialogButtonBox::Ok)->setObjectName("startOutputRender");
   auto add = buttons->addButton("Add to queue", QDialogButtonBox::ActionRole);
   add->setObjectName("addOutputToQueue");
+  auto proof = buttons->addButton("Proof a crop…", QDialogButtonBox::ActionRole);
+  proof->setObjectName("openRenderProof");
   layout->addWidget(buttons);
   auto savedRow = new QHBoxLayout;
   auto savedPresets = new QComboBox;
@@ -2494,8 +2546,12 @@ void MainWindow::renderImage() {
   };
   applySettings(renderSettings_);
   bool startNow = true;
+  auto renderTone = proof_tone(original);
   auto resized = [&] {
     auto f = original;
+    f.brightness = renderTone.brightness;
+    f.gamma = renderTone.gamma;
+    f.vibrancy = renderTone.vibrancy;
     f.width = width->value();
     f.height = height->value();
     f.scale *= std::min(double(f.width) / original.width,
@@ -2526,8 +2582,26 @@ void MainWindow::renderImage() {
     f.disk_mib = std::uint64_t(disk->value());
     f.image.format = static_cast<ImageFormat>(format->currentData().toInt());
     f.image.alpha = alpha->isChecked();
+    f.embed_flame = embed->isChecked();
     return f;
   };
+  connect(proof, &QPushButton::clicked, &dialog, [&] {
+    try {
+      const auto image = fileOptions().image;
+      RenderProofDialog preview(resized(), options(), image.alpha, &dialog,
+                                image_format_bits(image.format) == 16);
+      if (preview.exec() == QDialog::Accepted) {
+        renderTone.brightness = preview.brightness();
+        renderTone.gamma = preview.gamma();
+        renderTone.vibrancy = preview.vibrancy();
+        note->setText(tr("Tone for this render — brightness %1, gamma %2, vibrancy %3.")
+                          .arg(number(renderTone.brightness), number(renderTone.gamma),
+                               number(renderTone.vibrancy)));
+      }
+    } catch (const std::exception &error) {
+      estimate->setText(text(error.what()));
+    }
+  });
   auto suffix = [&] {
     const auto f = fileOptions().image.format;
     return f == ImageFormat::bmp8                              ? QString("bmp")
@@ -2547,6 +2621,12 @@ void MainWindow::renderImage() {
         samples->setText(QString::number(default_samples(f)));
       }
       const auto output = fileOptions().image.format;
+      const bool png = output == ImageFormat::png8 || output == ImageFormat::png16;
+      embed->setEnabled(png);
+      if (!png) {
+        const QSignalBlocker block(embed);
+        embed->setChecked(false);
+      }
       const bool canAlpha =
           output == ImageFormat::png8 || output == ImageFormat::png16 ||
           output == ImageFormat::tiff8 || output == ImageFormat::tiff16;
@@ -2684,7 +2764,7 @@ void MainWindow::renderImage() {
     connect(widget, &QDoubleSpinBox::valueChanged, &dialog, [&] { update(); });
   for (auto widget : {samples, seed, destination})
     connect(widget, &QLineEdit::textChanged, &dialog, [&] { update(); });
-  for (auto widget : {derived, alpha, compute.fallback})
+  for (auto widget : {derived, alpha, embed, compute.fallback})
     connect(widget, &QCheckBox::toggled, &dialog, [&] { update(); });
   for (auto widget : {filter, format, compute.backend, compute.device})
     connect(widget, &QComboBox::currentIndexChanged, &dialog,

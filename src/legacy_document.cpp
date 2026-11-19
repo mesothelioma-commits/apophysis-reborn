@@ -518,7 +518,8 @@ void LegacyDocument::edit(std::size_t index, const LegacyEdits& edits) {
     } else if (edits.clear_filter_radius) {
         changes["filter"] = std::nullopt;
         changes["filter_shape"] = std::nullopt;
-        if (model) model->filter_radius = apophysis ? std::optional<double>(.5) : std::nullopt;
+        if (model) model->filter_radius = apophysis && !entry.attributes.contains("reborn_render_values")
+                                           ? std::optional<double>(.5) : std::nullopt;
     }
     if (model) validate(*model);
     std::vector<Patch> patches;
@@ -797,6 +798,7 @@ void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_ind
     const auto& source = final ? *sources.final_transform : sources.transforms.at(transform_index);
     auto& transform = final ? *model.final_transform : model.transforms.at(transform_index);
     const bool apophysis = is_apophysis(model.source_version);
+    const bool snapshot = entries_.at(index).attributes.contains("reborn_render_values");
     AttributeChanges changes;
     if (edits.pre && !same_affine(transform.pre, *edits.pre)) {
         transform.pre = *edits.pre;
@@ -820,7 +822,8 @@ void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_ind
         const bool symmetry = source.attributes.contains("symmetry") ||
                               (apophysis && !source.attributes.contains("color_speed"));
         changes[symmetry ? "symmetry" : "color_speed"] =
-            shortest(symmetry || apophysis ? 1 - 2 * *edits.color_speed : *edits.color_speed);
+            shortest(symmetry || (apophysis && !snapshot)
+                         ? 1 - 2 * *edits.color_speed : *edits.color_speed);
     }
     if (edits.opacity && transform.opacity != *edits.opacity) {
         transform.opacity = *edits.opacity;
@@ -863,7 +866,7 @@ void LegacyDocument::edit_transform(std::size_t index, std::size_t transform_ind
             order += name;
         }
         if (!has_sinusoidal) changes["sinusoidal_use3D"] = std::nullopt;
-        if (source.attributes.contains("var_order") || (apophysis && !is_apophysis_2(model.source_version)) ||
+        if (snapshot || source.attributes.contains("var_order") || (apophysis && !is_apophysis_2(model.source_version)) ||
             std::any_of(transform.variations.begin(), transform.variations.end(), [](const Term& term){return term.id == Variation::plugin;})) changes["var_order"] = order;
         // The source can specify dormant parameters even when their weight is
         // zero. Preserve these values when the artist turns a variation on.
@@ -920,7 +923,9 @@ std::size_t LegacyDocument::add_transform(std::size_t index, const Transform& tr
     } else model.transforms.push_back(transform);
     validate(model);
     // Reuse the producer-aware canonical writer for the new element only.
-    const auto generated = parse(serialize_flame(model));
+    const auto mode = entries_.at(index).attributes.contains("reborn_render_values")
+                          ? FlameXmlMode::render_snapshot : FlameXmlMode::canonical;
+    const auto generated = parse(serialize_flame(model, mode));
     const auto& new_source = final ? *generated.sources_[0].final_transform :
                                     generated.sources_[0].transforms[added_index];
     const auto fragment = generated.bytes_.substr(new_source.range.begin,

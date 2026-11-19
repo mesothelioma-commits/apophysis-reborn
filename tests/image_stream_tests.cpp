@@ -1,4 +1,5 @@
 #include "image_stream.hpp"
+#include "editable_png.hpp"
 
 #include <zlib.h>
 
@@ -257,6 +258,35 @@ std::string encode(unsigned width, unsigned height, const std::vector<Pixel> &pi
     require(output.str().size() == first_size, "Repeated finish duplicated output");
     return output.str();
 }
+void legacy_editable_text() {
+    const auto base = encode(1, 1, {{0, 0, 0, 1}}, {ImageFormat::png8, false});
+    auto big = [](std::uint32_t n) {
+        std::string bytes;
+        for (unsigned shift : {24, 16, 8, 0}) bytes += static_cast<char>(n >> shift);
+        return bytes;
+    };
+    auto extract = [&](std::string_view type, const std::string& value) {
+        const auto data = std::string(type) + value;
+        const auto start = base.find("IDAT") - 4;
+        const auto content = big(static_cast<std::uint32_t>(value.size())) + data +
+                             big(crc(data, 0, data.size()));
+        std::istringstream stream(base.substr(0, start) + content + base.substr(start));
+        return read_editable_png(stream);
+    };
+    const std::string keyword("flam3_genome\0", 13);
+    const std::string xml = "<flame name='External'><!--preserved--></flame>";
+    const auto imported = extract("tEXt", keyword + xml);
+    require(imported.xml == xml && !imported.settings, "Uncompressed third-party flame text");
+    auto localized = keyword + std::string("\0\0fr\0flamme\0", 12) + xml;
+    require(extract("iTXt", localized).xml == xml, "International text language fields");
+    rejects([&] { extract("tEXt", keyword + "<flames>" + xml + xml + "</flames>"); },
+            "Multiple-flame metadata accepted");
+    rejects([&] { extract("tEXt", keyword + std::string(editable_xml_limit + 1, 'A')); },
+            "Oversized flame metadata accepted");
+    rejects([&] { extract("tEXt", keyword + "<!DOCTYPE flame SYSTEM 'external.dtd'>" + xml); },
+            "Document type declaration accepted in embedded flame");
+    rejects([&] { extract("zTXt", keyword + "compressed"); }, "Compressed recipe accepted");
+}
 void check(const Decoded &decoded, unsigned width, unsigned height,
            const std::vector<Pixel> &pixels, ImageExport settings) {
     require(decoded.width == width && decoded.height == height &&
@@ -481,6 +511,7 @@ int main(int argc, char **argv) {
         check(decode_tiff(encode(2, 3, small, {ImageFormat::tiff16, true})), 2, 3, small,
               {ImageFormat::tiff16, true});
         validate_contract();
+        legacy_editable_text();
         repeated_quantization_tests();
         std::cout << combinations
                   << " RGB/RGBA format/depth combinations decoded exactly; "

@@ -4,6 +4,10 @@
 
 ![Eight starter flames in Apophysis Reborn 0.13.0](preview/starter-library-0.13.0.png)
 
+## 0.16.0 testing build
+
+Choose **Render image… → Proof a crop…** to inspect a region at final resolution and adjust its tone using the same samples. Select **Include editable flame in PNG** to make an image that opens as an editable project. [Walkthrough](docs/USER_MANUAL.md#proof-and-editable-png) · [0.16.0 release notes](docs/RELEASE_0.16.0.md)
+
 ## 0.15.0 personal favorites and variation explorer
 
 Save an editable flame with tags from the **Flame library** dock. Reopen **Favorites…** from another project to add a copy. Under **Flame → Variation explorer…**, pick a built-in variation and compare several values on your selected transform. Applying a result creates one undo step. [User manual](docs/USER_MANUAL.md#favorites-and-variation-explorer) · [Release notes](docs/RELEASE_0.15.0.md) · [Build roadmap](docs/ROADMAP.md)

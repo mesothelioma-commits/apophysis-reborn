@@ -142,3 +142,9 @@ budget demonstrates export integrity and precision; the native crop remains
 sparse and is not a final-quality sampling claim. Rendering memory and
 different-strip/resume comparisons are recorded separately in
 [TEST_PLAN.md](TEST_PLAN.md).
+
+## Editable PNG option
+
+For a still PNG render, choose **Include editable flame in PNG** or pass `--embed-flame` to the command-line renderer. The encoder writes an uncompressed `flam3_genome` iTXt chunk with up to 2 MiB of flame XML and a versioned chunk with the full-width seed and sample budget. Normal image viewers can display the image independently. File → Open verifies chunk integrity while reading and creates a new unsaved one-flame project.
+
+The editable data includes the visible flame name, palette, transforms, math conventions, output camera and tone, and the identities and parameters of required variations. Project paths, the rest of the library, native plug-in binaries, scripts and history stay in the original project. Re-rendering with a different implementation or GPU can produce different pixels. [Walkthrough](USER_MANUAL.md#proof-and-editable-png)

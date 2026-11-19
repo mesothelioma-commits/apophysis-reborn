@@ -1,6 +1,9 @@
 #include "editor/creative_widgets.hpp"
 #include "editor/main_window.hpp"
 #include "flame_io.hpp"
+#include "editable_png.hpp"
+#include "plugin.hpp"
+#include <fstream>
 #include <QAction>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -100,6 +103,104 @@ class EditorTests : public QObject {
         QCoreApplication::setOrganizationName("ApophysisRebornTests");
         QCoreApplication::setApplicationName("EditorWorkflow");
         applyDarkTheme();
+    }
+    void editablePngOpenAndExportControls() {
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        MainWindow window(false, nullptr, folder.path());
+        window.previewController().setPaused(true);
+        auto model = demo_flame();
+        model.name = "Recovered ember";
+        model.width = 36;
+        model.height = 25;
+        RenderOptions options;
+        options.seed = UINT64_C(18446744073709551561);
+        options.samples = 10411;
+        options.threads = 1;
+        FileRenderOptions file;
+        file.image = {ImageFormat::png16, true};
+        file.embed_flame = true;
+        const auto path = folder.filePath("editable.png");
+        render_to_file(model, options, filesystemPath(path), file);
+        QVERIFY(window.openFile(path));
+        QVERIFY(window.session().path().isEmpty());
+        QVERIFY(window.session().isModified());
+        QVERIFY(window.session().isProject());
+        const auto snapshot = window.session().projectSnapshot();
+        QCOMPARE(window.session().document().entries().front().name, model.name);
+        QCOMPARE(window.previewController().settings().seed, options.seed);
+        QCOMPARE(snapshot.render_settings.at("outputSamples"), std::to_string(options.samples));
+        QCOMPARE(snapshot.render_settings.at("outputSeed"), std::to_string(options.seed));
+        QVERIFY(snapshot.plugin_references.empty());
+        QVERIFY(throughAction<QDialog>(window, "actionRender", [&](QDialog &dialog) {
+            auto embed = widget<QCheckBox>(dialog, "embedEditableFlame");
+            auto format = widget<QComboBox>(dialog, "outputFormat");
+            QCOMPARE(format->currentData().toInt(), int(ImageFormat::png16));
+            QVERIFY(widget<QCheckBox>(dialog, "outputAlpha")->isChecked());
+            QVERIFY(embed->isEnabled() && !embed->isChecked());
+            QCOMPARE(widget<QLineEdit>(dialog, "outputSamples")->text(), QString::number(options.samples));
+            embed->setChecked(true);
+            format->setCurrentIndex(format->findData(int(ImageFormat::tiff16)));
+            QVERIFY(!embed->isEnabled() && !embed->isChecked());
+            format->setCurrentIndex(format->findData(int(ImageFormat::png16)));
+            embed->setChecked(true);
+            widget<QLineEdit>(dialog, "outputDestination")->setText(folder.filePath("re-export.png"));
+            widget<QPushButton>(dialog, "addOutputToQueue")->click();
+        }));
+        QCOMPARE(window.renderQueue().jobs().size(), std::size_t(1));
+        QVERIFY(window.renderQueue().jobs().front().file.embed_flame);
+        auto before = window.session().document().bytes();
+        file.embed_flame = false;
+        const auto plain = folder.filePath("plain.png");
+        render_to_file(model, options, filesystemPath(plain), file);
+        QTimer close;
+        connect(&close, &QTimer::timeout, &window, [&] {
+            if (auto error = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+                error->accept();
+                QVERIFY(error->text().contains("no editable flame"));
+            }
+        });
+        close.start(30);
+        QVERIFY(!window.openFile(plain));
+        QCOMPARE(window.session().document().bytes(), before);
+        QVERIFY(window.session().isModified());
+    }
+    void openingEditablePngDoesNotTrustEmbeddedPluginPaths() {
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        MainWindow window(false, nullptr, folder.path());
+        window.previewController().setPaused(true);
+        ProjectFile project;
+        project.library_bytes = serialize_flame(demo_flame());
+        project.render_settings["outputSeed"] = "17";
+        const auto previous = folder.filePath("existing.apoproject");
+        save_project(project, filesystemPath(previous));
+        QVERIFY(window.openFile(previous));
+        const auto initialPlugins = enabled_plugins().size();
+        auto xml = project.library_bytes;
+        const auto at = xml.find("<xform");
+        QVERIFY(at != xml.npos);
+        xml.insert(at + 6, " reborn_plugin_id_missing_external_variation='untrusted.example' "
+                          "reborn_plugin_version_missing_external_variation='4.0' missing_external_variation='1' ");
+        xml.insert(xml.find("</flame>"), "<edit><plugin path='untrusted-module.dll'/></edit>");
+        const auto path = folder.filePath("external.png");
+        {
+            std::ofstream out(filesystemPath(path), std::ios::binary);
+            const EditablePng metadata{xml, EmbeddedRenderSettings{238, 1000}, {ImageFormat::png8, false}};
+            ImageStreamWriter writer(out, 1, 1, metadata.image, &metadata);
+            const std::array<double, 4> pixel{0, 0, 0, 1};
+            writer.write_row({&pixel, 1});
+            writer.finish();
+        }
+        QVERIFY(window.openFile(path));
+        QVERIFY(window.session().isProject() && window.session().path().isEmpty());
+        QCOMPARE(window.session().document().entries().size(), std::size_t(1));
+        QVERIFY(window.session().document().bytes().find("untrusted-module.dll") != std::string::npos);
+        const auto issue = window.session().document().render_issue(0);
+        QVERIFY(issue && issue->find("Unavailable plugin variation") != std::string::npos);
+        QVERIFY(window.session().projectSnapshot().plugin_references.empty());
+        QCOMPARE(enabled_plugins().size(), initialPlugins);
+        QCOMPARE(load_project(filesystemPath(previous)).render_settings.at("outputSeed"), std::string("17"));
     }
     void starterLibraryBrowsing() {
         MainWindow window(false);
@@ -248,6 +349,40 @@ class EditorTests : public QObject {
         widget<QAction>(window, "actionSave")->trigger();
         QVERIFY(window.openFile(path));
         QCOMPARE(session.document().bytes(), expected.bytes());
+    }
+
+    void proofToneFlowsIntoQueuedOutput() {
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        MainWindow window(false, nullptr, folder.path());
+        window.previewController().setPaused(true);
+        QVERIFY(window.openStarterLibrary());
+        const auto original = window.session().document().bytes();
+        QVERIFY(throughAction<QDialog>(window, "actionRender", [&](QDialog &settings) {
+            widget<QCheckBox>(settings, "deriveOutputSamples")->setChecked(false);
+            widget<QLineEdit>(settings, "outputSamples")->setText("12000");
+            auto *backend = widget<QComboBox>(settings, "renderBackend");
+            backend->setCurrentIndex(backend->findData(int(RenderBackend::cpu)));
+            widget<QLineEdit>(settings, "outputDestination")->setText(folder.filePath("proof.png"));
+            QTimer::singleShot(0, &settings, [&] {
+                auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+                QVERIFY(dialog && dialog->objectName() == "renderProofDialog");
+                QTimer::singleShot(15000, dialog, &QDialog::reject);
+                widget<QPushButton>(*dialog, "renderProofCrop")->click();
+                auto *apply = widget<QPushButton>(*dialog, "useProofTone");
+                QTRY_VERIFY_WITH_TIMEOUT(apply->isEnabled(), 8000);
+                widget<QLineEdit>(*dialog, "proofGamma")->setText("3.75");
+                QTRY_VERIFY_WITH_TIMEOUT(apply->isEnabled(), 5000);
+                apply->click();
+            });
+            widget<QPushButton>(settings, "openRenderProof")->click();
+            widget<QPushButton>(settings, "addOutputToQueue")->click();
+        }));
+        const auto &jobs = window.renderQueue().jobs();
+        QCOMPARE(jobs.size(), std::size_t(1));
+        QCOMPARE(jobs.front().flame.gamma, 3.75);
+        QCOMPARE(jobs.front().render.samples, std::uint64_t(12000));
+        QCOMPARE(window.session().document().bytes(), original);
     }
 
     void closeExplorerAndSaveWhileThumbnailsAreActive() {

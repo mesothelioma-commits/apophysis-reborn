@@ -133,6 +133,7 @@ std::optional<DensityEstimator> read_density_estimator(Text version, const Attri
 }
 
 void flame_settings(Flame& flame, const Attributes& attributes) {
+    const bool snapshot = attributes.contains("reborn_render_values");
     // FLAM3 clear_cp(..., defaults_on) defaults for the supported XML settings.
     flame.width = flame.height = 100;
     if (attributes.contains("version")) flame.source_version = required(attributes, "version");
@@ -142,13 +143,15 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
     flame.quality = apo ? 50 : 1;
     if (apo) {
         flame.brightness = 1;
-        flame.filter_radius = .5;
+        if (!snapshot) flame.filter_radius = .5;
         flame.name = "untitled";
     }
     flame.density_estimator = read_density_estimator(flame.source_version, attributes);
 
     for (const auto& [key, value] : attributes) {
-        if (key == "name") flame.name = value;
+        if (key == "reborn_render_values") {
+            if (value != "1") fail("Unsupported Reborn render snapshot version");
+        } else if (key == "name") flame.name = value;
         else if (key == "version") flame.source_version = value;
         else if (key == "time") flame.time = number<double>(value, key);
         else if (key == "scale") flame.scale = number<double>(value, key);
@@ -211,7 +214,7 @@ void flame_settings(Flame& flame, const Attributes& attributes) {
             const auto v = numbers<double>(value, key, 3);
             const auto channel = [&](double x) {
                 if (x < 0 || x > 1) fail("background channels must be in [0,1]");
-                return apo ? std::floor(255*x)/255 : x;
+                return apo && !snapshot ? std::floor(255*x)/255 : x;
             };
             flame.background = {channel(v[0]), channel(v[1]), channel(v[2])};
         } else if (key == "palette") {
@@ -258,7 +261,7 @@ Variation legacy_variation_id(int id, Text version) {
     fail("Unsupported variation ID " + std::to_string(id));
 }
 
-Transform read_transform(const Attributes& attributes, bool final, std::size_t index, Text version) {
+Transform read_transform(const Attributes& attributes, bool final, std::size_t index, Text version, bool snapshot) {
     const bool apo = is_apophysis(version);
     Transform t;
     t.variations.clear();
@@ -314,6 +317,11 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
             // An interpolation flag has no effect on a still keyframe. Motion children remain unsupported.
             auto flag = number<double>(value, key);
             if (flag != 0 && flag != 1) fail("Unsupported FLAM3 xform animate value");
+        } else if (key == "reborn_math" && snapshot) {
+            const auto flags = number<unsigned>(value, key);
+            if (flags > 3) fail("Unknown Reborn transform math flags");
+            t.parameters.apophysis_math = (flags & 1) != 0;
+            t.parameters.separate_blur_angle = (flags & 2) != 0;
         } else if (key == "color") t.color = number<double>(value, key);
         else if (key == "opacity") t.opacity = number<double>(value, key);
         else if (key == "plotmode") {
@@ -326,7 +334,7 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
             if (enabled != 0 && enabled != 1) fail("enabled must be zero or one");
         } else if (const auto* field = find_variation_parameter(key)) {
             double input = number<double>(value, key);
-            if (apo && (key == "juliascope_power" || key == "blob_waves" || key == "ngon_sides")) {
+            if (apo && !snapshot && (key == "juliascope_power" || key == "blob_waves" || key == "ngon_sides")) {
                 if (key == "ngon_sides" && std::abs(input) < 1)
                     input = input < 0 ? -1 : 1;
                 input = std::nearbyint(input);
@@ -354,8 +362,8 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
         else if (key == "post") t.post = affine(value, key);
         else if (key == "color_speed") {
             const double speed = number<double>(value, key);
-            if (apo && identify_producer(version) != Producer::classic) fail("Use symmetry for this Apophysis color speed");
-            t.color_speed = apo ? (1 - speed)/2 : speed;
+            if (apo && !snapshot && identify_producer(version) != Producer::classic) fail("Use symmetry for this Apophysis color speed");
+            t.color_speed = apo && !snapshot ? (1 - speed)/2 : speed;
         }
         else if (key == "symmetry") {
             if (attributes.contains("color_speed")) fail("Specify one of symmetry or color_speed");
@@ -502,7 +510,7 @@ class Parser {
     std::vector<Flame> flames_;
     PaletteReader palette_;
     unsigned edit_depth_ = 0;
-    bool final_seen_ = false;
+    bool final_seen_ = false, snapshot_ = false;
 
     void start(Text name, const XML_Char** raw) {
         if (edit_depth_) { ++edit_depth_; return; }
@@ -515,6 +523,7 @@ class Parser {
             // The optional wrapper name describes the external collection.
             only(attributes, {"name"}, name);
         } else if (name == "flame" && (parent.empty() || collection)) {
+            snapshot_ = attributes.contains("reborn_render_values");
             flame_settings(flames_.emplace_back(), attributes);
             palette_ = {};
             final_seen_ = false;
@@ -523,7 +532,7 @@ class Parser {
             const bool final = name == "finalxform";
             // FLAM3 assigns color parity before moving an existing final xform to the end.
             const auto input_index = f.transforms.size() + static_cast<std::size_t>(final_seen_);
-            auto t = read_transform(attributes, final, input_index, f.source_version);
+            auto t = read_transform(attributes, final, input_index, f.source_version, snapshot_);
             if (!final) f.transforms.push_back(std::move(t));
             else {
                 if (final_seen_) fail("More than one finalxform");
@@ -640,13 +649,17 @@ void write_affine(std::ostream& out, Text field, Affine m) {
         << ' ' << m.e << ' ' << m.f << '"';
 }
 
-void write_transform(std::ostream& out, const Transform& t, bool final, Text version) {
+void write_transform(std::ostream& out, const Transform& t, bool final, Text version, bool snapshot) {
     const bool apo = is_apophysis(version);
     out << (final ? "  <finalxform" : "  <xform");
     if (!final) out << " weight=\"" << t.weight << '"';
     out << " color=\"" << t.color << '"';
-    if (apo) out << " symmetry=\"" << (1 - 2 * t.color_speed) << '"';
+    if (apo && !snapshot) out << " symmetry=\"" << (1 - 2 * t.color_speed) << '"';
     else out << " color_speed=\"" << t.color_speed << '"';
+    if (snapshot && (t.parameters.apophysis_math != apo ||
+                     t.parameters.separate_blur_angle != (identify_producer(version) == Producer::seven)))
+        out << " reborn_math=\"" << (unsigned(t.parameters.apophysis_math) |
+                                   (unsigned(t.parameters.separate_blur_angle) << 1)) << '"';
     out << " opacity=\"" << t.opacity << '"';
     write_affine(out, "coefs", t.pre);
     write_affine(out, "post", t.post);
@@ -668,7 +681,7 @@ void write_transform(std::ostream& out, const Transform& t, bool final, Text ver
         }
     }
     if (std::any_of(t.variations.begin(), t.variations.end(), [](const Term& term){return term.id == Variation::plugin;}) ||
-        (apo && !std::is_sorted(t.variations.begin(), t.variations.end(), [stock209 = version == "Apophysis 2.09"](const Term& a, const Term& b){ return variation_before(a,b,stock209); }))) {
+        ((apo || snapshot) && !std::is_sorted(t.variations.begin(), t.variations.end(), [stock209 = version == "Apophysis 2.09"](const Term& a, const Term& b){ return variation_before(a,b,stock209); }))) {
         out << " var_order=\"";
         for (const auto& term : t.variations) out << term_name(term) << ' ';
         out << '"';
@@ -725,13 +738,17 @@ std::vector<Flame> load_flames(const std::filesystem::path& path) {
     }
 }
 
-std::string serialize_flame(const Flame& f) {
+std::string serialize_flame(const Flame& f) { return serialize_flame(f, FlameXmlMode::canonical); }
+
+std::string serialize_flame(const Flame& f, FlameXmlMode mode) {
+    const bool snapshot = mode == FlameXmlMode::render_snapshot;
     validate(f);
     std::ostringstream out;
     out.imbue(std::locale::classic());
     out << std::setprecision(std::numeric_limits<double>::max_digits10);
     out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     out << "<flame name=\"" << escaped(f.name) << '"';
+    if (snapshot) out << " reborn_render_values=\"1\"";
     if (!f.source_version.empty()) out << " version=\"" << escaped(f.source_version) << '"';
     if (f.filter_radius) out << " filter=\"" << *f.filter_radius << '"';
     if (f.gamma_threshold != 0) out << " gamma_threshold=\"" << f.gamma_threshold << '"';
@@ -762,8 +779,8 @@ std::string serialize_flame(const Flame& f) {
         << "\" oversample=\"" << f.oversample << "\" brightness=\"" << f.brightness
         << "\" gamma=\"" << f.gamma << "\" vibrancy=\"" << f.vibrancy << "\" background=\""
         << f.background.r << ' ' << f.background.g << ' ' << f.background.b << "\">\n";
-    for (const auto& t : f.transforms) write_transform(out, t, false, f.source_version);
-    if (f.final_transform) write_transform(out, *f.final_transform, true, f.source_version);
+    for (const auto& t : f.transforms) write_transform(out, t, false, f.source_version, snapshot);
+    if (f.final_transform) write_transform(out, *f.final_transform, true, f.source_version, snapshot);
     // RGB decimal stops retain sub-byte channels from interpolated or generated palettes.
     for (std::size_t i = 0; i < f.palette.size(); ++i) {
         const auto& color = f.palette[i];

@@ -9,6 +9,9 @@ The runtime works offline; no installer or administrator access is required.
 
 Open docs/USER_MANUAL.html or use Help > User manual in the application.
 Example flames and native animation projects are in examples/.
+The render controls include editable PNG export and a final-resolution proof
+for inspecting a region of a larger image. See docs/RELEASE_0.16.0.md for
+the Windows walkthrough and docs/ROADMAP.md for upcoming builds.
 Save your projects in a personal folder. Favorites are kept for the current
 Windows user and can be opened after you replace or move the program folder.
 Preferences, recovery data and queue state also use per-user storage.

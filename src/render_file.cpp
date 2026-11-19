@@ -1,4 +1,5 @@
 #include "render_file.hpp"
+#include "editable_png.hpp"
 #include "plugin.hpp"
 #include "render_internal.hpp"
 #include "flame_io.hpp"
@@ -30,7 +31,7 @@ namespace {
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
 using Hit = detail::SampleHit;
-constexpr std::uint64_t MiB = 1024 * 1024, batch_size = 8192;
+constexpr std::uint64_t MiB = 1024 * 1024, batch_size = detail::cpu_batch_size;
 constexpr std::uint64_t hash_start = UINT64_C(14695981039346656037);
 constexpr std::uint64_t hash_prime = UINT64_C(1099511628211);
 void cancel(std::stop_token stop) { if (stop.stop_requested()) throw RenderCancelled(); }
@@ -139,6 +140,8 @@ struct Layout {
 Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOptions& file) {
     if (flame.width > 16384 || flame.height > 16384)
         throw std::invalid_argument("File rendering supports dimensions up to 16384 by 16384");
+    if (file.embed_flame && file.image.format != ImageFormat::png8 && file.image.format != ImageFormat::png16)
+        throw std::invalid_argument("Embedding a flame requires PNG output");
     auto geometry = detail::render_geometry(flame, opt, false);
     if (opt.backend != RenderBackend::cpu && opt.backend != RenderBackend::automatic &&
         opt.backend != RenderBackend::vulkan)
@@ -172,7 +175,7 @@ Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOpti
     }
     if (metadata > 2 * MiB)
         throw std::invalid_argument("Flame metadata exceeds the checkpointed file-rendering limit");
-    model = add(model, multiply(metadata, 8));
+    model = add(model, multiply(metadata, file.embed_flame ? 12 : 8));
     model = add(model, multiply(flame.transforms.size(), 4096));
     const auto row_bytes = multiply(flame.width, sizeof(std::array<double, 4>));
     const auto base = add(add(2 * MiB, model), add(row_bytes,
@@ -211,6 +214,7 @@ Layout layout(const Flame& flame, const RenderOptions& opt, const FileRenderOpti
     // as fixed filesystem/checkpoint overhead before admitting the disk budget.
     const auto manifest_bytes = add(MiB, multiply(metadata, 4));
     disk = add(add(disk, image_export_upper_bound(flame.width, flame.height, file.image)), manifest_bytes);
+    if (file.embed_flame) disk = add(disk, add(metadata, 64));
     if (disk > multiply(file.disk_mib, MiB))
         throw std::invalid_argument("Conservative render working-storage estimate exceeds the disk budget");
     const auto reconstruction = add(add(fixed, gutter_bytes), multiply(group_rows, row_cost));
@@ -230,6 +234,7 @@ std::string identity(const Flame& f, const RenderOptions& o, const FileRenderOpt
     s << '\n' << o.samples << ' ' << o.seed << ' ' << int(o.backend) << ' ' << std::quoted(o.device)
       << ' ' << o.allow_cpu_fallback << ' ' << int(file.image.format) << ' ' << file.image.alpha
       << '\n' << serialize_flame(f);
+    if (file.embed_flame) s << "\neditable-png-1";
     if (const auto plugins = plugin_identity(f); !plugins.empty()) s << "\nplugins\n" << plugins;
     for (const auto& t : f.transforms)
         s << '\n' << t.parameters.apophysis_math << ' ' << t.parameters.separate_blur_angle;
@@ -462,6 +467,11 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
     }
     Manifest m;
     const auto key = identity(f, opt, file);
+    std::optional<EditablePng> editable;
+    if (file.embed_flame) {
+        editable.emplace(EditablePng{serialize_flame(f, FlameXmlMode::render_snapshot), EmbeddedRenderSettings{opt.seed, opt.samples}, file.image});
+        if (editable->xml.size() > editable_xml_limit) throw std::invalid_argument("Editable PNG flame exceeds size limit");
+    }
     if (file.resume) {
         m = read_manifest(directory);
         if (m.key != key) throw std::runtime_error("Checkpoint does not match the flame, sampling, backend, export settings or engine build");
@@ -487,7 +497,8 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
     if (!color_curves_are_identity(f.curves))
         l.geometry.curves = std::make_shared<ColorCurveEvaluator>(f.curves);
     const auto output_parent = output.has_parent_path() ? output.parent_path() : fs::current_path();
-    const auto output_bytes = image_export_upper_bound(f.width, f.height, file.image);
+    const auto output_bytes = add(image_export_upper_bound(f.width, f.height, file.image),
+                                  editable ? editable->xml.size() + 64 : 0);
     std::error_code ec;
     const auto work_space = fs::space(directory, ec);
     std::uint64_t committed_bytes = 0;
@@ -561,7 +572,7 @@ FileRenderResult render_to_file(const Flame& f, const RenderOptions& original,
     if (l.geometry.density.levels)
         l.geometry.density_kernels = std::make_shared<detail::DensityKernels>(l.geometry.density, opt.stop_token);
     write_atomic(output, [&](std::ostream& out) {
-        ImageStreamWriter writer(out, f.width, f.height, file.image);
+        ImageStreamWriter writer(out, f.width, f.height, file.image, editable ? &*editable : nullptr);
         std::vector<std::array<double, 4>> row(static_cast<std::size_t>(f.width));
         for (unsigned strip = 0; strip < l.public_plan.strip_count; ++strip) {
             cancel(opt.stop_token);
