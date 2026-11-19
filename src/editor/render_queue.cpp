@@ -761,10 +761,19 @@ void RenderQueue::loadFrom(const QString &path) {
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly))
     throw std::runtime_error("Cannot open the render queue file");
-  if (file.size() > 32 * 1024 * 1024)
+  constexpr qint64 maxQueueBytes = 32 * 1024 * 1024;
+  if (file.size() > maxQueueBytes)
     throw std::invalid_argument("Render queue file exceeds 32 MiB");
+  const auto bytes = file.read(maxQueueBytes + 1);
+  if (file.error() != QFileDevice::NoError)
+    throw std::runtime_error("Cannot read the complete render queue file");
+  if (bytes.size() > maxQueueBytes)
+    throw std::invalid_argument("Render queue file exceeds 32 MiB");
+  // Startup restores from the autosave path itself. Release the source read
+  // handle before persist() replaces that file, including on Windows.
+  file.close();
   QJsonParseError error;
-  const auto document = QJsonDocument::fromJson(file.readAll(), &error);
+  const auto document = QJsonDocument::fromJson(bytes, &error);
   if (error.error != QJsonParseError::NoError || !document.isObject())
     throw std::invalid_argument("Render queue is not valid JSON");
   const auto object = document.object();

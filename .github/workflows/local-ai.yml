@@ -104,7 +104,17 @@ jobs:
           cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests flame-favorites-tests variation-explorer-tests editor-tests render-proof-dialog-tests render-proof-tests file-render-tests render-queue-tests image-stream-tests
           ./build/apophysis-mcp.exe --version
       - name: Exercise MCP and the real editor over local named pipes
+        id: windows_tests
         run: |
           ctest --test-dir build --no-tests=error --output-on-failure -R '^(flame_favorites|variation_explorer|editor_workflow|render_proof|render_proof_dialog|file_render|render_queue|image_stream)$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_mcp$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_editor$'
+      - name: Identify individual queue cases after a Windows test failure
+        if: failure() && steps.windows_tests.outcome == 'failure'
+        run: |
+          ./build/render-queue-tests.exe -functions | tr -d '\r' | sed 's/()$//' > queue-functions.txt
+          while IFS= read -r test_case; do
+            echo "::group::Render queue — $test_case"
+            ./build/render-queue-tests.exe "$test_case" -v1 || echo "Queue case failed — $test_case"
+            echo "::endgroup::"
+          done < queue-functions.txt

@@ -77,6 +77,28 @@ private slots:
     restored.loadFrom(path);
     QVERIFY(!restored.job(id)->file.embed_flame);
   }
+  void restoresAndReplacesItsOwnAutosaveFile() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto state = dir.filePath("queue.json");
+    const auto root = dir.filePath("checkpoints");
+    QString id;
+    {
+      RenderQueue initial(state, root);
+      id = initial.add(fixture(), settings(), fileSettings(), dir.filePath("art.ppm"));
+    }
+    auto saved = QJsonDocument::fromJson(bytes(state)).object();
+    auto job = saved["jobs"].toArray().first().toObject();
+    job["state"] = "running"; // Simulate interruption before the worker's last update.
+    saved["jobs"] = QJsonArray{job};
+    write(state, QJsonDocument(saved).toJson());
+    RenderQueue restored(state, root);
+    restored.loadFrom(state);
+    QVERIFY(restored.job(id));
+    QCOMPARE(restored.job(id)->state, RenderJobState::paused);
+    const auto committed = QJsonDocument::fromJson(bytes(state)).object();
+    QCOMPARE(committed["jobs"].toArray().first().toObject()["state"].toString(), QString("paused"));
+  }
   void densityEstimatorMigratesOldQueueSnapshots() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
