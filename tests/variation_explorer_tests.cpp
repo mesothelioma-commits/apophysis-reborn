@@ -1,6 +1,7 @@
 #include "editor/variation_explorer.hpp"
 #include "flame_io.hpp"
 #include <QComboBox>
+#include <QElapsedTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
