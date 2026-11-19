@@ -1,0 +1,119 @@
+APOPHYSIS REBORN 0.13.0
+Windows x64 test kit 1.0
+
+Start here
+----------
+1. Install or fully extract Apophysis Reborn 0.13.0. You need the application
+   folder containing both apophysis-reborn.exe and flame-cpu.exe.
+2. Extract this test ZIP into its own folder. Double-click Start-Tests.cmd.
+   It opens Git Bash, runs the automated tests, then walks you through four
+   short checks. You can also launch from Git Bash as shown below.
+3. The runner prints the folder it is testing. If auto-detection cannot find
+   your copy, paste the full application folder or path to its executable.
+   When testing a specific installation or a portable copy, use --app.
+4. Several temporary editor windows will open and close during automation.
+   Let them finish. For the guided checks, follow the prompts and enter P
+   (pass), F (fail), or S (skip). On a failure you can type exactly what you saw.
+5. Explorer opens with Apophysis-results-<run>.zip selected. Send that ZIP
+   back to the person investigating the results. Everything stays on your PC
+   until you choose to share it.
+
+Every run creates a new folder by default under
+  %USERPROFILE%\Projects\Apophysis-Reborn-Tests\results
+
+report.txt is the readable summary. logs holds per-command output. Test
+images, checkpoints, editor screenshots, and disposable projects remain in
+the run folder for inspection. The return ZIP contains only the summary,
+text logs, timings, and available diagnostic JSON. It can contain local
+paths, device details, and any notes you type. If archiving fails, use
+report.txt and logs. Previous runs and existing artwork are left in place.
+
+Git Bash
+--------
+From the extracted kit directory:
+
+  bash ./run-tests.sh --guided
+
+Automated checks only, with a specific installed copy:
+
+  bash ./run-tests.sh --app "$LOCALAPPDATA/Programs/Apophysis Reborn/0.13.0"
+
+Portable build in a different folder, with guided tests:
+
+  bash ./run-tests.sh --guided --app 'D:\Apps\Apophysis Reborn'
+
+You can start from any directory by entering the full path to run-tests.sh.
+Paths with spaces must be quoted. Run --help for the complete options.
+The kit uses Git Bash utilities and built-in Windows PowerShell 5.1.
+Commands run without administrator privileges.
+
+What the kit checks
+-------------------
+- Compares the two executable hashes against the distributed recovery build,
+  reads the editor and renderer build identities, and verifies Windows x64
+  release 0.13.0. Other compatible 0.13.0 fingerprints are identified.
+- Inspects the eight named starters. Writes and reopens disposable native
+  projects. Checks that all starter data survive and a rename changes only
+  the selected entry.
+- Renders all eight starters at 320 x 240 on CPU and fully decodes each PNG.
+  Checks chunk integrity, dimensions, and pixel variation. Pauses and resumes
+  an identical render, then compares it byte-for-byte with the CPU reference.
+- Discovers Vulkan devices and tests the first usable physical integrated or
+  discrete GPU without CPU fallback. Checks the actual reported backend and
+  the decoded image. It records sampling, reconstruction, and elapsed times
+  alongside the matching CPU workload. A short test is a functional check,
+  not a benchmark for every scene, resolution, or GPU.
+- Opens isolated editor test windows for previews, creative tools, the offline
+  manual, system information, render queue, and animation. Checks include
+  queue responsiveness, 16-bit output, native project reload, and five frames.
+- With --guided, verifies starter selection, both Live Preview dividers, the
+  preview seed/save/reopen sequence, and closing Mutate while previews are
+  busy. For edits, use the disposable Friend-test.apoproject supplied by the
+  runner. These observations are labeled separately in the report. Record
+  your usual seed and restore it when done.
+
+Optional tests
+--------------
+Choose an explicit GPU index (as shown in logs/devices.txt from an earlier
+run). An explicit unavailable or software-only device is reported as a failure:
+
+  bash ./run-tests.sh --device 0
+
+Skip GPU tests for a CPU-only diagnostic:
+
+  bash ./run-tests.sh --no-gpu
+
+Add a full CPU 16,384 x 16,384 PNG export and full streaming decode:
+
+  bash ./run-tests.sh --large-render
+
+The 16K case uses two million samples to exercise dimensions, memory
+planning, and file encoding. It is a low-sample engineering image. The
+runner first checks the app's working-disk estimate plus a 512 MiB reserve.
+Allow extra time. To use another drive, add --output 'D:\Apophysis tests'.
+Use --no-open if you do not want Explorer to start.
+
+Reading the results
+-------------------
+PASS means the named check met its acceptance conditions. FAIL means a
+check failed, timed out, or received a human failure report. SKIP identifies
+an untested case, including unavailable hardware, manual checks that were
+not run, or 16K when it was not requested. INFO and WARN supply context.
+A completed run with skips does not establish that those cases worked.
+If a test process hangs, the automated runner stops only the process it
+started for that test. The guided prompts run separately from your normal
+editor and can still record a freeze.
+
+Exit 0: no executed check failed. Exit 1: test or reporting failure.
+Exit 2: setup issue. Control+C interrupts a run; completed results are
+written if the runner can still exit normally.
+
+This kit exercises an existing application installation. Installing,
+upgrading, and uninstalling are separate tests. No application files,
+projects, or settings need to be submitted to run the kit.
+
+Change history
+--------------
+Kit 1.0 for application 0.13.0 adds the automated renderer and editor
+suites, physical GPU detection, optional 16K export, guided freeze checks,
+and the shareable local results archive.

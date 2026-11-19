@@ -3,3 +3,5 @@
 *.flame text eol=lf
 *.ppm binary
 *.png binary
+
+*.pdf binary
