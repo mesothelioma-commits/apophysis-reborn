@@ -17,7 +17,7 @@ Use a GitHub fork when you want an AI coding assistant to modify your own copy. 
    git remote -v
    ```
 
-   `origin` should point to your fork and `upstream` to the published project. The new branch starts at the exact source used for the 0.14.0 Windows release. Run `git show --no-patch v0.14.0` to see the release commit. To start from later upstream work, create your branch from `upstream/main`.
+   `origin` should point to your fork and `upstream` to the published project. The command starts at the public 0.14.0 release. For a 0.15.0 build under review, clone the Git bundle included with its matching source ZIP and branch from that checkout’s HEAD. Run `git show --no-patch v0.14.0` to see the release commit. To start from later upstream work, create your branch from `upstream/main`.
 
 3. Open the cloned folder in your AI coding tool. With a hosted tool, select your fork or connect it and grant access to that repository. Select your work branch, or have the assistant make a new branch in your fork. Give the tool a specific change, a supported platform, and a way you can tell the feature works.
 

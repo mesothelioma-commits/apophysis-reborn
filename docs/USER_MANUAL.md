@@ -1,4 +1,4 @@
-# Apophysis Reborn 0.14.0 — User manual
+# Apophysis Reborn 0.15.0 — User manual
 
 Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
@@ -7,6 +7,7 @@ Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sa
 - [Getting started](#getting-started)
 - [Your first image](#your-first-image)
 - [Workspace and preview](#workspace-and-preview)
+- [Favorites and variation explorer](#favorites-and-variation-explorer)
 - [Saving and recovery](#saving-and-recovery)
 - [Transform editing](#transform-editing)
 - [Gradients, adjustments and creative tools](#gradients-adjustments-and-creative-tools)
@@ -28,9 +29,9 @@ The primary target is Windows 11 x64. Choose one of these distributions:
 | --- | --- | --- |
 | Windows portable ZIP | Extract the complete ZIP, then open `apophysis-reborn.exe` in its top-level application folder. | Run without an installer. Keep the DLLs, Qt plugin folders, documents and examples together. |
 | Windows setup EXE | Run the supplied setup EXE. | Install for the current Windows user with versioned shortcuts and an uninstall entry. |
-| Complete source/history ZIP | Open `bin/windows-x64/apophysis-reborn.exe` after extraction, or build the source. | Development, complete verification tools, source history and release evidence. |
+| Complete source/history ZIP | Use the included Git bundle to restore a checkout, or build the extracted source. | Development, complete verification tools, source history and release evidence. |
 
-The installer is `apophysis-reborn-0.14.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.14.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.14.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
+The installer is `apophysis-reborn-0.15.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.15.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.15.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
 
 Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application's per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.
 
@@ -58,6 +59,13 @@ Drag the vertical divider beside Flame library or Flame and transform to resize 
 Use the mouse wheel to magnify the displayed preview and drag to pan. **Fit** shows the full image; **1:1** shows each preview pixel at one screen pixel. These are display controls. Change **Output and camera** or **Adjustment editor → Camera** to change the saved composition. Interactive preview uses viewport-sized output and oversampling one; it does not establish the quality of a large export. The preview is composited against the flame background; there is no transparency-checkerboard mode.
 
 **Pause preview** stops preview work. Release it to render the latest state, or use **Restart**. The status text reports samples, elapsed time and the actual CPU/Vulkan path. Its tooltip and the Activity panel include device and fallback details. A requested Vulkan renderer may have resolved to CPU when fallback is permitted.
+
+## Favorites and variation explorer
+
+1. Select **Ember spiral** in the Flame library. Click the star in that dock or choose **Flame → Save to Favorites…**. Add a tag such as `spirals` and save.
+2. Open a different project. Click **Favorites…**, search for your tag or the flame name, select the result and add it to the current library. The favorite is an independent snapshot and can still be used after the original file moves. Save your project to keep the inserted copy.
+3. Select the copy’s first transform. Open **Flame → Variation explorer…** or the explorer button in the **Variations** panel. Choose **swirl** and explore its weight. Compare the labeled tiles. Each uses the same camera and seed, so you can see the effect of changing one value.
+4. Apply the value you like, or close the explorer to discard the preview. **Ctrl+Z** undoes an applied edit. Save the result as another favorite to keep both versions.
 
 ## Saving and recovery
 

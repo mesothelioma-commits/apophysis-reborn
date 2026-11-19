@@ -1,10 +1,11 @@
-name: Local AI connection
+name: Desktop editor and local AI
 
 on:
   push:
     branches:
       - main
       - feature/local-ai-connection
+      - feature/0.15-flame-library
     paths:
       - .github/workflows/local-ai.yml
       - CMakeLists.txt
@@ -13,6 +14,10 @@ on:
       - src/editor/**
       - src/script*
       - tests/local_ai*
+      - tests/flame_favorites_tests.cpp
+      - tests/variation_explorer_tests.cpp
+      - tests/editor_tests.cpp
+      - src/legacy_document.*
   workflow_dispatch:
 
 permissions:
@@ -44,10 +49,11 @@ jobs:
       - name: Build the editor, helper and live integration test
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests
+          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests flame-favorites-tests variation-explorer-tests editor-tests
           build/apophysis-mcp --version
       - name: Exercise MCP and the real editor over local sockets
         run: |
+          ctest --test-dir build --no-tests=error --output-on-failure -R '^(flame_favorites|variation_explorer|editor_workflow)$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_mcp$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_editor$'
 
@@ -84,9 +90,10 @@ jobs:
       - name: Build the native Windows executables
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
-          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests
+          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests flame-favorites-tests variation-explorer-tests editor-tests
           ./build/apophysis-mcp.exe --version
       - name: Exercise MCP and the real editor over local named pipes
         run: |
+          ctest --test-dir build --no-tests=error --output-on-failure -R '^(flame_favorites|variation_explorer|editor_workflow)$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_mcp$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_editor$'

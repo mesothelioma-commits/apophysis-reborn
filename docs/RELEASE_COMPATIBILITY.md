@@ -1,5 +1,7 @@
 # Release compatibility report — 0.13.0
 
+**0.15.0 adds cross-project flame favorites with tags and a visual variation explorer.** [Walkthrough](USER_MANUAL.md#favorites-and-variation-explorer) · [Roadmap](ROADMAP.md)
+
 ## Release decision
 
 **0.13.0 opens an embedded collection of eight editable flames.** The collection is also available in `examples/starter-library.flame`. Ember spiral and Tidal filaments use the existing project definitions. The other six designs were recreated for this recovery build.
@@ -131,7 +133,7 @@ Evidence links are repository-relative. Test source demonstrates what is checked
 | --- | --- | --- | --- |
 | R07-01 — Single/batch generation; Batch size; Seeds; Variation rules; Transform counts/constraints; Random symmetry/palettes; Duplication/naming; Thumbnails/library browsing | Delivered | The Reborn generator produces 1–24 candidates using explicit constraints, named seeds and useful-orbit framing. This is its own algorithm, not historical random-sequence parity. | [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) · [creative.cpp](../src/creative.cpp) · [creative_tests.cpp](../tests/creative_tests.cpp) · [creative_editor_tests.cpp](../tests/creative_editor_tests.cpp) |
 | R07-02 — Mutation grid/strength/trend/type; Geometry/variation/color parameter mutation; Locked seeds; Regenerate/select/return to parent; History/parent comparison/saved branches | Delivered | Private candidate workflows, original-parent comparison and saved ancestry are implemented. Applying or adding a result is undoable; zero strength retains the parent parameters. | [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) · [creative_widgets.cpp](../src/editor/creative_widgets.cpp) · [creative_editor_tests.cpp](../tests/creative_editor_tests.cpp) |
-| R07-03 — Original random/mutation algorithm parity; Favorites; Full history tree | Partial | Reborn supports reproducible generation and saved linear ancestry. Historical generator output, a favorites manager and a general branching history-tree interface remain open. | [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) · [FEATURE_MATRIX.md](FEATURE_MATRIX.md) |
+| R07-03 — Original random/mutation algorithm parity; Favorites; Full history tree | Partial | Reborn supports reproducible generation and saved linear ancestry. The 0.15.0 personal flame favorites manager stores tagged snapshots. Exact historical generator output and a general branching history-tree interface remain open. | [CREATIVE_TOOLS.md](CREATIVE_TOOLS.md) · [FEATURE_MATRIX.md](FEATURE_MATRIX.md) |
 
 ### Brief section 8: Gradients and color
 
@@ -217,7 +219,7 @@ Evidence links are repository-relative. Test source demonstrates what is checked
 | ID / requested capability | Status | Implemented scope and remaining limit | Evidence |
 | --- | --- | --- | --- |
 | R17-01 — Native dark interface; Resizable/dockable panels; Dedicated creative/timeline windows; Saved panel layout; Full-screen/shortcuts/tooltips/context menus; Searchable library/variations; Drag-and-drop/recent files; Undo/redo; Autosave/recovery | Delivered | Current Qt workflows provide these functions for the implemented subset. Dialogs are separate private-edit windows; not every creative window is a dockable workspace. | [EDITOR.md](EDITOR.md) · [main_window.cpp](../src/editor/main_window.cpp) · [editor_tests.cpp](../tests/editor_tests.cpp) |
-| R17-02 — Light theme; Customizable shortcuts; Classic keyboard profile; Classic Apophysis workspace; Named workspace presets; Global settings search; Configurable backup interval; Favorites | Missing | The shipped theme is dark; recovery is fixed at 45 seconds. Saved panel state and default reset do not provide a full workspace/profile system. | [EDITOR.md](EDITOR.md) · [main_window.cpp](../src/editor/main_window.cpp) |
+| R17-02 — Light theme; Customizable shortcuts; Classic keyboard profile; Classic Apophysis workspace; Named workspace presets; Global settings search; Configurable backup interval | Missing | The shipped theme is dark; recovery is fixed at 45 seconds. Saved panel state and default reset do not provide a full workspace/profile system. | [EDITOR.md](EDITOR.md) · [main_window.cpp](../src/editor/main_window.cpp) |
 | R17-03 — Undo-history browser; High-DPI/multiple-display usability | Partial | Document undo is bounded and functional, but a history-browser UI is absent. Native Windows DPI/multi-monitor/restore behavior needs target-system execution. | [EDITOR.md](EDITOR.md) · [TEST_PLAN.md](TEST_PLAN.md) |
 
 ### Brief section 18: Render queue

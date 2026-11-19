@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(apophysis_reborn VERSION 0.14.0 LANGUAGES CXX)
+project(apophysis_reborn VERSION 0.15.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -51,6 +51,7 @@ if(APO_BUILD_EDITOR)
     target_link_libraries(apophysis-mcp PRIVATE Qt6::Core Qt6::Network)
     add_library(flame-editor src/editor/document_session.cpp src/editor/canvases.cpp
         src/editor/preview_controller.cpp src/editor/main_window.cpp src/editor/creative_widgets.cpp
+        src/editor/flame_favorites.cpp src/editor/variation_explorer.cpp
         src/editor/local_ai_connection.cpp src/editor/render_queue.cpp src/editor/script_dialog.cpp src/editor/plugin_dialog.cpp src/editor/main_window_extensions.cpp
         src/editor/color_curve_dialog.cpp src/editor/color_curve_dialog.hpp
         src/editor/animation_dialog.cpp src/editor/animation_dialog.hpp src/editor/main_window_animation.cpp
@@ -66,7 +67,7 @@ if(APO_BUILD_EDITOR)
     target_link_libraries(apophysis-reborn PRIVATE flame-editor)
     if(BUILD_TESTING)
         find_package(Qt6 REQUIRED COMPONENTS Test)
-        foreach(test_name IN ITEMS preview document_session canvas creative_editor render_queue extensions_editor color_editor animation_editor support_editor)
+        foreach(test_name IN ITEMS flame_favorites variation_explorer preview document_session canvas creative_editor render_queue extensions_editor color_editor animation_editor support_editor)
             string(REPLACE "_" "-" target_name "${test_name}-tests")
             add_executable(${target_name} tests/${test_name}_tests.cpp)
             set_target_properties(${target_name} PROPERTIES AUTOMOC ON)

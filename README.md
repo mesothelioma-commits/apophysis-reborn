@@ -4,11 +4,15 @@
 
 ![Eight starter flames in Apophysis Reborn 0.13.0](preview/starter-library-0.13.0.png)
 
-## Local AI connection in 0.14.0
+## 0.15.0 personal favorites and variation explorer
 
-An MCP-compatible assistant on the same computer can inspect the editor’s selected flame, see its live preview and propose Lua edits. Use **Tools → Local AI connection…** to copy the client configuration and enable sharing for the current session. Run a proposal on a copy, preview its results, then apply or discard it. The Windows companion is included in 0.14.0 builds. [Connect an assistant and try three variations](docs/LOCAL_AI.md)
+Save an editable flame with tags from the **Flame library** dock. Reopen **Favorites…** from another project to add a copy. Under **Flame → Variation explorer…**, pick a built-in variation and compare several values on your selected transform. Applying a result creates one undo step. [User manual](docs/USER_MANUAL.md#favorites-and-variation-explorer) · [Release notes](docs/RELEASE_0.15.0.md) · [Build roadmap](docs/ROADMAP.md)
 
-## Windows x64 downloads · 0.14.0
+## Local AI connection
+
+An MCP-compatible assistant on the same computer can inspect the editor’s selected flame, see its live preview and propose Lua edits. Use **Tools → Local AI connection…** to copy the client configuration and enable sharing for the current session. Run a proposal on a copy, preview its results, then apply or discard it. The Windows companion is included in both Windows editions. [Connect an assistant and try three variations](docs/LOCAL_AI.md)
+
+## Published Windows x64 downloads · 0.14.0
 
 | Download | How to use it |
 | --- | --- |
@@ -36,7 +40,7 @@ Both Windows editions can render offline. CPU rendering works without a Vulkan d
 4. Open **File → Render image…**. For this starter, try **768 × 576** and **PNG · 8 bit**. Browse for an output filename and click **Add and start queue**.
 5. When the queue shows **Complete**, open the PNG in File Explorer. Reopen the project when you want to adjust the drawing rules or colors.
 
-Press **F1** in the editor for offline documentation. [0.14.0 user manual](docs/USER_MANUAL.md) · [Illustrated first-session guide (0.13.0 PDF)](docs/Apophysis-Reborn-0.13.0-User-Guide.pdf)
+Press **F1** in the editor for offline documentation. [User manual](docs/USER_MANUAL.md) · [Illustrated first-session guide (0.13.0 PDF)](docs/Apophysis-Reborn-0.13.0-User-Guide.pdf)
 
 ## Editing and rendering
 
@@ -46,7 +50,7 @@ Press **F1** in the editor for offline documentation. [0.14.0 user manual](docs/
 
 Legacy compatibility varies by producer and feature. Some documents can be preserved on save while an unsupported operation prevents rendering. Historical 3D and direct-color behavior, some filters, and parts of the original scripting and plugin workflows remain incomplete. See the compatibility report before depending on a specific older flame. [Compatibility and outstanding work](docs/RELEASE_COMPATIBILITY.md)
 
-[0.14.0 release notes](docs/RELEASE_0.14.0.md) · [0.13.0 release and version-specific Windows test kit](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.13.0)
+[Previous 0.14.0 release notes](docs/RELEASE_0.14.0.md) · [0.13.0 release and version-specific Windows test kit](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.13.0)
 
 ## Build a fork with an AI assistant
 
