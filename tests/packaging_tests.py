@@ -66,6 +66,8 @@ class PackagingTests(unittest.TestCase):
         imports = {
             "apophysis-reborn.exe": ({"qt6widgets.dll": {"widget"}, "kernel32.dll": {"Sleep"}}, set()),
             "flame-cpu.exe": ({"libc++.dll": {"allocate"}}, set()),
+            "apophysis-mcp.exe": ({"qt6network.dll": {"local_socket"}}, set()),
+            "Qt6Network.dll": ({"qt6core.dll": {"object"}}, {"local_socket"}),
             "platforms/qwindows.dll": ({"qt6widgets.dll": {"widget"}}, set()),
             "platforms/qoffscreen.dll": ({"qt6widgets.dll": {"widget"}}, set()),
             "styles/qmodernwindowsstyle.dll": ({"qt6widgets.dll": {"widget"}}, set()),
@@ -140,12 +142,14 @@ class PackagingTests(unittest.TestCase):
     def test_dependency_closure_omits_test_only_modules_and_resolves_exports(self):
         runtime, imports = self.fixture_runtime()
         files, audit = self.closure(runtime, imports)
-        self.assertEqual(len(files), 11)
+        self.assertEqual(len(files), 13)
+        self.assertIn("apophysis-mcp.exe", files)
+        self.assertIn("Qt6Network.dll", files)
         self.assertNotIn("Qt6Test.dll", files)
         self.assertNotIn("editor-tests.exe", files)
         self.assertNotIn("tests/plugin-fixture/Qt6Core.dll", files)
         self.assertIn("plugins/reborn-wave/reborn_wave.dll", files)
-        self.assertEqual(audit["non_system_imported_symbols_resolved"], 9)
+        self.assertEqual(audit["non_system_imported_symbols_resolved"], 11)
         self.assertEqual(audit["windows_system_dependencies"], ["api-ms-win-crt-runtime-l1-1-0.dll", "kernel32.dll"])
         self.assertIs(audit["windows_executed"], False)
 

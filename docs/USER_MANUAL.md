@@ -1,4 +1,4 @@
-# Apophysis Reborn 0.13.0 — User manual
+# Apophysis Reborn 0.14.0 — User manual
 
 Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
@@ -14,6 +14,7 @@ Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sa
 - [CPU and Vulkan](#cpu-and-vulkan)
 - [Queue and checkpoint recovery](#queue-and-checkpoint-recovery)
 - [Animation and morphing](#animation-and-morphing)
+- [Local AI connection](#local-ai-connection)
 - [Scripts and native plugins](#scripts-and-native-plugins)
 - [Command-line workflows](#command-line-workflows)
 - [Diagnostics, benchmarks and verification](#diagnostics-benchmarks-and-verification)
@@ -29,7 +30,7 @@ The primary target is Windows 11 x64. Choose one of these distributions:
 | Windows setup EXE | Run the supplied setup EXE. | Install for the current Windows user with versioned shortcuts and an uninstall entry. |
 | Complete source/history ZIP | Open `bin/windows-x64/apophysis-reborn.exe` after extraction, or build the source. | Development, complete verification tools, source history and release evidence. |
 
-The installer is `apophysis-reborn-0.13.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.13.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.13.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
+The installer is `apophysis-reborn-0.14.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.14.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.14.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
 
 Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application's per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.
 
@@ -214,6 +215,10 @@ Continuous camera, affine, real-parameter, palette and curve values interpolate 
 On **Image sequence**, choose an existing output folder, prefix, inclusive first/last frames, step, fixed canvas, format, samples and budgets. **Apply & queue frames** validates the whole selected batch. A stopped queue waits for Start; an already running queue continues into new jobs. Filenames retain original global frame numbers. A batch and the queue are bounded to 1,000 selected/jobs respectively; use explicit subranges for longer clips.
 
 Frame destinations that appear or change after admission are refused immediately before publication. Queue batches budget retained checkpoints for all jobs. The separate CLI sequence workflow removes completed frame checkpoints and keeps its own manifest; do not use a CLI manifest as a Qt queue file. Image sequences are supported; video/audio encoding, temporal motion blur, per-property tracks and automatic transform matching are not included. [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md), [ANIMATION_CLI.md](ANIMATION_CLI.md) and [MORPHING.md](MORPHING.md) give the exact contracts.
+
+## Local AI connection
+
+Open **Tools → Local AI connection…**, copy the configuration into a local stdio-capable MCP client, and choose **Enable for this session**. Close the dialog. Ask the assistant to inspect the selected flame and show its preview. If it proposes Lua, click **Run** in the review, preview the results, then use **Apply result** or close to discard. **Undo** reverses the applied edit. Disable sharing from the same Tools dialog or close the editor. The Windows companion is **apophysis-mcp.exe** beside the editor. Your AI client controls whether shared artwork goes to a model provider. [Setup, example prompt and troubleshooting](LOCAL_AI.md)
 
 ## Scripts and native plugins
 

@@ -1,0 +1,92 @@
+name: Local AI connection
+
+on:
+  push:
+    branches:
+      - main
+      - feature/local-ai-connection
+    paths:
+      - .github/workflows/local-ai.yml
+      - CMakeLists.txt
+      - cmake/**
+      - src/ai_mcp/**
+      - src/editor/**
+      - src/script*
+      - tests/local_ai*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-ai-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux desktop and MCP
+    runs-on: ubuntu-24.04
+    container: debian:trixie-slim
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      APO_AI_REQUIRE_SOCKET_TEST: '1'
+    steps:
+      - name: Install build tools and native Qt
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git ca-certificates g++ cmake ninja-build python3 qt6-base-dev libgl-dev \
+            libexpat1-dev zlib1g-dev
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Build the editor, helper and live integration test
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests
+          build/apophysis-mcp --version
+      - name: Exercise MCP and the real editor over local sockets
+        run: |
+          ctest --test-dir build --no-tests=error --verbose -R '^local_ai_mcp$'
+          ctest --test-dir build --no-tests=error --verbose -R '^local_ai_editor$'
+
+  windows:
+    name: Windows x64 desktop and MCP
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      QT_QPA_PLATFORM: offscreen
+      # The live test enables sharing for this disposable hosted runner profile.
+      APO_AI_ISOLATED_WINDOWS_TEST: '1'
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-lld
+            mingw-w64-clang-x86_64-llvm-tools
+            mingw-w64-clang-x86_64-cmake
+            mingw-w64-clang-x86_64-ninja
+            mingw-w64-clang-x86_64-python
+            mingw-w64-clang-x86_64-qt6-base
+            mingw-w64-clang-x86_64-expat
+            mingw-w64-clang-x86_64-zlib
+      - name: Build the native Windows executables
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
+          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests
+          ./build/apophysis-mcp.exe --version
+      - name: Exercise MCP and the real editor over local named pipes
+        run: |
+          ctest --test-dir build --no-tests=error --verbose -R '^local_ai_mcp$'
+          ctest --test-dir build --no-tests=error --verbose -R '^local_ai_editor$'

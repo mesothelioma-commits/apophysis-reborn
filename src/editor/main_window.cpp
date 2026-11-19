@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include "local_ai_connection.hpp"
 #include "build_info.hpp"
 #include "support_dialogs.hpp"
 #include "creative_widgets.hpp"
@@ -490,12 +491,20 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
                  QMainWindow::AnimatedDocks);
   setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
   setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
+  localAi_ = std::make_unique<LocalAiConnection>(
+      [this](const QString &tool, const QJsonObject &arguments) {
+        return handleLocalAi(tool, arguments);
+      }, this);
   makeActions();
   makeLibrary();
   makePreview();
   makeTransformEditor();
   makeProperties();
   makeLogs();
+  aiIndicator_ = new QLabel("Local AI on");
+  aiIndicator_->setToolTip("Manage sharing under Tools → Local AI connection");
+  statusBar()->addPermanentWidget(aiIndicator_);
+  aiIndicator_->hide();
   for (const auto &warning : pluginWarnings)
     record(warning);
   resizeDocks({libraryDock_, propertiesDock_}, {220, 370}, Qt::Horizontal);
@@ -559,8 +568,10 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
   });
   help->addAction("About Qt", qApp, &QApplication::aboutQt);
   connect(&session_, &DocumentSession::changed, this, &MainWindow::refresh);
-  connect(&session_, &DocumentSession::selectionChanged, this,
-          &MainWindow::refreshSelection);
+  connect(&session_, &DocumentSession::selectionChanged, this, [this] {
+    ++aiSelection_;
+    refreshSelection();
+  });
   connect(&session_, &DocumentSession::modifiedChanged, this,
           [this] { updateTitle(); });
   connect(&preview_, &PreviewController::backendResolved, this,
@@ -582,6 +593,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
       [this](const QImage &image, quint64 samples, quint64 plotted,
              quint64 invalid, unsigned workers, qint64 elapsed, bool complete) {
         previewCanvas_->setImage(image);
+        aiPreviewCurrent_ = true;
+        aiPreviewPng_.clear();
         const auto execution =
             previewBackend_ == "Vulkan"
                 ? QStringLiteral("Vulkan FP32")
@@ -726,6 +739,7 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
 }
 
 MainWindow::~MainWindow() {
+  localAi_->stop();
   for (auto child : findChildren<QObject *>())
     QObject::disconnect(child, nullptr, this, nullptr);
   preview_.stop();
@@ -841,6 +855,8 @@ void MainWindow::makeActions() {
   edit->addAction("Preferences…", this, &MainWindow::preferences)
       ->setObjectName("actionPreferences");
   auto tools = menuBar()->addMenu("&Tools");
+  tools->addAction("Local AI connection…", this, &MainWindow::showLocalAiSettings)
+      ->setObjectName("actionLocalAiConnection");
   animation_ = tools->addAction("Animation timeline…", this,
                                &MainWindow::showAnimationTimeline);
   animation_->setObjectName("actionAnimation");
@@ -1793,6 +1809,8 @@ void MainWindow::refreshTransform() {
   refreshing_ = false;
 }
 void MainWindow::requestPreview() {
+  aiPreviewCurrent_ = false;
+  aiPreviewPng_.clear();
   if (closing_)
     return;
   if (model_) {
@@ -2738,6 +2756,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // completion signals can run; repeated close events must not ask again or
     // allow new edits after a Save/Discard decision.
     closing_ = true;
+    localAi_->stop();
     setEnabled(false);
     setAcceptDrops(false);
     for (auto action : findChildren<QAction *>())

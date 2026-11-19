@@ -1,6 +1,8 @@
 #include "script_dialog.hpp"
 #include "../output_file.hpp"
 #include "document_session.hpp"
+#include "preview_controller.hpp"
+#include <QSignalBlocker>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QCheckBox>
@@ -243,6 +245,10 @@ ScriptDialog::ScriptDialog(const LegacyDocument &document, std::size_t selected,
   options->addWidget(instructions_);
   options->addStretch();
   layout->addLayout(options);
+  auto fileOptions = new QWidget;
+  fileOptions->setObjectName("scriptFileOptions");
+  auto fileLayout = new QVBoxLayout(fileOptions);
+  fileLayout->setContentsMargins(0, 0, 0, 0);
   auto permissions = new QHBoxLayout;
   renders_ = new QCheckBox("Allow queued renders");
   renders_->setObjectName("scriptAllowRenders");
@@ -257,7 +263,7 @@ ScriptDialog::ScriptDialog(const LegacyDocument &document, std::size_t selected,
   permissions->addWidget(replace_);
   permissions->addStretch();
   permissions->addWidget(import_);
-  layout->addLayout(permissions);
+  fileLayout->addLayout(permissions);
   auto paths = new QHBoxLayout;
   paths->addWidget(new QLabel("Output folder"));
   directory_ = new QLineEdit;
@@ -268,11 +274,13 @@ ScriptDialog::ScriptDialog(const LegacyDocument &document, std::size_t selected,
   browse->setObjectName("scriptBrowseOutput");
   paths->addWidget(directory_, 1);
   paths->addWidget(browse);
-  layout->addLayout(paths);
+  fileLayout->addLayout(paths);
+  layout->addWidget(fileOptions);
   auto explanation = new QLabel(
       "Run works on a private copy. Apply result creates one undo step and "
       "adds permitted outputs. Scripts have no direct network, process or "
       "filesystem access. Ctrl+Space completes API names.");
+  explanation->setObjectName("scriptExplanation");
   explanation->setWordWrap(true);
   layout->addWidget(explanation);
   status_ = new QLabel("Ready");
@@ -422,6 +430,74 @@ void ScriptDialog::setSource(const QString &source, ScriptLanguage language) {
   source_->setPlainText(source);
   invalidate();
 }
+void ScriptDialog::enableAiReview(const QString &title, const PreviewSettings &settings) {
+  setWindowTitle(title.isEmpty() ? "Review AI proposal" : "Review AI proposal — " + title);
+  findChild<QWidget *>("scriptFileOptions")->hide();
+  findChild<QLabel *>("scriptExplanation")->setText(
+      "Run evaluates the proposed Lua on a copy. Choose a result flame to preview it. "
+      "Apply result keeps the edited library and selects that flame. Close discards the proposal.");
+  auto *editor = findChild<QSplitter *>("scriptSplit");
+  auto *split = new QSplitter(Qt::Horizontal);
+  delete layout()->replaceWidget(editor, split);
+  split->addWidget(editor);
+  auto *panel = new QWidget;
+  auto *panelLayout = new QVBoxLayout(panel);
+  panelLayout->addWidget(new QLabel("Preview result"));
+  aiPreviewEntry_ = new QComboBox;
+  aiPreviewEntry_->setObjectName("aiPreviewEntry");
+  aiPreviewEntry_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+  aiPreviewEntry_->setMinimumContentsLength(12);
+  panelLayout->addWidget(aiPreviewEntry_);
+  aiPreviewImage_ = new QLabel("Run the script to preview its results.");
+  aiPreviewImage_->setObjectName("aiPreviewImage");
+  aiPreviewImage_->setTextFormat(Qt::PlainText);
+  aiPreviewImage_->setWordWrap(true);
+  aiPreviewImage_->setAlignment(Qt::AlignCenter);
+  aiPreviewImage_->setMinimumSize(160, 120);
+  panelLayout->addWidget(aiPreviewImage_, 1);
+  split->addWidget(panel);
+  split->setStretchFactor(0, 3);
+  split->setStretchFactor(1, 1);
+  split->setSizes({720, 280});
+  aiPreview_ = new PreviewController(this, PreviewController::Purpose::thumbnail);
+  auto options = settings;
+  options.sample_limit = std::min<std::uint64_t>(options.sample_limit, 160000);
+  options.threads = options.threads ? std::min(options.threads, 2u) : 2;
+  aiPreview_->setSettings(options);
+  connect(aiPreview_, &PreviewController::imageReady, this, [this](const QImage &image) {
+    aiPreviewImage_->setPixmap(QPixmap::fromImage(image));
+  });
+  connect(aiPreview_, &PreviewController::failed, this, [this](const QString &error) {
+    aiPreviewImage_->setText("Preview unavailable. " + error);
+  });
+  connect(aiPreviewEntry_, &QComboBox::currentIndexChanged, this, &ScriptDialog::selectAiPreview);
+  updateControls();
+}
+void ScriptDialog::resetAiPreview() {
+  if (!aiPreview_ || !aiPreviewDocument_) return;
+  aiPreview_->stop();
+  aiPreviewDocument_.reset();
+  aiPreviewSelectionValid_ = false;
+  const QSignalBlocker block(aiPreviewEntry_);
+  aiPreviewEntry_->clear();
+  aiPreviewImage_->setText("Run the script to preview its results.");
+}
+void ScriptDialog::selectAiPreview(int index) {
+  if (!aiPreviewDocument_ || !result_ || index < 0) return;
+  aiPreviewSelectionValid_ = false;
+  aiPreview_->stop();
+  try {
+    auto flame = aiPreviewDocument_->render_model(std::size_t(index));
+    result_->selected_index = std::size_t(index);
+    aiPreviewSelectionValid_ = true;
+    aiPreviewImage_->setText("Rendering preview…");
+    aiPreview_->request(flame, QSize(240, 180));
+  } catch (const std::exception &e) {
+    aiPreviewImage_->setText(QString::fromUtf8(e.what()));
+  }
+  updateControls();
+}
+
 void ScriptDialog::loadScript(const QString &path) {
   const auto bytes = readSource(path, 1024 * 1024);
   QStringDecoder decoder(QStringDecoder::Utf8);
@@ -450,6 +526,7 @@ void ScriptDialog::saveScript(const QString &path) {
 void ScriptDialog::invalidate() {
   if (running_)
     return;
+  resetAiPreview();
   result_.reset();
   source_->setExtraSelections({});
   status_->setText("Ready · Run to review changes");
@@ -459,11 +536,17 @@ void ScriptDialog::updateControls() {
   source_->setReadOnly(running_);
   run_->setEnabled(!running_);
   stop_->setEnabled(running_);
-  apply_->setEnabled(!running_ && result_.has_value());
+  apply_->setEnabled(!running_ && result_.has_value() && (!aiPreview_ || aiPreviewSelectionValid_));
   for (auto widget : std::initializer_list<QWidget *>{
            open_, save_, import_, language_, examples_, seed_, seconds_,
            memory_, instructions_, renders_, exports_})
     widget->setEnabled(!running_);
+  if (aiPreview_) {
+    aiPreviewEntry_->setEnabled(!running_ && aiPreviewDocument_);
+    language_->setEnabled(false);
+    examples_->setEnabled(false);
+    open_->setEnabled(false);
+  }
 }
 void ScriptDialog::runScript() {
   if (running_)
@@ -483,14 +566,15 @@ void ScriptDialog::runScript() {
     options.limits.timeout_ms = std::uint64_t(seconds_->value()) * 1000;
     options.limits.lua_memory_bytes =
         std::uint64_t(memory_->value()) * 1024 * 1024;
-    options.allow_render_requests = renders_->isChecked();
-    options.allow_export_requests = exports_->isChecked();
-    options.imports = imports_;
+    options.allow_render_requests = !aiPreview_ && renders_->isChecked();
+    options.allow_export_requests = !aiPreview_ && exports_->isChecked();
+    if (!aiPreview_) options.imports = imports_;
     const auto source = source_->toPlainText().toUtf8().toStdString();
     if (source.size() > options.limits.source_bytes)
       throw std::runtime_error("Script source exceeds 1 MiB");
     if (worker_.joinable())
       worker_.join();
+    resetAiPreview();
     result_.reset();
     running_ = true;
     closing_ = false;
@@ -499,14 +583,19 @@ void ScriptDialog::runScript() {
     status_->setText("Running on a private document copy…");
     updateControls();
     worker_ = std::jthread(
-        [this, input = input_, selected = selected_, source,
+        [this, input = input_, selected = selected_, source, makePreview = (aiPreview_ != nullptr),
          options = std::move(options)](std::stop_token stop) mutable {
           options.stop_token = stop;
           std::optional<ScriptResult> result;
+          std::shared_ptr<LegacyDocument> previewDocument;
           QString error;
           std::size_t line = 0;
           try {
-            result = run_script(input, selected, source, options);
+            auto completed = run_script(input, selected, source, options);
+            if (makePreview && !stop.stop_requested())
+              previewDocument = std::make_shared<LegacyDocument>(LegacyDocument::parse(completed.document_bytes));
+            if (stop.stop_requested()) throw ScriptCancelled();
+            result = std::move(completed);
           } catch (const ScriptError &e) {
             error = text(e.what());
             line = e.line();
@@ -515,8 +604,8 @@ void ScriptDialog::runScript() {
           }
           QMetaObject::invokeMethod(
               this,
-              [this, result = std::move(result), error, line]() mutable {
-                finish(std::move(result), error, line);
+              [this, result = std::move(result), previewDocument = std::move(previewDocument), error, line]() mutable {
+                finish(std::move(result), error, line, std::move(previewDocument));
               },
               Qt::QueuedConnection);
         });
@@ -534,12 +623,23 @@ void ScriptDialog::stopScript() {
   }
 }
 void ScriptDialog::finish(std::optional<ScriptResult> result,
-                          const QString &error, std::size_t line) {
+                          const QString &error, std::size_t line, std::shared_ptr<LegacyDocument> previewDocument) {
   if (worker_.joinable())
     worker_.join();
   running_ = false;
   result_ = std::move(result);
   if (result_) {
+    if (previewDocument) {
+      aiPreviewDocument_ = std::move(previewDocument);
+      const int initial = int(result_->selected_index);
+      {
+        const QSignalBlocker block(aiPreviewEntry_);
+        for (const auto &entry : aiPreviewDocument_->entries())
+          aiPreviewEntry_->addItem(text(entry.name));
+        aiPreviewEntry_->setCurrentIndex(initial);
+      }
+      selectAiPreview(initial);
+    }
     for (const auto &message : result_->console)
       console_->appendPlainText(text(message));
     for (const auto &note : result_->compatibility_notes)

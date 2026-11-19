@@ -4,7 +4,11 @@
 
 ![Eight starter flames in Apophysis Reborn 0.13.0](preview/starter-library-0.13.0.png)
 
-## Download for Windows 11 x64
+## Local AI connection in 0.14.0
+
+An MCP-compatible assistant on the same computer can inspect the editor’s selected flame, see its live preview and propose Lua edits. Use **Tools → Local AI connection…** to copy the client configuration and enable sharing for the current session. Run a proposal on a copy, preview its results, then apply or discard it. The Windows companion is included in 0.14.0 builds. [Connect an assistant and try three variations](docs/LOCAL_AI.md)
+
+## Published 0.13.0 downloads for Windows 11 x64
 
 | Download | How to use it |
 | --- | --- |

@@ -2,7 +2,7 @@
 """Build the audited Windows application payload and its portable ZIP.
 
 This command does not execute Windows binaries. It reads the actual PE imports
-of the two applications, Qt plugins and SDK sample, preserving only that runtime
+of the editor, CLI, local AI companion, Qt plugins and SDK sample, preserving only that runtime
 closure. It never includes test executables or test plugin fixtures by glob.
 """
 import argparse
@@ -99,7 +99,7 @@ def add_tree(files, root, prefix):
 
 def native_closure(runtime, objdump):
     runtime = Path(runtime).absolute()
-    roots = ("apophysis-reborn.exe", "flame-cpu.exe", "platforms/qwindows.dll",
+    roots = ("apophysis-reborn.exe", "flame-cpu.exe", "apophysis-mcp.exe", "platforms/qwindows.dll",
              "platforms/qoffscreen.dll", "styles/qmodernwindowsstyle.dll", "imageformats/qjpeg.dll",
              "plugins/reborn-wave/reborn_wave.dll")
     available = {}

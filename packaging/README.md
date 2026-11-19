@@ -1,15 +1,12 @@
 # Windows runtime and installer packaging
 
-This directory contains the release packaging implementation for Apophysis Reborn
-0.10.1. The release is a responsiveness and rendering maintenance checkpoint. Building an installer does not
-establish complete original Apophysis feature parity or Windows lifecycle
-acceptance; those remaining gates are recorded in
-[`docs/RELEASE_COMPATIBILITY.md`](../docs/RELEASE_COMPATIBILITY.md).
+Apophysis Reborn 0.14.0 ships a local AI companion alongside the Windows editor and command-line renderer. [Local AI setup](../docs/LOCAL_AI.md) covers client configuration and editor permissions.
 
 ## Outputs and requirements
 
-The lean Windows runtime contains the editor, CLI renderer, their actual DLL
-dependency closure, required Qt plugins, the Reborn Wave SDK sample, examples,
+The Windows runtime contains `apophysis-reborn.exe`, `flame-cpu.exe` and
+`apophysis-mcp.exe`, their DLL dependencies (including Qt Network), required Qt
+plugins, the Reborn Wave SDK sample, examples,
 offline documentation, notices and bundled corresponding-source archives.
 Application executables are at the runtime folder root. Test executables,
 test-only DLLs and historical large rendered images belong to the separate full
@@ -17,9 +14,9 @@ source/SDK release.
 
 | Output | Purpose |
 | --- | --- |
-| `apophysis-reborn-0.10.1-windows-x64/` | Exact, audited payload shared by the ZIP and installer |
-| `apophysis-reborn-0.10.1-windows-x64-portable.zip` | Relocatable application distribution |
-| `apophysis-reborn-0.10.1-windows-x64-setup.exe` | Per-user Windows installer |
+| `apophysis-reborn-0.14.0-windows-x64/` | Exact, audited payload shared by the ZIP and installer |
+| `apophysis-reborn-0.14.0-windows-x64-portable.zip` | Relocatable application distribution |
+| `apophysis-reborn-0.14.0-windows-x64-setup.exe` | Per-user Windows installer |
 | `package-manifest.json` and `SHA256SUMS.txt` | Runtime identity, inventory, lengths and hashes |
 | Installer work directory `installer-build.json` | Tool versions, helper imports, source/input/output hashes and execution limits |
 
@@ -59,7 +56,7 @@ length. Symbolic links and Windows reparse paths are refused before traversal.
 
 ```bash
 python3 /path/to/apophysis-reborn/scripts/package-runtime.py \
-  --verify /path/to/new-release/apophysis-reborn-0.10.1-windows-x64
+  --verify /path/to/new-release/apophysis-reborn-0.14.0-windows-x64
 ```
 
 Verification checks every file, the exact inventory, sizes and both checksum
@@ -71,8 +68,8 @@ ZIP bytes.
 
 ```bash
 bash /path/to/apophysis-reborn/scripts/build-installer.sh \
-  --payload /path/to/new-release/apophysis-reborn-0.10.1-windows-x64 \
-  --output /path/to/new-release/apophysis-reborn-0.10.1-windows-x64-setup.exe \
+  --payload /path/to/new-release/apophysis-reborn-0.14.0-windows-x64 \
+  --output /path/to/new-release/apophysis-reborn-0.14.0-windows-x64-setup.exe \
   --compiler /path/to/x86_64-w64-mingw32-clang++ \
   --makensis /path/to/makensis \
   --objdump /path/to/llvm-objdump \
@@ -98,7 +95,7 @@ installer EXEs; PE/NSIS compiler timestamps are recorded through artifact hashes
 ## Installation and removal policy
 
 The default destination is
-`%LOCALAPPDATA%\Programs\Apophysis Reborn\0.10.1`. Setup requests user privilege,
+`%LOCALAPPDATA%\Programs\Apophysis Reborn\0.14.0`. Setup requests user privilege,
 writes only a current-user uninstall entry and uses versioned folders and
 shortcuts. It supports Windows x64, Windows 10 or newer; Windows 11 is the primary
 acceptance target. It creates no file associations. Start Menu shortcuts are
@@ -114,6 +111,8 @@ removing that single previous installation. Its custom installation folder is
 supported. Additional historical releases, portable copies and other Windows
 accounts keep their installations. Installing an older version preserves the
 newer version. The existing same-version registration check still applies.
+
+Before upgrading, exit the editor and stop the MCP server in your AI client to release the Windows executable handles. If the client configuration uses an absolute versioned path, point it at the new copy of `apophysis-mcp.exe` after the upgrade.
 
 If the new installation fails or the user cancels before it completes, the
 previous installation stays in place. If a running program locks the previous
@@ -160,8 +159,8 @@ checks for existing registrations and conflicting shortcuts before it begins.
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File scripts/verify-installer-windows.ps1 `
-  -Installer C:\release\apophysis-reborn-0.10.1-windows-x64-setup.exe `
-  -Payload C:\release\apophysis-reborn-0.10.1-windows-x64 `
+  -Installer C:\release\apophysis-reborn-0.14.0-windows-x64-setup.exe `
+  -Payload C:\release\apophysis-reborn-0.14.0-windows-x64 `
   -OutDirectory C:\temp\apo-installer-check
 ```
 
@@ -170,8 +169,8 @@ argument paths explicitly before calling Windows PowerShell:
 
 ```bash
 bash /path/to/apophysis-reborn/scripts/verify-installer-windows.sh \
-  --installer /c/release/apophysis-reborn-0.10.1-windows-x64-setup.exe \
-  --payload /c/release/apophysis-reborn-0.10.1-windows-x64 \
+  --installer /c/release/apophysis-reborn-0.14.0-windows-x64-setup.exe \
+  --payload /c/release/apophysis-reborn-0.14.0-windows-x64 \
   --out /c/temp/apo-installer-check \
   --no-open
 ```

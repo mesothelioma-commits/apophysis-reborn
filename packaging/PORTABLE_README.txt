@@ -2,6 +2,9 @@ Apophysis Reborn — Windows x64 runtime edition
 
 Extract the whole folder before launching apophysis-reborn.exe. Keep its DLLs,
 Qt plugins and qt.conf together. flame-cpu.exe is the command-line renderer.
+apophysis-mcp.exe connects a local MCP client to a running editor. See
+docs/LOCAL_AI.md for setup, permissions and the review workflow.
+When replacing this folder, close the editor and stop the MCP client first.
 The runtime works offline; no installer or administrator access is required.
 
 Open docs/USER_MANUAL.html or use Help > User manual in the application.

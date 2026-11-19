@@ -6,10 +6,17 @@
 #include "../project_document.hpp"
 #include "../script_host.hpp"
 #include "main_window.hpp"
+#include "local_ai_connection.hpp"
+#include "../ai_mcp/protocol.hpp"
 #include "build_info.hpp"
 #include "plugin_dialog.hpp"
 #include "script_dialog.hpp"
+#include <QApplication>
 #include <QBuffer>
+#include <QClipboard>
+#include <QDir>
+#include <QJsonDocument>
+#include <QStatusBar>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -98,6 +105,158 @@ std::string readSmallFile(const QString &path) {
   return bytes.toStdString();
 }
 } // namespace
+void MainWindow::showLocalAiSettings() {
+  QDialog dialog(this);
+  dialog.setWindowTitle("Local AI connection");
+  dialog.setObjectName("localAiSettings");
+  auto layout = new QVBoxLayout(&dialog);
+  auto note = new QLabel("An MCP-compatible AI client running under your account can read "
+      "the selected flame and its preview, and propose Lua edits for your review. "
+      "Your AI client may send the shared artwork to its model provider. "
+      "Sharing ends when you disable it or close this editor.");
+  note->setWordWrap(true);
+  layout->addWidget(note);
+#ifdef Q_OS_WIN
+  const QString helper = "apophysis-mcp.exe";
+#else
+  const QString helper = "apophysis-mcp";
+#endif
+  auto executable = QDir::toNativeSeparators(QCoreApplication::applicationDirPath() + "/" + helper);
+  QJsonObject configuration{{"mcpServers", QJsonObject{{"apophysis-reborn",
+      QJsonObject{{"command", executable}}}}}};
+  auto json = QString::fromUtf8(QJsonDocument(configuration).toJson(QJsonDocument::Indented));
+  layout->addWidget(new QLabel("MCP client configuration (stdio)"));
+  auto settings = new QPlainTextEdit(json);
+  settings->setReadOnly(true);
+  settings->setMaximumBlockCount(24);
+  layout->addWidget(settings);
+  auto status = new QLabel;
+  status->setTextFormat(Qt::PlainText);
+  status->setWordWrap(true);
+  layout->addWidget(status);
+  auto buttons = new QHBoxLayout;
+  auto copy = new QPushButton("Copy configuration");
+  auto enable = new QPushButton("Enable for this session");
+  auto disable = new QPushButton("Disable");
+  auto close = new QPushButton("Close");
+  enable->setObjectName("aiEnable");
+  disable->setObjectName("aiDisable");
+  close->setObjectName("aiSettingsClose");
+  buttons->addWidget(copy);
+  buttons->addStretch();
+  buttons->addWidget(enable);
+  buttons->addWidget(disable);
+  buttons->addWidget(close);
+  layout->addLayout(buttons);
+  auto refresh = [&] {
+    const bool active = localAi_->enabled();
+    status->setText(active ? "Sharing the selected flame and preview." : "Sharing is off.");
+    enable->setEnabled(!active);
+    disable->setEnabled(active);
+    aiIndicator_->setVisible(active);
+  };
+  refresh();
+  connect(copy, &QPushButton::clicked, &dialog, [json] { QApplication::clipboard()->setText(json); });
+  connect(enable, &QPushButton::clicked, &dialog, [&] {
+    try {
+      localAi_->start();
+      refresh();
+    } catch (const std::exception &e) {
+      status->setText(QString::fromUtf8(e.what()));
+    }
+  });
+  connect(disable, &QPushButton::clicked, &dialog, [&] {
+    localAi_->stop();
+    if (aiReview_) aiReview_->close();
+    refresh();
+  });
+  connect(close, &QPushButton::clicked, &dialog, &QDialog::accept);
+  dialog.resize(560, 300);
+  dialog.exec();
+}
+
+QString MainWindow::localAiRevision() const {
+  return localAi_->sessionId() + '/' + QString::number(session_.documentGeneration_) + '/' +
+         QString::number(session_.revision_) + '/' + QString::number(aiSelection_);
+}
+
+QJsonObject MainWindow::handleLocalAi(const QString &tool, const QJsonObject &args) {
+  if (closing_ || saving_ || !session_.hasDocument() || !model_)
+    throw std::runtime_error("Select a renderable flame in the editor and try again.");
+  const auto revision = localAiRevision();
+  if (tool == "inspect_flame") {
+    if (!args.isEmpty()) throw std::invalid_argument("inspect_flame takes no arguments.");
+    const auto xml = serialize_flame(*model_);
+    if (xml.size() > 1024 * 1024) throw std::runtime_error("This flame exceeds the AI inspection size limit.");
+    return {{"revision", revision}, {"name", text(model_->name)},
+            {"index", session_.selectedFlame() + 1},
+            {"flameCount", static_cast<qint64>(session_.document().entries().size())},
+            {"flameXml", text(xml)}, {"luaApi", text(script_api_reference())}};
+  }
+  if (tool != "get_preview" && tool != "propose_script")
+    throw std::invalid_argument("Unknown local AI tool.");
+  if (args.value("revision").toString() != revision)
+    throw std::runtime_error("The document or selection changed. Inspect the current flame again.");
+  if (tool == "get_preview") {
+    if (args.size() != 1) throw std::invalid_argument("get_preview accepts only revision.");
+    if (!aiPreviewCurrent_ || previewCanvas_->image().isNull())
+      throw std::runtime_error("The preview for this flame is not ready. Resume preview if paused and try again.");
+    if (aiPreviewPng_.isEmpty()) {
+      auto image = previewCanvas_->image();
+      if (image.width() > 384 || image.height() > 384)
+        image = image.scaled(384, 384, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+      QByteArray png;
+      QBuffer buffer(&png);
+      if (!buffer.open(QIODevice::WriteOnly) || !image.save(&buffer, "PNG"))
+        throw std::runtime_error("Unable to encode the editor preview.");
+      aiPreviewPng_ = png.toBase64();
+      aiPreviewSize_ = image.size();
+    }
+    return {{"revision", revision}, {"mimeType", "image/png"}, {"data", QString::fromLatin1(aiPreviewPng_)},
+            {"width", aiPreviewSize_.width()}, {"height", aiPreviewSize_.height()}};
+  }
+  for (auto it = args.begin(); it != args.end(); ++it)
+    if (it.key() != "revision" && it.key() != "title" && it.key() != "script")
+      throw std::invalid_argument("Unsupported proposal argument.");
+  if (!args.value("script").isString() ||
+      (args.contains("title") && (!args.value("title").isString() || args.value("title").toString().size() > 128)))
+    throw std::invalid_argument("Expected Lua source and an optional short title.");
+  const auto script = args.value("script").toString();
+  if (script.trimmed().isEmpty() || script.toUtf8().size() > ai::maxScriptBytes)
+    throw std::invalid_argument("Proposed Lua source must contain 1–65536 UTF-8 bytes.");
+  if (aiReview_ || QApplication::activeModalWidget())
+    throw std::runtime_error("The editor already has an open dialog. Finish that review or close the dialog first.");
+  if (session_.document().bytes().size() > 16 * 1024 * 1024)
+    throw std::runtime_error("This library exceeds the local AI script review size limit (16 MiB).");
+
+  auto *review = new ScriptDialog(session_.document(), std::size_t(session_.selectedFlame()), this);
+  aiReview_ = review;
+  review->setAttribute(Qt::WA_DeleteOnClose);
+  review->enableAiReview(args["title"].toString(), preview_.settings());
+  review->setSource(script);
+  auto expire = [this, review, revision] {
+    if (aiReview_ == review && revision != localAiRevision()) {
+      statusBar()->showMessage("AI proposal expired because the document or selection changed.", 10000);
+      review->close();
+    }
+  };
+  connect(&session_, &DocumentSession::changed, review, expire);
+  connect(&session_, &DocumentSession::selectionChanged, review, expire);
+  connect(review, &QDialog::finished, this, [this, review, revision](int decision) {
+    aiReview_.clear();
+    if (decision != QDialog::Accepted || !review->scriptResult()) return;
+    if (closing_ || !localAi_->enabled() || revision != localAiRevision()) {
+      record("AI proposal discarded because its editor session or selection changed.");
+      statusBar()->showMessage("AI proposal expired. Inspect the current flame and try again.", 10000);
+      return;
+    }
+    run([&] { applyScriptResult(*review->scriptResult(), review->outputDirectory(),
+                               review->replaceExisting(), review->protectedFiles()); });
+  });
+  review->open();
+  return {{"status", "awaiting_review"}, {"revision", revision}};
+}
+
 void MainWindow::showScriptEditor() {
   if (!session_.hasDocument())
     return;
@@ -118,6 +277,11 @@ void MainWindow::applyScriptResult(
   if (result.selected_index >= document.entries().size())
     throw std::invalid_argument("Script selected a missing flame");
   auto inputs = protectedFiles;
+  const auto aiSession = ai::sessionPath();
+  if (!aiSession.isEmpty()) {
+    inputs.push_back(filesystemPath(aiSession));
+    inputs.push_back(filesystemPath(aiSession + ".lock"));
+  }
   if (!session_.path().isEmpty())
     inputs.push_back(filesystemPath(session_.path()));
   for (const auto &path : queue_->protectedPaths())
