@@ -131,6 +131,15 @@ if(NOT status STREQUAL "renderable")
 endif()
 run_ok(--plugin "${MANIFEST}" --flame "${plugin_flame}" --samples 2000 --threads 1 --output "${case_dir}/plugin.bmp")
 
+# Exercise the distributed tutorial flame, including its saved ID, parameters and palette.
+set(wave_png "${case_dir}/sample-wave.png")
+run_ok(--plugin "${MANIFEST}" --flame "${sample_folder}/plugins/reborn-wave/sample-wave.flame"
+    --samples 2000 --threads 1 --output "${wave_png}")
+file(READ "${wave_png}" wave_header LIMIT 24 HEX)
+if(NOT wave_header STREQUAL "89504e470d0a1a0a0000000d4948445200000280000001e0")
+    message(FATAL_ERROR "The bundled sample wave did not render a 640x480 PNG")
+endif()
+
 # Scripts edit private documents; side outputs require explicit capabilities.
 file(WRITE "${case_dir}/edit.lua" "apo.set_flame {name='CLI Lua'}\nprint('lua completed')\n")
 run_ok(script "${project}" --script "${case_dir}/edit.lua" --output "${case_dir}/lua.apoproject")

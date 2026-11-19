@@ -4,17 +4,29 @@
 
 ![Eight starter flames in Apophysis Reborn 0.13.0](preview/starter-library-0.13.0.png)
 
-## Download for Windows 11 x64
+## Local AI connection in 0.14.0
+
+An MCP-compatible assistant on the same computer can inspect the editor’s selected flame, see its live preview and propose Lua edits. Use **Tools → Local AI connection…** to copy the client configuration and enable sharing for the current session. Run a proposal on a copy, preview its results, then apply or discard it. The Windows companion is included in 0.14.0 builds. [Connect an assistant and try three variations](docs/LOCAL_AI.md)
+
+## Windows x64 downloads · 0.14.0
 
 | Download | How to use it |
 | --- | --- |
-| [Installer](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.13.0/apophysis-reborn-0.13.0-windows-x64-setup.exe) | Close the editor and run Setup. It installs for the current Windows user. The installer is unsigned. |
-| [Portable ZIP](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.13.0/apophysis-reborn-0.13.0-windows-x64-portable.zip) | Choose **Extract All** in File Explorer. Inside the extracted application folder, open **apophysis-reborn.exe**. Keep it with its DLLs, plugins, and examples. |
-| [Source used for the Windows binaries](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.13.0/apophysis-reborn-0.13.0-git-source.zip) | Includes the matching source tree and a restorable Git history. Clone the repository’s main branch for the latest public documentation. |
-| [Illustrated user guide (PDF)](docs/Apophysis-Reborn-0.13.0-User-Guide.pdf) | Pages 1–4 lead from installation to a finished PNG. Page 8 has a fillable tester sheet. |
-| [Windows test kit](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.13.0/Apophysis-Reborn-0.13.0-Windows-Test-Kit.zip) | With Git for Windows installed, extract this separate kit and open **Start-Tests.cmd**. It checks the installed or portable build and saves a local results archive. [Test scripts](tools/windows-test-kit/) |
+| [Windows installer](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/apophysis-reborn-0.14.0-windows-x64-setup.exe) | Close the editor and run Setup. It installs for the current Windows user. The installer is unsigned. |
+| [Portable ZIP](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/apophysis-reborn-0.14.0-windows-x64-portable.zip) | Use **Extract All** in File Explorer, then open **apophysis-reborn.exe** inside the extracted folder. Keep the companion executable and DLLs beside it. |
+| [Source and Git history](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/apophysis-reborn-0.14.0-git-source.zip) | Includes the source used to build the Windows packages and a restorable Git history. |
+| [Offline guides, examples and plug-in SDK](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/Apophysis-Reborn-0.14.0-Guides.zip) | Extract the ZIP. Use the manual to learn the editor, or follow a walkthrough below. |
+| [SHA-256 checksums](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/SHA256SUMS.txt) | Compare a download with its published hash using PowerShell: `Get-FileHash -Algorithm SHA256 'path-to-file'`. |
 
-Both Windows editions run offline. CPU rendering works without a Vulkan driver. For GPU sampling, use a current driver that exposes Vulkan on your GPU. Setup installs the new payload before attempting to retire the most recent older registered version. Save artwork in a folder of your own. [Release assets and checksums](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.13.0)
+Both Windows editions can render offline. CPU rendering works without a Vulkan driver. GPU sampling requires a driver that exposes Vulkan. Setup installs the new payload before attempting to remove the most recent older registered version. Save artwork in a folder of your own. [All release assets](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.14.0)
+
+## Plug-ins, scripts and local AI
+
+| What you want to do | Walkthrough |
+| --- | --- |
+| Install a variation or build your own | Enable the bundled wave, render its sample, then change the C example and package a Windows x64 variation. [Plug-in guide](docs/PLUGINS.md) |
+| Write and run a script | Make a copper-colored copy of a flame in Lua, preview it, then apply it in the editor or run the script from PowerShell. [Scripting guide](docs/SCRIPTING.md) · [Supported legacy scripts](docs/LEGACY_SCRIPTING.md) |
+| Connect an AI assistant | Configure a local MCP client, inspect the selected flame and review a proposed edit. [AI setup and troubleshooting](docs/LOCAL_AI.md) |
 
 ## Make a first image
 
@@ -24,9 +36,9 @@ Both Windows editions run offline. CPU rendering works without a Vulkan driver. 
 4. Open **File → Render image…**. For this starter, try **768 × 576** and **PNG · 8 bit**. Browse for an output filename and click **Add and start queue**.
 5. When the queue shows **Complete**, open the PNG in File Explorer. Reopen the project when you want to adjust the drawing rules or colors.
 
-Press **F1** in the editor for offline documentation. [User manual](docs/USER_MANUAL.md)
+Press **F1** in the editor for offline documentation. [0.14.0 user manual](docs/USER_MANUAL.md) · [Illustrated first-session guide (0.13.0 PDF)](docs/Apophysis-Reborn-0.13.0-User-Guide.pdf)
 
-## What works in 0.13.0
+## Editing and rendering
 
 - Edit eight starter flames with affine transforms, palettes, tone curves, variations, mutation, and a seeded random generator. The renderer implements 43 built-in variations.
 - Use multithreaded CPU rendering or Vulkan sampling. Render in strips, queue images, and resume compatible checkpoints. The image size limit is 16,384 pixels per side.
@@ -34,7 +46,7 @@ Press **F1** in the editor for offline documentation. [User manual](docs/USER_MA
 
 Legacy compatibility varies by producer and feature. Some documents can be preserved on save while an unsupported operation prevents rendering. Historical 3D and direct-color behavior, some filters, and parts of the original scripting and plugin workflows remain incomplete. See the compatibility report before depending on a specific older flame. [Compatibility and outstanding work](docs/RELEASE_COMPATIBILITY.md)
 
-The recovered 0.13.0 application commit is `0e71c19aeaf59babb7a8c3fafce8bd5b6f92e61f`. All 49 automated test suites passed on Linux for this build. The installer and portable payloads were compared file by file. Native Windows upgrade behavior and physical GPU coverage still need target-machine testing. [Release notes](docs/RELEASE_0.13.0.md)
+[0.14.0 release notes](docs/RELEASE_0.14.0.md) · [0.13.0 release and version-specific Windows test kit](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.13.0)
 
 ## Build a fork with an AI assistant
 

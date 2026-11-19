@@ -31,6 +31,9 @@ class QTimer;
 
 namespace apo::editor {
 
+class LocalAiConnection;
+class ScriptDialog;
+
 class MainWindow : public QMainWindow {
   Q_OBJECT
 public:
@@ -97,6 +100,17 @@ private:
   QAction *gradient_, *adjustments_, *mutations_, *randomFlames_,
       *duplicateFlame_, *deleteFlame_;
   QAction *queueAction_, *animation_;
+  std::unique_ptr<LocalAiConnection> localAi_;
+  QPointer<ScriptDialog> aiReview_;
+  QLabel *aiIndicator_ = nullptr;
+  quint64 aiSelection_ = 0;
+  bool aiPreviewCurrent_ = false;
+  QByteArray aiPreviewPng_;
+  QSize aiPreviewSize_;
+  void showLocalAiSettings();
+  QString localAiRevision() const;
+  QJsonObject handleLocalAi(const QString &tool, const QJsonObject &arguments);
+
   QByteArray defaultLayout_;
   ProjectSettings renderSettings_;
   std::vector<ProjectPreset> renderPresets_;

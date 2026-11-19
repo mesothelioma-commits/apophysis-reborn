@@ -9,11 +9,11 @@ import subprocess
 WINDOWS_DLLS = {
     "advapi32.dll", "authz.dll", "bcrypt.dll", "comctl32.dll", "comdlg32.dll",
     "crypt32.dll", "d3d9.dll", "d3d11.dll", "d3d12.dll", "dwrite.dll", "dwmapi.dll",
-    "dxgi.dll", "gdi32.dll", "imm32.dll", "iphlpapi.dll", "kernel32.dll", "mpr.dll",
+    "dnsapi.dll", "dxgi.dll", "gdi32.dll", "imm32.dll", "iphlpapi.dll", "kernel32.dll", "mpr.dll",
     "netapi32.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll", "opengl32.dll",
     "powrprof.dll", "rpcrt4.dll", "secur32.dll", "setupapi.dll", "shcore.dll",
     "shell32.dll", "shlwapi.dll", "user32.dll", "userenv.dll", "usp10.dll",
-    "uxtheme.dll", "version.dll", "winmm.dll", "winspool.drv", "ws2_32.dll", "wtsapi32.dll",
+    "uxtheme.dll", "version.dll", "winhttp.dll", "winmm.dll", "winspool.drv", "ws2_32.dll", "wtsapi32.dll",
 }
 
 

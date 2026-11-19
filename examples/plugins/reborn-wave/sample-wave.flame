@@ -8,4 +8,10 @@
     sample_wave_amplitude="0.08" sample_wave_frequency="5"
     reborn_plugin_id_sample_wave="org.apophysis.reborn.wave" reborn_plugin_version_sample_wave="1.0.0"/>
   <xform weight="1" color="0.95" coefs="0.5 0 0 0.5 0 0.7" linear="1"/>
+  <color index="0" rgb="25 12 73"/>
+  <color index="46" rgb="51 60 138"/>
+  <color index="96" rgb="40 183 169"/>
+  <color index="146" rgb="249 215 138"/>
+  <color index="209" rgb="255 101 62"/>
+  <color index="255" rgb="134 29 85"/>
 </flame>

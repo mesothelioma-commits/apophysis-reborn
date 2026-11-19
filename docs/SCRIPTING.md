@@ -1,14 +1,40 @@
-# Scripting in Milestone 8
+# Write and run scripts in Apophysis Reborn
 
-Apophysis Reborn embeds **Lua 5.5.1** and a separately parsed **Apophysis Pascal subset**. No Lua installation is needed. Lua is the recommended language for new scripts; [LEGACY_SCRIPTING.md](LEGACY_SCRIPTING.md) defines the supported historical syntax, original API conventions and deliberate limits.
+Apophysis Reborn includes **Lua 5.5.1** for new scripts and supports a subset of **Apophysis Pascal** for older ones. You can write, run and save Lua scripts in the editor without installing Lua. For historical scripts, see the [legacy scripting guide](LEGACY_SCRIPTING.md).
+
+## Make your first script
+
+1. Open the bundled `examples/ember-spiral.flame` in the editor. Its single flame is named **Ember spiral**.
+2. Choose **Tools → Script editor…** (`Ctrl+E`), select **Lua**, and replace the text in the upper pane with the script below. If the pane contains a draft you want to keep, use **Save…** first.
+
+   ```lua
+   apo.duplicate_flame("Copper study")
+   apo.palette_from_stops({
+     {0,   0.08, 0.02, 0.01},
+     {128, 0.75, 0.28, 0.10},
+     {255, 1.00, 0.83, 0.60}
+   }, "rgb")
+   print("Created " .. apo.flame().name)
+   ```
+
+3. Click **Save…** to keep the script as `copper-study.lua` in a folder you own. Click **Run** (`Ctrl+Return`). The console should show `Created Copper study`. You can change the red, green and blue values (each between 0 and 1) and run it again before applying.
+4. Click **Apply result**. The flame library now contains the original **Ember spiral** and the selected **Copper study** with its new palette. Press `Ctrl+Z` to undo the change, or use **File → Save as…** to keep the two-flame library under a new name.
+
+To run the same script from Windows PowerShell, open PowerShell in the folder containing `flame-cpu.exe`. This example assumes you saved the script in your Windows user folder. It writes a new library there that you can open in the editor. Choose a fresh output filename each time.
+
+```powershell
+.\flame-cpu.exe script .\examples\ember-spiral.flame --script "$env:USERPROFILE\copper-study.lua" --output "$env:USERPROFILE\copper-study.flame"
+```
+
+## How scripts run
 
 A script receives a private document and selected flame. Successful execution returns the edited document, console messages and requested outputs. **Run does not edit the open document or write output files.** In the editor, **Apply result** applies the completed document as one undo step and submits the permitted outputs. An exception, invalid final model, resource limit or Stop discards the entire evaluation result, including its deferred requests.
 
 The evaluator itself has no filesystem, network, process or native-module loading interface. Render/export requests are descriptions for the application to process after successful evaluation. Publication and rendering have their own failure handling; a batch of external files is not a single filesystem transaction. Already published files are not undone by editing the document's undo history.
 
-## First run
+## Examples and command-line options
 
-Open **Tools → Script editor…** (`Ctrl+E`), choose an example or open a `.lua` file, and press **Run** (`Ctrl+Return`). Review the console and output list, then choose **Apply result**. **Stop** cancels the worker without applying its document. The script editor provides syntax highlighting, `Ctrl+Space` API completion, an API reference, example scripts, source open/save and an automatically saved draft.
+Use **Choose an example…** to load a built-in script, or **Open…** to load a saved script. **Stop** cancels a running script. The editor provides syntax highlighting, `Ctrl+Space` API completion, an **API reference** and an automatically saved draft.
 
 The examples are also ordinary files in [examples/scripts](../examples/scripts):
 
@@ -81,7 +107,7 @@ Settings accepted by `apo.set_flame`:
 | `clear_filter_radius` | `true` removes an explicit filter override. Producer defaults can still apply. |
 | `background` | `{r,g,b}` in [0,1]. |
 | `palette_mode` | `'step'` or `'linear'`. |
-| `time` | Stored keyframe time metadata. M8 does not evaluate an animation timeline. |
+| `time` | Legacy flame time metadata. For importing it as keyframes, see the [animation guide](ANIMATION_EDITOR.md). |
 | `source_version` | Returned for inspection; changing the producer dialect is rejected. |
 
 Source-preserving edits retain the library's encoding, other entries, comments and supported metadata. Transform removal preserves the surviving transform's source identity; a copied transform carries its source metadata, and a newly constructed transform receives a fresh element. Producer-specific settings are reparsed before output snapshots, so a captured render agrees with the returned document's interpretation. Unsupported selected entries must be repaired through normal document tools before executing a script on them.

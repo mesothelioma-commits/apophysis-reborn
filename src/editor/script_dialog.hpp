@@ -15,6 +15,8 @@ class QLabel;
 class QCloseEvent;
 
 namespace apo::editor {
+class PreviewController;
+struct PreviewSettings;
 class ScriptDialog : public QDialog {
   Q_OBJECT
 public:
@@ -26,6 +28,7 @@ public:
   bool replaceExisting() const;
   std::vector<std::filesystem::path> protectedFiles() const;
   bool isRunning() const { return running_; }
+  void enableAiReview(const QString &title, const PreviewSettings &settings);
   void runScript();
   void stopScript();
   void setSource(const QString &source,
@@ -56,8 +59,15 @@ private:
   bool running_ = false, closing_ = false;
   QString path_;
   bool saveDraft_;
+  PreviewController *aiPreview_ = nullptr;
+  QComboBox *aiPreviewEntry_ = nullptr;
+  QLabel *aiPreviewImage_ = nullptr;
+  std::shared_ptr<LegacyDocument> aiPreviewDocument_;
+  bool aiPreviewSelectionValid_ = false;
+  void selectAiPreview(int index);
+  void resetAiPreview();
   void finish(std::optional<ScriptResult>, const QString &error,
-              std::size_t line);
+              std::size_t line, std::shared_ptr<LegacyDocument> previewDocument);
   void invalidate();
   void updateControls();
   void showReference();
