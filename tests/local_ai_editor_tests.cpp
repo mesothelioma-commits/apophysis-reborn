@@ -174,7 +174,7 @@ private slots:
         auto *entries = review->findChild<QComboBox *>("aiPreviewEntry");
         auto *image = review->findChild<QLabel *>("aiPreviewImage");
         QVERIFY(entries && image);
-        const int copper = entries->findText("Copper", Qt::MatchContains);
+        const int copper = entries->findText("Copper", Qt::MatchExactly);
         QVERIFY(copper >= 0);
         entries->setCurrentIndex(copper);
         QTRY_VERIFY_WITH_TIMEOUT(!image->pixmap().isNull(), 10000);

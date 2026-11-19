@@ -170,7 +170,9 @@ void LocalAiConnection::receive(QLocalSocket *client) {
   auto bytes = QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n';
   if (bytes.size() > ai::maxResponseBytes)
     bytes = "{\"ok\":false,\"error\":\"This flame exceeds the AI response size limit.\"}\n";
+  // A Windows named pipe can discard unread bytes on server disconnect.
+  // The helper closes after its newline; the per-client deadline handles abandoned clients.
   client->write(bytes);
-  client->disconnectFromServer();
+  client->flush();
 }
 } // namespace apo::editor
