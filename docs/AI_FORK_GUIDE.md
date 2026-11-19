@@ -13,17 +13,17 @@ Use a GitHub fork when you want an AI coding assistant to modify your own copy. 
    cd apophysis-reborn
    git remote add upstream https://github.com/mesothelioma-commits/apophysis-reborn.git
    git fetch upstream --tags
-   git switch -c work/first-change
+   git switch -c work/first-change v0.14.0
    git remote -v
    ```
 
-   `origin` should point to your fork and `upstream` to the published project. The branch you created contains the public documentation and the 0.13.0 application source. To inspect the exact source used for the distributed Windows binaries, run `git show --no-patch v0.13.0-starter-library-recovery`. The corresponding commit is `0e71c19aeaf59babb7a8c3fafce8bd5b6f92e61f`.
+   `origin` should point to your fork and `upstream` to the published project. The new branch starts at the exact source used for the 0.14.0 Windows release. Run `git show --no-patch v0.14.0` to see the release commit. To start from later upstream work, create your branch from `upstream/main`.
 
 3. Open the cloned folder in your AI coding tool. With a hosted tool, select your fork or connect it and grant access to that repository. Select your work branch, or have the assistant make a new branch in your fork. Give the tool a specific change, a supported platform, and a way you can tell the feature works.
 
 ## Build and test the baseline
 
-For the full editor, install Git, Bash, CMake 3.20 or newer, a C++20 compiler, Qt 6.5 or newer with Widgets and Test, Expat and zlib development packages, and Python 3.10 or newer for the test suites. Use libraries built for the same architecture and compiler as the application. The Windows package was built with Qt 6.8.2. The normal source build includes Vulkan headers and a compiled shader. [Desktop dependencies and toolchain details](QT_BUILD.md)
+For the full editor, install Git, Bash, CMake 3.20 or newer, a C++20 compiler, Qt 6.5 or newer with Widgets, Network and Test, Expat and zlib development packages, and Python 3.10 or newer for the test suites. Use libraries built for the same architecture and compiler as the application. The Windows package was built with Qt 6.8.2. The normal source build includes Vulkan headers and a compiled shader. [Desktop dependencies and toolchain details](QT_BUILD.md)
 
 On **Windows**, open Git Bash in an environment with the compiler and libraries for your Qt kit available. If CMake cannot discover Qt, set the prefix to the actual kit folder containing `bin` and `lib/cmake/Qt6`. The following prompt handles a Windows or Git Bash path. It also puts the kit’s runtime DLLs on the path for this session.
 
@@ -79,4 +79,4 @@ Review `git diff`, open your test project, save it under a new name, reopen it, 
 
 When your commit is ready, run `git push -u origin HEAD`. On GitHub, choose **your fork’s main branch** as the pull request base if you want the change only in your own project.
 
-For a distributable build, set the intended application version, commit and tag the tested source, rebuild from that commit, and produce new installer and portable assets from the same staged runtime. Include checksums, the exact revision, actual test outcomes, platform limits, and corresponding sources. Keep the original Apophysis credits, Reborn’s AI disclosure, and all relevant license notices. The documented 0.13.0 tree has component-specific license records and no project-wide license for Reborn’s own implementation. Review the applicable terms before distributing your version. [Packaging](../packaging/README.md) · [Notices and provenance](LICENSES.md)
+For a distributable build, set the intended application version, commit and tag the tested source, rebuild from that commit, and produce new installer and portable assets from the same staged runtime. Include checksums, the exact revision, actual test outcomes, platform limits, and corresponding sources. Keep the original Apophysis credits, Reborn’s AI disclosure, and all relevant license notices. The 0.14.0 tree has component-specific license records and no project-wide license for Reborn’s own implementation. Review the applicable terms before distributing your version. [Packaging](../packaging/README.md) · [Notices and provenance](LICENSES.md)

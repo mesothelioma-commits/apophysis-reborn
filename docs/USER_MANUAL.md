@@ -234,7 +234,7 @@ Applying a successful script creates one document undo step and submits approved
 
 Open **Tools → Plugins…**. Add a search folder and refresh to inspect manifests without executing the libraries. **Install…** copies a manifest and adjacent native library; it does not enable them. **Enable… → Trust and enable** explicitly approves the displayed binary fingerprint.
 
-An enabled native plugin runs code inside the application with the process's operating-system permissions. Descriptor/callback validation does not isolate a crash or hang. Use trusted, compatible x64 modules; old 32-bit Apophysis DLLs cannot load directly. The source SDK and migration example are included.
+An enabled native plugin runs code inside the application with the process's operating-system permissions. Descriptor/callback validation does not isolate a crash or hang. Use trusted, compatible x64 modules; old 32-bit Apophysis DLLs cannot load directly. To build your own variation, follow the [Windows walkthrough](PLUGINS.md#build-and-distribute-your-own-variation). The source archive and offline guides ZIP include the C example and `src/plugin_api.h`.
 
 Startup approvals bind the principal library's SHA-256. Replacing that binary requires fresh approval. Disable prevents new parsing/startup loading, but existing immutable jobs retain their module owners. The manager refuses file removal while a document or job still owns the module. Project references and restored queues never enable code by themselves. A changed module can require new animation captures and render checkpoints. [PLUGINS.md](PLUGINS.md) records the precise ABI and trust boundary.
 

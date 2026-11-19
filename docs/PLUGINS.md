@@ -1,8 +1,23 @@
 # Native variation plugins
 
-Milestone 8 adds a versioned native C ABI for **ordinary additive 2D variations**. A plugin contributes a named mathematical operation, metadata and real/integer parameters to the CPU renderer. It can run in ordinary or final transforms, alongside the 43 built-in variations in 0.11.0. Existing built-in numeric IDs retain their values.
+Apophysis Reborn 0.14.0 can load a custom 2D variation from a native library. Each plugin contributes one named operation to the CPU renderer. A transform can combine it with built-in variations, and a final transform can use it too. ABI v1 supports additive X/Y operations with real or integer parameters. Pre/post stages, direct color, Z coordinates and GPU kernels fall outside this interface. For automating edits or renders, see [Scripting](SCRIPTING.md).
 
-This increment does not expose native rendering-tool or automation-extension callbacks. Automation uses the separate Lua scripting interface. Native pre/post variation stages, direct color, 3D operations, GPU plugin kernels, legacy DLL execution and process isolation are not implemented.
+## Try the bundled wave on Windows
+
+1. Open **Tools → Plugins…** and select **sample_wave**. If the list is empty, choose **Add folder…** and select the `plugins` folder beside `apophysis-reborn.exe`.
+2. Choose **Enable…**, review the module path and fingerprint, then choose **Trust and enable** for the bundled example. The library runs with your Windows permissions.
+3. Close the manager. Use **Open project or library…** to open `examples/plugins/reborn-wave/sample-wave.flame` from the installed or extracted app folder. The sample uses the wave on its first two transforms.
+4. Select **Transform 1**, then **Variations → Plugin variations…** in the right-hand panel. Change **amplitude** from `0.2` to `0.4` and choose **Apply** to see the change. For a file render select the CPU backend, or allow CPU fallback when using Automatic.
+
+To render the same sample from the command line, open Git Bash in the folder containing `flame-cpu.exe` and run the commands below. Open `sample-wave.png` in the new folder under your home directory. The bundled module is already compiled.
+
+```sh
+mkdir -p "$HOME/Apophysis-Plugin-Test"
+./flame-cpu.exe plugins info plugins/reborn-wave/reborn_wave.apoplugin
+./flame-cpu.exe --plugin plugins/reborn-wave/reborn_wave.apoplugin \
+  --flame examples/plugins/reborn-wave/sample-wave.flame \
+  --samples 1000000 --output "$HOME/Apophysis-Plugin-Test/sample-wave.png"
+```
 
 ## Using the plugin manager
 
@@ -12,17 +27,7 @@ Select an entry to inspect its stable ID, variation name, version, description, 
 
 Approved manifests and their fingerprints are stored in the application's settings. Startup loads those approvals before restoring documents or the render queue. A changed or missing binary produces a diagnostic and is not automatically approved. Failed approvals are retained so a repaired installation can be loaded later. Opening a flame or project never enables or installs a referenced native module. Removing a search folder does not revoke a separate saved enable approval; use **Disable** to do that.
 
-The CLI explicitly opts into trusted code with a leading `--plugin` option, repeatable for multiple modules:
-
-```sh
-flame-cpu --plugin build/plugins/reborn-wave/reborn_wave.apoplugin \
-  --flame examples/plugins/reborn-wave/sample-wave.flame \
-  --samples 1000000 --output sample-wave.png
-```
-
-Data-only CLI commands are `plugins list FOLDER`, `plugins info MANIFEST` and `plugins install MANIFEST FOLDER`; `plugins remove MANIFEST` removes an unretained package.
-
-The command-line opt-in applies to that invocation. It does not create desktop startup approvals. Use only modules you trust.
+The CLI accepts a leading `--plugin MANIFEST` for each library to enable during one invocation. Desktop approvals are stored separately. Use `plugins list FOLDER` to discover packages and `plugins info MANIFEST` to inspect one. Use `plugins install MANIFEST FOLDER` to copy a package or `plugins remove MANIFEST` to remove an unretained package.
 
 ## Trust and failure handling
 
@@ -47,14 +52,24 @@ y_out = y_in + amplitude × sin(frequency × x_in)
 
 Defaults are amplitude `0.2` and frequency `3`; ranges are `[-2,2]` and `[0,20]`. The host performs the term's weight multiplication once. Zero-weight plugin terms consume no random draws and do not invoke the callback.
 
-Build the standalone example:
+### Build and distribute your own variation
+
+1. Download the matching Reborn **source** archive or clone the repository. Start with a copy of `examples/plugins/reborn-wave`. Keep the SDK header from `src/plugin_api.h`. Building this standalone module requires CMake 3.20 or later and a C compiler. For the Windows commands below, install Visual Studio 2022 Build Tools with **Desktop development with C++** and use Git Bash at the source root.
+2. In your copy, edit `evaluate` in `reborn_wave.c` to compute your unweighted X and Y result. Pick a unique ID such as `org.example.ripple` and a variation name such as `ripple`. Change the ID, name, version, description and any parameter definitions in **both** the C descriptor and `reborn_wave.apoplugin.in`. Keep parameter order, types and ranges identical.
+3. Update the demo flame in your copy. Replace `sample_wave` wherever it occurs, including the weight, parameter attributes, saved ID/version attribute names and `var_order`. Set the saved ID and version values to match your descriptor. Keep the embedded palette so the result renders.
+4. Build the module. The example below builds the unmodified template. For your own copy, change the `-S` path and use a separate build directory. The DLL and manifest must be in the same folder. The copy command places the Release DLL beside its generated manifest.
 
 ```sh
-cmake -S examples/plugins/reborn-wave -B build/wave-plugin
+cmake -S examples/plugins/reborn-wave -B build/wave-plugin \
+  -G "Visual Studio 17 2022" -A x64 -DAPO_PLUGIN_SDK="$PWD/src"
 cmake --build build/wave-plugin --config Release
+cp build/wave-plugin/Release/reborn_wave.dll build/wave-plugin/
 ```
 
-The main Reborn build also builds this example under `build/plugins/reborn-wave`. A standalone SDK consumer can set `-DAPO_PLUGIN_SDK=/path/to/src`. Linux produces `reborn_wave.so`; Windows x64 produces `reborn_wave.dll`. The matching `.apoplugin` manifest must sit beside the module. For multi-configuration generators, copy the selected configuration's library beside the generated manifest before installation. The example compiles as both C and C++ with the exported function retaining C linkage.
+5. In the editor, choose **Tools → Plugins… → Install…**, select the generated `build/wave-plugin/reborn_wave.apoplugin`, then enable your module and open your updated flame. To test using the CLI, use the same render command as above with the paths to your generated manifest and your flame.
+6. Distribute the generated `.apoplugin` and matching x64 DLL together, plus a sample flame and any source or license files you wish or are required to include. The example can keep its filenames inside a separate package directory. If you rename the binary, update CMake's output name and manifest library filename together. A legacy Apophysis DLL requires a source port to this ABI.
+
+On Linux, omit `-G "Visual Studio 17 2022" -A x64` and use a single-configuration build. CMake places `reborn_wave.so` next to the generated manifest. Both platforms use the same SDK header and flame format.
 
 ### Callback contract
 
@@ -104,7 +119,7 @@ Flame XML uses named weights and prefixed parameters, for example `sample_wave="
 
 The identity/version references allow a source flame to use the same declared plugin implementation across platform builds. A module's SHA-256 is additionally included in render checkpoint identity, so a checkpoint rejects changed binary bytes even if the plugin author reused the same ID and version. Module parameters and order are already part of the canonical flame key. A rejected resume preserves the existing checkpoint. Persistent render queues also record the module identity separately from the portable flame XML and reject missing or changed modules before replacing the original queue state. A single flame cannot mix different native module identities under one variation name.
 
-Native plugins are **CPU only** in this milestone. Automatic/Vulkan requests report that a native variation requires the CPU renderer and use the CPU only when the existing fallback option permits it. Disabling fallback turns that request into an explicit error. The Vulkan model packer also rejects plugin terms, so the sentinel cannot reach the compute shader as an arbitrary built-in index.
+Native plugins render on the **CPU**. Automatic/Vulkan requests report that a native variation requires the CPU renderer and use the CPU only when the existing fallback option permits it. Disabling fallback turns that request into an explicit error. The Vulkan model packer also rejects plugin terms, so the sentinel cannot reach the compute shader as an arbitrary built-in index.
 
 ## Legacy Apophysis audit and migration
 

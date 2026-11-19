@@ -6,9 +6,9 @@ Apophysis Reborn 0.14.0 can share your selected flame with an AI assistant on th
 
 1. Start **Apophysis Reborn**, select a flame, and let its preview render.
 2. Open **Tools → Local AI connection…** and click **Copy configuration**. The copied JSON includes the exact companion path for this installation.
-3. In your AI client's local MCP configuration, add the **apophysis-reborn** entry. Merge it with any servers you already have. If the client has a form, select **stdio** or **local command**, set **Command** to the full path of `apophysis-mcp.exe`, and leave **Arguments** empty.
+3. If your AI client uses a JSON file with an `mcpServers` key, paste the copied configuration into an empty file or add just the **apophysis-reborn** entry inside your existing `mcpServers` object. If the client has a form, select **stdio** or **local command**, set **Command** to the full path of `apophysis-mcp.exe`, and leave **Arguments** empty. For VS Code, use the example below.
 4. In Apophysis Reborn, click **Enable for this session**, then **Close**. Start or reload the server in your AI client. Allow the Apophysis tools if the client asks.
-5. In the AI client, ask **“Use Apophysis Reborn to tell me the name of the flame I have selected and show me its live preview.”** The name should follow your selection even before you save the file.
+5. Check the client's tool list for `inspect_flame`, `get_preview` and `propose_script`. Then ask **“Use Apophysis Reborn to tell me the name of the flame I have selected and show me its live preview.”** The name should match the flame selected in the editor, even before you save the file.
 
 **VS Code example.** In a local Windows window, open the Command Palette and choose **MCP: Open User Configuration**. VS Code uses the top-level key `servers`. Put the copied **apophysis-reborn** entry under that key and set its `type` to `stdio`. Start the server from the MCP configuration and select its tools in agent chat. A workspace running over SSH or in a container starts commands in a different environment. [VS Code MCP configuration](https://code.visualstudio.com/docs/agent-customization/mcp-servers)
 
