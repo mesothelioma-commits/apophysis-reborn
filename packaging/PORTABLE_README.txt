@@ -9,9 +9,9 @@ The runtime works offline; no installer or administrator access is required.
 
 Open docs/USER_MANUAL.html or use Help > User manual in the application.
 Example flames and native animation projects are in examples/.
-Save your own work in a personal project folder. Application preferences,
-recovery data and queue state use the normal per-user application-data location;
-this portable executable layout does not redirect those settings beside the EXE.
+Save your projects in a personal folder. Favorites are kept for the current
+Windows user and can be opened after you replace or move the program folder.
+Preferences, recovery data and queue state also use per-user storage.
 
 The complete source/history/verification edition is a separate download. It
 contains the native test programs, Git history and development build scripts.

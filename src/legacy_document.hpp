@@ -54,6 +54,10 @@ public:
     bool references_plugin(std::string_view variation, std::string_view id,
                            std::string_view version,
                            std::optional<std::size_t> entry = {}) const;
+    // Isolate a source element without losing its comments, extensions or legacy settings.
+    std::string standalone_flame(std::size_t index) const;
+    // Copy a source element into this document's encoding. Unrepresentable markup fails atomically.
+    std::size_t append_entry(const LegacyDocument& source, std::size_t index);
     Flame render_model(std::size_t index) const;
     std::optional<std::string> render_issue(std::size_t index) const;
     void edit(std::size_t index, const LegacyEdits& edits);

@@ -1,5 +1,7 @@
 # Release handoff — 0.13.0
 
+Include the current [roadmap](ROADMAP.md) in every build delivery. Mark what shipped, identify the next planned build, and carry ongoing and later work forward.
+
 ## Scope and release identity
 
 The 0.13.0 recovery build restores the eight-flame starter library and retains the 0.12.1 Live Preview fixes. It includes the 0.12.0 release, which adds [density estimation](DENSITY_ESTIMATION.md) for supported FLAM3 files and retires the previous per-user installation after upgrading. The earlier 43 built-ins and Save/dialog responsiveness fixes are included.

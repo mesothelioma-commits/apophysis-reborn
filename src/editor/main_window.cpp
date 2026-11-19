@@ -1,5 +1,7 @@
 #include "main_window.hpp"
 #include "local_ai_connection.hpp"
+#include "flame_favorites.hpp"
+#include "variation_explorer.hpp"
 #include "build_info.hpp"
 #include "support_dialogs.hpp"
 #include "creative_widgets.hpp"
@@ -42,6 +44,7 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QScopedValueRollback>
+#include <QScopeGuard>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -56,6 +59,7 @@
 #include <QTableWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
@@ -458,6 +462,8 @@ MainWindow::MainWindow(bool useSettings, QWidget *parent,
       useSettings_(useSettings) {
   const auto pluginWarnings =
       useSettings_ ? loadApprovedPlugins(settings_) : QStringList{};
+  if (!queueDirectory.isEmpty())
+    favoritesDirectory_ = QDir(queueDirectory).filePath("favorites");
   QString queueWarning;
   try {
     const auto data = queueDirectory.isEmpty()
@@ -947,6 +953,24 @@ void MainWindow::makeActions() {
   });
   addFinal_->setObjectName("actionAddFinal");
   auto flame = menuBar()->addMenu("&Flame");
+  saveFavorite_ = flame->addAction("Save to Favorites…", this, [this] {
+    run([this] {
+      QImage thumbnail;
+      if (aiPreviewCurrent_)
+        thumbnail = previewCanvas_->image();
+      else if (const auto *item = library_->item(session_.selectedFlame()); item && !item->icon().isNull())
+        thumbnail = item->icon().pixmap(144, 96).toImage();
+      saveSelectedFavorite(session_, this, thumbnail, favoriteStorage());
+    });
+  });
+  saveFavorite_->setObjectName("actionSaveFavorite");
+  saveFavorite_->setToolTip("Keep an editable copy of the selected flame in your personal favorites");
+  browseFavorites_ = flame->addAction("Favorites…", this, [this] {
+    run([this] { browseFlameFavorites(session_, this, favoriteStorage()); });
+  });
+  browseFavorites_->setObjectName("actionBrowseFavorites");
+  browseFavorites_->setToolTip("Find a favorite and add a copy to this project");
+  flame->addSeparator();
   duplicateFlame_ = flame->addAction("Duplicate selected flame", this, [this] {
     run([&] {
       if (!session_.hasDocument())
@@ -984,6 +1008,8 @@ void MainWindow::makeActions() {
                                   &MainWindow::editAdjustments);
   adjustments_->setObjectName("actionAdjustments");
   adjustments_->setShortcut(QKeySequence("Ctrl+J"));
+  variationExplorer_ = flame->addAction("Variation explorer…", this, &MainWindow::exploreVariations);
+  variationExplorer_->setObjectName("actionVariationExplorer");
   mutations_ = flame->addAction("Mutation explorer…", this,
                                 [this] { exploreFlames(true); });
   mutations_->setObjectName("actionMutations");
@@ -1056,6 +1082,24 @@ void MainWindow::makeLibrary() {
   librarySearch_->setPlaceholderText("Find a flame…");
   librarySearch_->setClearButtonEnabled(true);
   layout->addWidget(librarySearch_);
+  auto favoritesRow = new QHBoxLayout;
+  favoritesRow->setSpacing(2);
+  auto saveFavoriteButton = new QToolButton;
+  saveFavoriteButton->setToolTip(saveFavorite_->toolTip());
+  connect(saveFavoriteButton, &QToolButton::clicked, saveFavorite_, &QAction::trigger);
+  connect(saveFavorite_, &QAction::changed, saveFavoriteButton, [this, saveFavoriteButton] {
+    saveFavoriteButton->setEnabled(saveFavorite_->isEnabled());
+  });
+  saveFavoriteButton->setText(QStringLiteral("☆"));
+  saveFavoriteButton->setAccessibleName("Save to Favorites");
+  saveFavoriteButton->setObjectName("saveFavoriteButton");
+  auto favoritesButton = new QToolButton;
+  favoritesButton->setDefaultAction(browseFavorites_);
+  favoritesButton->setObjectName("browseFavoritesButton");
+  favoritesButton->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+  favoritesRow->addWidget(saveFavoriteButton);
+  favoritesRow->addWidget(favoritesButton, 1);
+  layout->addLayout(favoritesRow);
   library_ = new FlameLibraryList;
   library_->setItemDelegate(new FlameLibraryDelegate(library_));
   library_->setWordWrap(true);
@@ -1462,6 +1506,12 @@ void MainWindow::makeProperties() {
     ++row;
   }
   variationLayout->addWidget(variations_, 1);
+  auto explore = new QPushButton("Variation explorer…");
+  explore->setObjectName("exploreVariationButton");
+  connect(explore, &QPushButton::clicked, variationExplorer_, &QAction::trigger);
+  connect(variationExplorer_, &QAction::changed, explore,
+          [this, explore] { explore->setEnabled(variationExplorer_->isEnabled()); });
+  variationLayout->addWidget(explore);
   auto plugins = new QPushButton("Plugin variations…");
   plugins->setObjectName("editPluginVariations");
   variationLayout->addWidget(plugins);
@@ -1732,6 +1782,7 @@ void MainWindow::refreshSelection() {
   gradient_->setEnabled(model_.has_value());
   adjustments_->setEnabled(model_.has_value());
   mutations_->setEnabled(model_.has_value());
+  saveFavorite_->setEnabled(session_.hasDocument());
   refreshing_ = false;
   refreshTransform();
   requestPreview();
@@ -1755,6 +1806,7 @@ void MainWindow::refreshTransform() {
   add_->setEnabled(model_.has_value());
   addFinal_->setEnabled(model_ && !model_->final_transform);
   duplicate_->setEnabled(editable && !final);
+  variationExplorer_->setEnabled(editable);
   remove_->setEnabled(editable &&
                       (final || (model_ && model_->transforms.size() > 1)));
   moveUp_->setEnabled(editable && !final && index > 0);
@@ -1892,6 +1944,46 @@ void MainWindow::editAdjustments() {
     });
   });
 }
+QString MainWindow::favoriteStorage() {
+  if (useSettings_ || !favoritesDirectory_.isEmpty())
+    return favoritesDirectory_;
+  // An isolated editor session uses a disposable library unless a data
+  // directory was supplied explicitly for persistence between sessions.
+  if (!temporaryFavorites_)
+    temporaryFavorites_.emplace();
+  if (!temporaryFavorites_->isValid())
+    throw std::runtime_error("Could not create a temporary favorites folder");
+  return temporaryFavorites_->path();
+}
+
+void MainWindow::exploreVariations() {
+  if (!model_ || lock_->isChecked())
+    return;
+  run([this] {
+    const auto revision = session_.revision_;
+    const auto generation = session_.documentGeneration_;
+    const auto index = session_.selectedFlame();
+    const auto transform = session_.selectedTransform();
+    const bool final = session_.isFinalTransform();
+    const int row = variations_->currentRow();
+    const auto registry = variation_registry();
+    const auto initial = row >= 0 && row < int(registry.size())
+                             ? registry[std::size_t(row)].id : Variation::swirl;
+    const bool paused = preview_.isPaused();
+    preview_.setPaused(true);
+    const auto restorePreview = qScopeGuard([this, paused] { preview_.setPaused(paused); });
+    VariationExplorerDialog dialog(session_.document(), index, transform, final, initial,
+                                   this, preview_.settings());
+    if (dialog.exec() != QDialog::Accepted)
+      return;
+    if (session_.documentGeneration_ != generation || session_.revision_ != revision ||
+        session_.selectedFlame() != index || session_.selectedTransform() != transform ||
+        session_.isFinalTransform() != final)
+      throw std::runtime_error("The selected flame changed. Open the variation explorer again.");
+    editTransform("Apply variation preview", dialog.selectedEdit());
+  });
+}
+
 void MainWindow::exploreFlames(bool mutation) {
   if (mutation && !model_)
     return;

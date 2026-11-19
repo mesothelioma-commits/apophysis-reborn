@@ -45,8 +45,13 @@ void append_utf8(std::string& output, unsigned c) {
     else if (c <= 0x7ff) {
         output += static_cast<char>(0xc0 | (c >> 6));
         output += static_cast<char>(0x80 | (c & 63));
-    } else { // All Windows-1252 and Latin-1 code points are in the BMP.
+    } else if (c <= 0xffff) {
         output += static_cast<char>(0xe0 | (c >> 12));
+        output += static_cast<char>(0x80 | ((c >> 6) & 63));
+        output += static_cast<char>(0x80 | (c & 63));
+    } else {
+        output += static_cast<char>(0xf0 | (c >> 18));
+        output += static_cast<char>(0x80 | ((c >> 12) & 63));
         output += static_cast<char>(0x80 | ((c >> 6) & 63));
         output += static_cast<char>(0x80 | (c & 63));
     }
@@ -359,7 +364,7 @@ bool LegacyDocument::references_plugin(std::string_view variation, std::string_v
     return entry ? uses(sources_.at(*entry))
                  : std::any_of(sources_.begin(), sources_.end(), uses);
 }
-Flame LegacyDocument::render_model(std::size_t index) const {
+std::string LegacyDocument::standalone_flame(std::size_t index) const {
     const auto element = element_bytes(index);
     if (!wrapper_issue_.empty()) throw std::runtime_error(wrapper_issue_);
     // Preserve declared single-byte encodings. Standalone UTF-16 elements get their BOM.
@@ -375,7 +380,10 @@ Flame LegacyDocument::render_model(std::size_t index) const {
     case Encoding::utf16be: xml = "\xfe\xff"; xml += element; break;
     default: xml = element; break;
     }
-    auto flames = parse_flames(xml);
+    return xml;
+}
+Flame LegacyDocument::render_model(std::size_t index) const {
+    auto flames = parse_flames(standalone_flame(index));
     return std::move(flames.at(0));
 }
 std::optional<std::string> LegacyDocument::render_issue(std::size_t index) const {
@@ -678,6 +686,66 @@ std::size_t LegacyDocument::append_flame(const Flame& flame) {
     const auto generated = parse(serialize_flame(flame));
     (void)generated.render_model(0);
     return append_fragment(encode_ascii(ascii_xml(generated.element_bytes(0))));
+}
+
+std::size_t LegacyDocument::append_entry(const LegacyDocument& source, std::size_t index) {
+    if (!source.wrapper_issue_.empty()) throw std::runtime_error(source.wrapper_issue_);
+    const auto fragment = source.element_bytes(index);
+    if (source.encoding_ == encoding_) return append_fragment(std::string(fragment));
+
+    // Source bytes were already validated by Expat. Transcode the XML spelling itself
+    // so comments, processing instructions, unknown attributes and entities survive.
+    const bool wideSource = source.encoding_ == Encoding::utf16le || source.encoding_ == Encoding::utf16be;
+    const bool wideTarget = encoding_ == Encoding::utf16le || encoding_ == Encoding::utf16be;
+    std::string result;
+    result.reserve(fragment.size());
+    auto unit = [&](std::size_t pos) -> unsigned {
+        auto a = static_cast<unsigned char>(fragment[pos]), b = static_cast<unsigned char>(fragment[pos+1]);
+        return source.encoding_ == Encoding::utf16le ? a + (b << 8) : (a << 8) + b;
+    };
+    auto putUnit = [&](unsigned value) {
+        const auto low = static_cast<char>(value), high = static_cast<char>(value >> 8);
+        result += encoding_ == Encoding::utf16le ? low : high;
+        result += encoding_ == Encoding::utf16le ? high : low;
+    };
+    for (std::size_t pos = 0; pos < fragment.size();) {
+        unsigned c;
+        if (wideSource) {
+            c = unit(pos);
+            pos += 2;
+            if (c >= 0xd800 && c < 0xdc00) {
+                c = 0x10000 + ((c - 0xd800) << 10) + unit(pos) - 0xdc00;
+                pos += 2;
+            }
+        } else {
+            c = static_cast<unsigned char>(fragment[pos++]);
+            if (source.encoding_ == Encoding::windows1252) c = western_codepoint(c);
+            else if (source.encoding_ == Encoding::utf8 && c >= 0x80) {
+                const int following = c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : 1;
+                c &= 0x7f >> (following + 1);
+                for (int i = 0; i < following; ++i)
+                    c = (c << 6) | (static_cast<unsigned char>(fragment[pos++]) & 63);
+            }
+        }
+        if (encoding_ == Encoding::utf8) append_utf8(result, c);
+        else if (wideTarget) {
+            if (c <= 0xffff) putUnit(c);
+            else {
+                putUnit(0xd800 + ((c - 0x10000) >> 10));
+                putUnit(0xdc00 + ((c - 0x10000) & 1023));
+            }
+        } else {
+            if (encoding_ == Encoding::windows1252 && c >= 0x80 && (c < 0xa0 || c > 0xff)) {
+                const auto it = std::find(cp1252_high.begin(), cp1252_high.end(), static_cast<int>(c));
+                if (it != cp1252_high.end()) c = 0x80 + static_cast<unsigned>(it - cp1252_high.begin());
+                else c = 0x110000;
+            }
+            if (c > (encoding_ == Encoding::ascii ? 0x7fu : 0xffu))
+                throw std::runtime_error("The destination library's text encoding cannot preserve this flame. Add it to a UTF-8 project.");
+            result += static_cast<char>(c);
+        }
+    }
+    return append_fragment(std::move(result));
 }
 
 std::size_t LegacyDocument::duplicate_flame(std::size_t index, const std::string& new_name) {

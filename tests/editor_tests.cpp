@@ -25,7 +25,9 @@
 #include <QTest>
 #include <QTimer>
 #include <QWindow>
+#include <QToolButton>
 #include <QElapsedTimer>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -160,6 +162,121 @@ class EditorTests : public QObject {
         list->setCurrentRow(2);
         window.previewController().setPaused(false);
         QTRY_VERIFY_WITH_TIMEOUT(!list->item(2)->icon().isNull(), 10000);
+    }
+
+    void favoriteSurvivesRestartAndMovingOriginal() {
+        QTemporaryDir data;
+        QVERIFY(data.isValid());
+        const auto artwork = data.filePath("original.flame");
+        const auto profile = data.filePath("profile");
+        {
+            MainWindow window(false, nullptr, profile);
+            window.previewController().setPaused(true);
+            QVERIFY(window.openStarterLibrary());
+            window.session().save(artwork);
+            window.show();
+            QVERIFY(throughAction<QDialog>(window, "actionSaveFavorite", [](QDialog &dialog) {
+                QCOMPARE(dialog.objectName(), QString("saveFavoriteDialog"));
+                widget<QLineEdit>(dialog, "favoriteTags")->setText("spirals, amber");
+                widget<QPushButton>(dialog, "favoriteSave")->click();
+            }));
+            QVERIFY(!window.session().isModified());
+        }
+        QVERIFY(QFile::rename(artwork, data.filePath("moved.flame")));
+        MainWindow reopened(false, nullptr, profile);
+        reopened.previewController().setPaused(true);
+        reopened.openExample();
+        reopened.show();
+        const auto original = reopened.session().document().bytes();
+        const auto count = reopened.session().document().entries().size();
+        QVERIFY(throughAction<QDialog>(reopened, "actionBrowseFavorites", [](QDialog &dialog) {
+            QCOMPARE(dialog.objectName(), QString("favoritesDialog"));
+            widget<QLineEdit>(dialog, "favoritesSearch")->setText("amber");
+            auto *list = widget<QListWidget>(dialog, "favoritesList");
+            QTRY_VERIFY(list->count() > 0);
+            list->setCurrentRow(0);
+            widget<QPushButton>(dialog, "favoriteInsert")->click();
+        }));
+        QCOMPARE(reopened.session().document().entries().size(), count + 1);
+        QCOMPARE(reopened.session().selectedFlame(), int(count));
+        QCOMPARE(reopened.session().document().entries().at(count).name, std::string("Ember spiral"));
+        widget<QAction>(reopened, "actionUndo")->trigger();
+        QCOMPARE(reopened.session().document().bytes(), original);
+    }
+
+    void applyExplorerTileUndoAndReopen() {
+        QTemporaryDir data;
+        QVERIFY(data.isValid());
+        MainWindow window(false, nullptr, data.path());
+        window.previewController().setPaused(true);
+        fastPreview(window);
+        QVERIFY(window.openStarterLibrary());
+        window.show();
+        auto &session = window.session();
+        const auto before = session.document().bytes();
+        const auto path = data.filePath("variation.flame");
+        session.save(path);
+        QVERIFY(throughAction<QDialog>(window, "actionVariationExplorer", [](QDialog &dialog) {
+            const auto matches = widget<QListWidget>(dialog, "variationBrowser")->findItems("swirl", Qt::MatchExactly);
+            QCOMPARE(matches.size(), 1);
+            widget<QListWidget>(dialog, "variationBrowser")->setCurrentItem(matches.front());
+            widget<QLineEdit>(dialog, "sweepFrom")->setText("0");
+            widget<QLineEdit>(dialog, "sweepTo")->setText("0.6");
+            auto *chosen = widget<QToolButton>(dialog, "sweepTile5");
+            QTRY_VERIFY_WITH_TIMEOUT(chosen->isEnabled(), 12000);
+            QCOMPARE(chosen->text(), QString("0.6"));
+            chosen->click();
+            widget<QPushButton>(dialog, "sweepApply")->click();
+        }));
+        auto expected = LegacyDocument::parse(before);
+        auto terms = expected.render_model(0).transforms.at(0).variations;
+        auto swirl = std::find_if(terms.begin(), terms.end(), [](const Term &term) {
+            return term.id == Variation::swirl;
+        });
+        QVERIFY(swirl != terms.end());
+        swirl->weight = 0.6;
+        LegacyTransformEdits edit;
+        edit.variations = terms;
+        edit.initialize_new_variations = true;
+        expected.edit_transform(0, 0, edit);
+        QCOMPARE(session.document().bytes(), expected.bytes());
+        QCOMPARE(session.undoStack().count(), 1);
+        QVERIFY(window.previewController().isPaused());
+        widget<QAction>(window, "actionUndo")->trigger();
+        QCOMPARE(session.document().bytes(), before);
+        widget<QAction>(window, "actionRedo")->trigger();
+        widget<QAction>(window, "actionSave")->trigger();
+        QVERIFY(window.openFile(path));
+        QCOMPARE(session.document().bytes(), expected.bytes());
+    }
+
+    void closeExplorerAndSaveWhileThumbnailsAreActive() {
+        QTemporaryDir data;
+        QVERIFY(data.isValid());
+        MainWindow window(false, nullptr, data.path());
+        fastPreview(window);
+        QVERIFY(window.openStarterLibrary());
+        window.show();
+        const auto path = data.filePath("explored.apoproject");
+        window.session().save(path);
+        for (int index = 0; index < 3; ++index) {
+            window.session().selectFlame(index);
+            const auto original = window.session().document().bytes();
+            QVERIFY(throughAction<QDialog>(window, "actionVariationExplorer", [index](QDialog &dialog) {
+                QCOMPARE(dialog.objectName(), QString("variationExplorerDialog"));
+                if (index == 1) {
+                    auto *firstTile = widget<QToolButton>(dialog, "sweepTile0");
+                    QTRY_VERIFY_WITH_TIMEOUT(!firstTile->icon().isNull(), 10000);
+                }
+                dialog.reject();
+            }));
+            QCOMPARE(window.session().document().bytes(), original);
+            enter(widget<QLineEdit>(window, "flameName"), QString("Saved study %1").arg(index + 1));
+            widget<QAction>(window, "actionSave")->trigger();
+            QVERIFY(!window.session().isModified());
+        }
+        QVERIFY(window.openFile(path));
+        QCOMPARE(window.session().document().entries().at(2).name, std::string("Saved study 3"));
     }
 
     void compactLibraryKeepsNamesAndSelection() {

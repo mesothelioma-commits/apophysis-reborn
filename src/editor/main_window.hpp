@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QPointer>
 #include <QSettings>
+#include <QTemporaryDir>
 #include <array>
 
 class QAction;
@@ -99,7 +100,11 @@ private:
       *copy_, *paste_, *moveUp_, *moveDown_;
   QAction *gradient_, *adjustments_, *mutations_, *randomFlames_,
       *duplicateFlame_, *deleteFlame_;
-  QAction *queueAction_, *animation_;
+  QAction *queueAction_, *animation_, *saveFavorite_, *browseFavorites_, *variationExplorer_;
+  QString favoritesDirectory_;
+  std::optional<QTemporaryDir> temporaryFavorites_;
+  QString favoriteStorage();
+  void exploreVariations();
   std::unique_ptr<LocalAiConnection> localAi_;
   QPointer<ScriptDialog> aiReview_;
   QLabel *aiIndicator_ = nullptr;
