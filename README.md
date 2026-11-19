@@ -12,17 +12,17 @@ Save an editable flame with tags from the **Flame library** dock. Reopen **Favor
 
 An MCP-compatible assistant on the same computer can inspect the editor’s selected flame, see its live preview and propose Lua edits. Use **Tools → Local AI connection…** to copy the client configuration and enable sharing for the current session. Run a proposal on a copy, preview its results, then apply or discard it. The Windows companion is included in both Windows editions. [Connect an assistant and try three variations](docs/LOCAL_AI.md)
 
-## Published Windows x64 downloads · 0.14.0
+## Published Windows x64 downloads · 0.15.0
 
 | Download | How to use it |
 | --- | --- |
-| [Windows installer](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/apophysis-reborn-0.14.0-windows-x64-setup.exe) | Close the editor and run Setup. It installs for the current Windows user. The installer is unsigned. |
-| [Portable ZIP](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/apophysis-reborn-0.14.0-windows-x64-portable.zip) | Use **Extract All** in File Explorer, then open **apophysis-reborn.exe** inside the extracted folder. Keep the companion executable and DLLs beside it. |
-| [Source and Git history](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/apophysis-reborn-0.14.0-git-source.zip) | Includes the source used to build the Windows packages and a restorable Git history. |
-| [Offline guides, examples and plug-in SDK](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/Apophysis-Reborn-0.14.0-Guides.zip) | Extract the ZIP. Use the manual to learn the editor, or follow a walkthrough below. |
-| [SHA-256 checksums](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.14.0/SHA256SUMS.txt) | Compare a download with its published hash using PowerShell: `Get-FileHash -Algorithm SHA256 'path-to-file'`. |
+| [Windows installer](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.15.0/apophysis-reborn-0.15.0-windows-x64-setup.exe) | Close the editor and run Setup. It installs for the current Windows user. The installer is unsigned. |
+| [Portable ZIP](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.15.0/apophysis-reborn-0.15.0-windows-x64-portable.zip) | Use **Extract All** in File Explorer, then open **apophysis-reborn.exe** inside the extracted folder. Keep the companion executable and DLLs beside it. |
+| [Source and Git history](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.15.0/apophysis-reborn-0.15.0-git-source.zip) | Includes the source used to build the Windows packages and a restorable Git history. |
+| [Offline guides, examples and plug-in SDK](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.15.0/Apophysis-Reborn-0.15.0-Guides.zip) | Extract the ZIP. Use the manual to learn the editor, or follow a walkthrough below. |
+| [SHA-256 checksums](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.15.0/SHA256SUMS.txt) | Compare a download with its published hash using PowerShell: `Get-FileHash -Algorithm SHA256 'path-to-file'`. |
 
-Both Windows editions can render offline. CPU rendering works without a Vulkan driver. GPU sampling requires a driver that exposes Vulkan. Setup installs the new payload before attempting to remove the most recent older registered version. Save artwork in a folder of your own. [All release assets](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.14.0)
+Both Windows editions can render offline. CPU rendering works without a Vulkan driver. GPU sampling requires a driver that exposes Vulkan. Setup installs the new payload before attempting to remove the most recent older registered version. Save artwork in a folder of your own. [All release assets](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.15.0)
 
 ## Plug-ins, scripts and local AI
 

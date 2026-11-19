@@ -13,11 +13,11 @@ Use a GitHub fork when you want an AI coding assistant to modify your own copy. 
    cd apophysis-reborn
    git remote add upstream https://github.com/mesothelioma-commits/apophysis-reborn.git
    git fetch upstream --tags
-   git switch -c work/first-change v0.14.0
+   git switch -c work/first-change v0.15.0
    git remote -v
    ```
 
-   `origin` should point to your fork and `upstream` to the published project. The command starts at the public 0.14.0 release. For a 0.15.0 build under review, clone the Git bundle included with its matching source ZIP and branch from that checkout’s HEAD. Run `git show --no-patch v0.14.0` to see the release commit. To start from later upstream work, create your branch from `upstream/main`.
+   `origin` should point to your fork and `upstream` to the published project. The command starts at the public 0.15.0 release. Run `git show --no-patch v0.15.0` to see the release commit. To start from later upstream work, create your branch from `upstream/main`.
 
 3. Open the cloned folder in your AI coding tool. With a hosted tool, select your fork or connect it and grant access to that repository. Select your work branch, or have the assistant make a new branch in your fork. Give the tool a specific change, a supported platform, and a way you can tell the feature works.
 
@@ -79,4 +79,4 @@ Review `git diff`, open your test project, save it under a new name, reopen it, 
 
 When your commit is ready, run `git push -u origin HEAD`. On GitHub, choose **your fork’s main branch** as the pull request base if you want the change only in your own project.
 
-For a distributable build, set the intended application version, commit and tag the tested source, rebuild from that commit, and produce new installer and portable assets from the same staged runtime. Include checksums, the exact revision, actual test outcomes, platform limits, and corresponding sources. Keep the original Apophysis credits, Reborn’s AI disclosure, and all relevant license notices. The 0.14.0 tree has component-specific license records and no project-wide license for Reborn’s own implementation. Review the applicable terms before distributing your version. [Packaging](../packaging/README.md) · [Notices and provenance](LICENSES.md)
+For a distributable build, set the intended application version, commit and tag the tested source, rebuild from that commit, and produce new installer and portable assets from the same staged runtime. Include checksums, the exact revision, actual test outcomes, platform limits, and corresponding sources. Keep the original Apophysis credits, Reborn’s AI disclosure, and all relevant license notices. The 0.15.0 tree has component-specific license records and no project-wide license for Reborn’s own implementation. Review the applicable terms before distributing your version. [Packaging](../packaging/README.md) · [Notices and provenance](LICENSES.md)
