@@ -1,4 +1,6 @@
-# 0.17.0 development build
+# Apophysis Reborn 0.17.0
+
+[Download the Windows x64 installer](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.17.0/apophysis-reborn-0.17.0-windows-x64-setup.exe) · [Release files and SHA-256 checksum](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.17.0)
 
 ## Animate a property
 

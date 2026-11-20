@@ -2,11 +2,15 @@
 
 **Apophysis Reborn is an unofficial, AI-generated clone of the original Apophysis fractal flame editor.** The original Apophysis was created by Mark Townsend and contributors. Reborn recreates its editing and rendering workflow in C++20 and Qt 6 for modern CPUs and Vulkan-capable GPUs. AI generated the Reborn application code and documentation. The repository owner directed and published the project. They did not personally write the application code. The original creators and third-party contributors retain credit for their own work.
 
+**[Download Apophysis Reborn 0.17.0 for Windows x64 (.exe)](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.17.0/apophysis-reborn-0.17.0-windows-x64-setup.exe)**
+
+Close the editor, renderer and AI companion, then run Setup. It installs for your Windows account and removes older registered versions. The installer is unsigned. [Release notes and checksum](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.17.0)
+
 ![Eight starter flames in Apophysis Reborn 0.13.0](preview/starter-library-0.13.0.png)
 
-## 0.17.0 development build
+## What’s new in 0.17.0
 
-The animation timeline supports individual camera and tone keys. Compose independent flame projects or PNG sequences from the Tools menu and export frames or an MP4. Classic 2D support now includes splits and elliptic. [Development build guide](docs/RELEASE_0.17.0.md)
+The animation timeline supports individual camera and tone keys. Compose independent flame projects or PNG sequences from the Tools menu and export frames or an MP4. Classic 2D support now includes splits and elliptic. [0.17.0 user guide](docs/RELEASE_0.17.0.md)
 
 ## 0.16.0 testing build
 
@@ -20,7 +24,7 @@ Save an editable flame with tags from the **Flame library** dock. Reopen **Favor
 
 An MCP-compatible assistant on the same computer can inspect the editor’s selected flame, see its live preview and propose Lua edits. Use **Tools → Local AI connection…** to copy the client configuration and enable sharing for the current session. Run a proposal on a copy, preview its results, then apply or discard it. The Windows companion is included in both Windows editions. [Connect an assistant and try three variations](docs/LOCAL_AI.md)
 
-## Published Windows x64 downloads · 0.15.0
+## Archived Windows x64 downloads · 0.15.0
 
 | Download | How to use it |
 | --- | --- |
@@ -30,7 +34,7 @@ An MCP-compatible assistant on the same computer can inspect the editor’s sele
 | [Offline guides, examples and plug-in SDK](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.15.0/Apophysis-Reborn-0.15.0-Guides.zip) | Extract the ZIP. Use the manual to learn the editor, or follow a walkthrough below. |
 | [SHA-256 checksums](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.15.0/SHA256SUMS.txt) | Compare a download with its published hash using PowerShell: `Get-FileHash -Algorithm SHA256 'path-to-file'`. |
 
-Both Windows editions can render offline. CPU rendering works without a Vulkan driver. GPU sampling requires a driver that exposes Vulkan. Setup installs the new payload before attempting to remove the most recent older registered version. Save artwork in a folder of your own. [All release assets](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.15.0)
+Both Windows editions can render offline. CPU rendering works without a Vulkan driver. GPU sampling requires a driver that exposes Vulkan. The 0.15.0 installer removes only the most recent older registered version after installing its files. Save artwork in a folder of your own. [All release assets](https://github.com/mesothelioma-commits/apophysis-reborn/releases/tag/v0.15.0)
 
 ## Plug-ins, scripts and local AI
 
