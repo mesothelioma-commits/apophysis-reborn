@@ -573,60 +573,68 @@ bool contains_directory(const fs::path &parent, fs::path path) {
   }
   return false;
 }
+void retire_release(const fs::path &current_root, const Registered &old,
+                    const std::map<apo::installer::Version, Registered> &releases) {
+  const auto &previous = old.version;
+  log(L"Checking previous version " + previous + L" in " + old.root.wstring());
+  Directories dirs;
+  const auto prior = final_directory(dirs, old.root);
+  // Guard physical folder aliases as well as nested custom install paths.
+  // Release these additional handles before trying to remove an empty old root.
+  {
+    Directories other_dirs;
+    auto check_overlap = [&](const fs::path &other) {
+      const auto path = final_directory(other_dirs, other);
+      require(!contains_directory(prior, path) && !contains_directory(path, prior),
+              L"Two registered installation folders overlap");
+    };
+    check_overlap(current_root);
+    for (const auto &[number, release] : releases) {
+      if (release.version == payload_version || release.version == previous) continue;
+      if (GetFileAttributesW(release.root.c_str()) == INVALID_FILE_ATTRIBUTES && missing(GetLastError())) continue;
+      check_overlap(release.root);
+    }
+  }
+  Key key;
+  open_registration(key, previous);
+  require(product_registration(key.value, previous) &&
+          same_path(old.root, absolute(read_value(key.value, L"InstallLocation").c_str())) &&
+          same_path(old.root / L"apophysis-reborn.exe", absolute(read_value(key.value, L"DisplayIcon").c_str())) &&
+          read_value(key.value, L"UninstallString") == L"\"" + (old.root / L"Uninstall.exe").wstring() + L"\"",
+          L"The previous version's registration does not match its installation folder");
+  {
+    // Portable distributions have the same runtime receipt but no registered
+    // setup-generated uninstaller. Verify that identity without running it.
+    const auto uninstaller = read_file(old.root / L"Uninstall.exe");
+    require(hash_file(uninstaller.value) == utf8(read_value(key.value, L"UninstallerSHA256")),
+            L"The previous version's uninstaller differs from its registration");
+  }
+  const auto files = read_receipt(old.root, previous, key.value);
+  remove_install(old.root, previous, key, files, dirs);
+  log(L"Finished removing the previous version " + previous);
+}
 int retire_previous(const fs::path &current_root) {
-  std::wstring previous;
   try {
     const auto incoming = apo::installer::parse_version(payload_version);
     require(incoming.has_value(), L"Invalid installer release version");
-    // The incoming key has just been created. install() already rejects any
-    // pre-existing equal registration, including a concurrent creation.
-    auto releases = installed_releases();
+    const auto releases = installed_releases();
     apo::installer::UpgradeSelection selection(*incoming);
     for (const auto &[number, release] : releases)
       if (number != *incoming) selection.consider(number);
-    if (!selection.previous()) return 0;
-    const auto &old = releases.at(*selection.previous());
-    previous = old.version;
-    log(L"Checking previous version " + previous + L" in " + old.root.wstring());
-    Directories dirs;
-    const auto prior = final_directory(dirs, old.root);
-    // Guard physical folder aliases as well as nested custom install paths.
-    // Release these additional handles before trying to remove an empty old root.
-    {
-      Directories other_dirs;
-      auto check_overlap = [&](const fs::path &other) {
-        const auto path = final_directory(other_dirs, other);
-        require(!contains_directory(prior, path) && !contains_directory(path, prior),
-                L"Two registered installation folders overlap");
-      };
-      check_overlap(current_root);
-      for (const auto &[number, release] : releases) {
-        if (number == *incoming || release.version == previous) continue;
-        if (GetFileAttributesW(release.root.c_str()) == INVALID_FILE_ATTRIBUTES && missing(GetLastError())) continue;
-        check_overlap(release.root);
+
+    int result = 0;
+    for (const auto &number : selection.previous()) {
+      const auto &old = releases.at(number);
+      try {
+        retire_release(current_root, old, releases);
+      } catch (const std::exception &error) {
+        log(L"Cleanup deferred for " + old.version + L". " + from_utf8(error.what()));
+        result = 20;
       }
     }
-    Key key;
-    open_registration(key, previous);
-    require(product_registration(key.value, previous) &&
-            same_path(old.root, absolute(read_value(key.value, L"InstallLocation").c_str())) &&
-            same_path(old.root / L"apophysis-reborn.exe", absolute(read_value(key.value, L"DisplayIcon").c_str())) &&
-            read_value(key.value, L"UninstallString") == L"\"" + (old.root / L"Uninstall.exe").wstring() + L"\"",
-            L"The previous version's registration does not match its installation folder");
-    {
-      // Portable distributions have the same runtime receipt but no registered
-      // setup-generated uninstaller. Verify that identity without running it.
-      const auto uninstaller = read_file(old.root / L"Uninstall.exe");
-      require(hash_file(uninstaller.value) == utf8(read_value(key.value, L"UninstallerSHA256")),
-              L"The previous version's uninstaller differs from its registration");
-    }
-    const auto files = read_receipt(old.root, previous, key.value);
-    remove_install(old.root, previous, key, files, dirs);
-    log(L"Finished removing the previous version " + previous);
-    return 0;
+    return result;
   } catch (const std::exception &error) {
-    log(L"New version installed. Previous version cleanup deferred. " + from_utf8(error.what()));
-    log(L"Close the editor and render processes. Use Windows Installed apps to uninstall the previous version " + previous + L".");
+    log(L"New version installed. Could not enumerate older releases: " + from_utf8(error.what()));
     return 20;
   }
 }

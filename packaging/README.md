@@ -104,13 +104,12 @@ supports `/NOSTARTMENU` and `/DESKTOP`. NSIS `/D=` must be the final argument,
 without surrounding quotes even when its value contains spaces.
 
 The target must be new or empty, on a local drive, without reparse ancestors.
-The 0.12.0 installer compares registered release numbers numerically. Installers published through 0.11.0 keep versions side by side. When the
-incoming version is newer than the highest registered Apophysis Reborn version
-for the current user, Setup installs and registers the new version before
-removing that single previous installation. Its custom installation folder is
-supported. Additional historical releases, portable copies and other Windows
-accounts keep their installations. Installing an older version preserves the
-newer version. The existing same-version registration check still applies.
+Setup 0.17.0 registers the new release, then removes every older Apophysis Reborn
+release registered for the current user, newest first. It verifies each old
+receipt and file inventory, including custom installation directories. Portable
+copies, other users' installations and user-created files stay in place.
+A downgrade preserves existing installations. A locked or unverified version
+is reported separately while cleanup continues for other eligible releases.
 
 Before upgrading, exit the editor and stop the MCP server in your AI client to release the Windows executable handles. If the client configuration uses an absolute versioned path, point it at the new copy of `apophysis-mcp.exe` after the upgrade.
 
