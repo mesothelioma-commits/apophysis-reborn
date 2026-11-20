@@ -252,7 +252,7 @@ void timeline_tests() {
   rejects([&] { validate_animation_structure(invalid); }, "strictly ordered");
   invalid = clip; invalid.keyframes[1].frame = clip.frame_count;
   rejects([&] { validate_animation_structure(invalid); }, "inside");
-  invalid = clip; invalid.version = 2;
+  invalid = clip; invalid.version = AnimationClip::current_version + 1;
   rejects([&] { PreparedAnimation prepared(invalid); }, "version");
   invalid = clip; invalid.keyframes.resize(257);
   rejects([&] { validate_animation_structure(invalid); }, "256 keyframes");

@@ -36,7 +36,7 @@ enum class Variation : unsigned {
     disc, spiral, hyperbolic, diamond, ex, julia, bent, waves, fisheye, popcorn,
     exponential, power, cosine, rings, fan, blob, pdj, fan2, rings2, eyefish, bubble,
     cylinder, perspective, noise, julian, juliascope, blur, gaussian_blur, radial_blur,
-    pie, ngon, curl, rectangles, foci = 64, pre_blur = 67, plugin = 0xffff
+    pie, ngon, curl, rectangles, elliptic = 62, foci = 64, pre_blur = 67, splits = 0xfffe, plugin = 0xffff
 };
 struct VariationInfo { Variation id; std::string_view name; };
 std::span<const VariationInfo> variation_registry();
@@ -57,6 +57,7 @@ struct VariationParameters {
     double pie_slices = 6, pie_rotation = 0, pie_thickness = .5;
     double ngon_sides = 5, ngon_power = 3, ngon_circle = 1, ngon_corners = 2;
     double curl_c1 = 1, curl_c2 = 0;
+    double splits_x = 0, splits_y = 0;
     double rectangles_x = 1, rectangles_y = 1;
 };
 struct VariationParameterInfo {

@@ -5,7 +5,7 @@
 | 0.14.0 | Released | Connect a local MCP client, inspect the selected flame, and review a proposed Lua edit in the desktop editor. |
 | 0.15.0 | Released | Save editable favorites with tags across projects. Browse built-in variations and compare previews of one weight or parameter at a fixed seed. |
 | 0.16.0 | Testing build | Export an optional editable flame in a PNG. Inspect a final-quality crop at the intended output size with a transparency checkerboard. Reuse samples for compatible tone adjustments. |
-| 0.17.0 | Next planned build | Edit individual animation properties, render classic 2D flames, compose flame layers, and export animation to MP4. |
+| 0.17.0 | Development build | Edit individual animation properties, render classic 2D flames, compose flame layers, and export animation to MP4. |
 
 ## 0.17.0 scope
 

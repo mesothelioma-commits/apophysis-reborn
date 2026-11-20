@@ -241,7 +241,7 @@ AnimationClip parse_animation(std::string_view bytes) {
   blank(root);
   AnimationClip clip;
   clip.version = integer<unsigned>(required(root, "version"), "version");
-  if (clip.version != AnimationClip::current_version)
+  if (clip.version != 1 && clip.version != AnimationClip::current_version)
     fail("unsupported animation version " + std::to_string(clip.version) + "; original payload remains preservable");
   clip.name = required(root, "name");
   clip.rate.numerator = integer<std::uint32_t>(required(root, "fps-num"), "fps-num");
@@ -256,6 +256,25 @@ AnimationClip parse_animation(std::string_view bytes) {
   clip.seed_mode = choice(root, "seed-mode", {AnimationSeedMode::fixed, AnimationSeedMode::per_frame});
   for (const auto index : root.children) {
     const auto &node = nodes[index];
+    if (node.name == "property-key") {
+      attributes(node, {"property", "frame", "value", "easing"});
+      blank(node);
+      if (!node.children.empty()) fail("unexpected nested property key data");
+      const auto name = required(node, "property");
+      const auto property = std::find_if(animated_properties.begin(), animated_properties.end(),
+          [&](const auto &p) { return p.name == name; });
+      if (property == animated_properties.end()) fail("unknown animated property " + name);
+      auto &track = clip.tracks[property - animated_properties.begin()];
+      if (track.size() >= animation_keyframe_limit) fail("too many keys on one property");
+      const auto value = required(node, "value");
+      double number{};
+      const auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number);
+      if (ec != std::errc{} || end != value.data() + value.size()) fail("invalid property key value");
+      track.push_back({integer<std::uint32_t>(required(node, "frame"), "frame"), number,
+          choice(node, "easing", {AnimationEasing::hold, AnimationEasing::linear,
+                                 AnimationEasing::smoothstep, AnimationEasing::smootherstep})});
+      continue;
+    }
     if (node.name != "keyframe") fail("unsupported animation child " + node.name);
     if (clip.keyframes.size() >= animation_keyframe_limit) fail("too many keyframes");
     attributes(node, {"frame", "name", "easing", "plugin-identity"});
@@ -307,6 +326,16 @@ std::string serialize_animation(const AnimationClip &clip) {
       out += "    <transform id=\"" + escape(id) + "\"/>\n";
     out += "  </keyframe>\n";
     if (out.size() > animation_payload_limit) fail("serialized animation exceeds 8 MiB");
+  }
+  for (std::size_t i = 0; i < clip.tracks.size(); ++i) {
+    for (const auto &key : clip.tracks[i]) {
+      char buffer[64];
+      auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), key.value);
+      if (error != std::errc{}) fail("cannot format property key");
+      out += "  <property-key property=\"" + std::string(animated_properties[i].name) +
+          "\" frame=\"" + std::to_string(key.frame) + "\" value=\"" + std::string(buffer, end) +
+          "\" easing=\"" + std::string(animation_name(key.easing)) + "\"/>\n";
+    }
   }
   out += "</apophysis-animation>\n";
   if (out.size() > animation_payload_limit) fail("serialized animation exceeds 8 MiB");

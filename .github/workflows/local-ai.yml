@@ -7,10 +7,18 @@ on:
       - feature/local-ai-connection
       - feature/0.15-flame-library
       - feature/0.16-render-proof
+      - feature/0.17-animation-composition
     paths:
       - .github/workflows/local-ai.yml
       - CMakeLists.txt
       - cmake/**
+      - src/animation*
+      - src/flame.*
+      - src/gpu_kernel.*
+      - src/generated/orbit_spv.hpp
+      - shaders/**
+      - tests/animation*
+      - tests/extended_variation_tests.cpp
       - src/ai_mcp/**
       - src/editor/**
       - src/script*
@@ -60,11 +68,11 @@ jobs:
       - name: Build the editor, helper and live integration test
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests flame-favorites-tests variation-explorer-tests editor-tests render-proof-dialog-tests render-proof-tests file-render-tests render-queue-tests image-stream-tests
+          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests flame-favorites-tests variation-explorer-tests editor-tests render-proof-dialog-tests render-proof-tests file-render-tests render-queue-tests image-stream-tests animation-tests animation-editor-tests extended-variation-tests
           build/apophysis-mcp --version
       - name: Exercise MCP and the real editor over local sockets
         run: |
-          ctest --test-dir build --no-tests=error --output-on-failure -R '^(flame_favorites|variation_explorer|editor_workflow|render_proof|render_proof_dialog|file_render|render_queue|image_stream)$'
+          ctest --test-dir build --no-tests=error --output-on-failure -R '^(flame_favorites|variation_explorer|editor_workflow|render_proof|render_proof_dialog|file_render|render_queue|image_stream|animation|animation_editor|extended_variations)$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_mcp$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_editor$'
 
@@ -101,12 +109,12 @@ jobs:
       - name: Build the native Windows executables
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
-          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests flame-favorites-tests variation-explorer-tests editor-tests render-proof-dialog-tests render-proof-tests file-render-tests render-queue-tests image-stream-tests
+          cmake --build build --parallel 3 --target apophysis-reborn apophysis-mcp local-ai-editor-tests flame-favorites-tests variation-explorer-tests editor-tests render-proof-dialog-tests render-proof-tests file-render-tests render-queue-tests image-stream-tests animation-tests animation-editor-tests extended-variation-tests
           ./build/apophysis-mcp.exe --version
       - name: Exercise MCP and the real editor over local named pipes
         id: windows_tests
         run: |
-          ctest --test-dir build --no-tests=error --output-on-failure -R '^(flame_favorites|variation_explorer|editor_workflow|render_proof|render_proof_dialog|file_render|render_queue|image_stream)$'
+          ctest --test-dir build --no-tests=error --output-on-failure -R '^(flame_favorites|variation_explorer|editor_workflow|render_proof|render_proof_dialog|file_render|render_queue|image_stream|animation|animation_editor|extended_variations)$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_mcp$'
           ctest --test-dir build --no-tests=error --verbose -R '^local_ai_editor$'
       - name: Identify individual queue cases after a Windows test failure

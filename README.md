@@ -4,6 +4,10 @@
 
 ![Eight starter flames in Apophysis Reborn 0.13.0](preview/starter-library-0.13.0.png)
 
+## 0.17.0 development build
+
+The animation timeline supports individual camera and tone keys. Compose independent flame projects or PNG sequences from the Tools menu and export frames or an MP4. Classic 2D support now includes splits and elliptic. [Development build guide](docs/RELEASE_0.17.0.md)
+
 ## 0.16.0 testing build
 
 Choose **Render image… → Proof a crop…** to inspect a region at final resolution and adjust its tone using the same samples. Select **Include editable flame in PNG** to make an image that opens as an editable project. [Walkthrough](docs/USER_MANUAL.md#proof-and-editable-png) · [0.16.0 release notes](docs/RELEASE_0.16.0.md)

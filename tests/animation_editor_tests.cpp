@@ -1,4 +1,6 @@
 #include "editor/animation_dialog.hpp"
+#include "editor/sequence_composition.hpp"
+#include <QProcess>
 #include "editor/main_window.hpp"
 #include "flame_io.hpp"
 #include "sha256.hpp"
@@ -58,6 +60,39 @@ void clean(MainWindow &window) { window.previewController().stop(); window.sessi
 class AnimationEditorTests : public QObject {
   Q_OBJECT
 private slots:
+  void composedLayersAndVideo() {
+    QTemporaryDir dir;
+    const auto bottom = dir.filePath("base_000000.png");
+    const auto top = dir.filePath("top_000000.png");
+    QImage img(13, 15, QImage::Format_RGBA8888);
+    img.fill(Qt::blue); QVERIFY(img.save(bottom));
+    img.fill(Qt::transparent); img.setPixelColor(0, 0, Qt::red); QVERIFY(img.save(top));
+    const auto output = dir.filePath("composite");
+    composeSequence({bottom, top}, output, false, 24, 1, 1000);
+    QImage frame(output + "/frame_000000.png");
+    QCOMPARE(frame.pixelColor(0,0), QColor(Qt::red));
+    QCOMPARE(frame.pixelColor(1,1), QColor(Qt::blue));
+    QVERIFY_EXCEPTION_THROWN(composeSequence({top}, output, false, 24, 1, 1000), std::exception);
+    ProjectFile project;
+    project.library_bytes = fixture().bytes();
+    project.animation_data = serialize_animation(clip());
+    const auto path = dir.filePath("layer.apoproject");
+    save_project(project, filesystemPath(path));
+    const auto projectOutput = dir.filePath("from-projects");
+    composeSequence({path, path}, projectOutput, false, 24, 1, 1000);
+    QCOMPARE(QDir(projectOutput).entryList({"*.png"}, QDir::Files).size(), 5);
+    const auto probe = QStandardPaths::findExecutable("ffprobe");
+    if (probe.isEmpty() || QStandardPaths::findExecutable("ffmpeg").isEmpty()) return;
+    const auto mp4 = dir.filePath("sequence.mp4");
+    composeSequence({projectOutput + "/frame_000000.png"}, mp4, true, 24000, 1001, 1000);
+    QProcess decoder;
+    decoder.start(probe, {"-v", "error", "-select_streams", "v:0", "-show_entries",
+                          "stream=codec_name,r_frame_rate,nb_frames", "-of", "default=nw=1", mp4});
+    QVERIFY(decoder.waitForFinished());
+    auto fields = decoder.readAllStandardOutput();
+    QVERIFY(fields.contains("codec_name=h264")); QVERIFY(fields.contains("nb_frames=5"));
+    QVERIFY(fields.contains("r_frame_rate=24000/1001"));
+  }
   void initTestCase() {
     QStandardPaths::setTestModeEnabled(true);
     QCoreApplication::setOrganizationName("ApophysisRebornTests");
@@ -111,6 +146,22 @@ private slots:
     QCOMPARE(serialize_project(window.session().projectSnapshot()), before);
     QCOMPARE(window.session().undoStack().count(), 0);
     clean(window);
+  }
+  void propertyKeysAcrossFramesAndProjectReload() {
+    AnimationDialog dialog(fixture(), 0, clip(), nullptr, quick());
+    auto field = control<QLineEdit>(dialog, "timelinePropertyValue");
+    auto set = control<QPushButton>(dialog, "timelineSetPropertyKey");
+    dialog.setFrame(1);
+    field->setText("1.25"); set->click();
+    dialog.setFrame(3);
+    field->setText("2.25"); set->click();
+    auto reloaded = parse_animation(serialize_animation(dialog.clip()));
+    PreparedAnimation result(reloaded);
+    QCOMPARE(result.evaluate(0).flame.zoom, 1.25);
+    QCOMPARE(result.evaluate(2).flame.zoom, 1.75);
+    QCOMPARE(result.evaluate(4).flame.zoom, 2.25);
+    control<QPushButton>(dialog, "timelineUndo")->click();
+    QCOMPARE(dialog.clip().tracks[0].size(), std::size_t(1));
   }
   void timelineEditsRemainPrivateAndSupportLocalUndo() {
     auto document = fixture(); auto c = clip();

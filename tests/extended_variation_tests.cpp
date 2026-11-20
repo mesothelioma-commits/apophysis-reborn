@@ -77,7 +77,7 @@ std::string document(const std::string &version, const std::string &term) {
 }
 
 void import_and_replay() {
-    check(variation_registry().size() == 43, "Expected 43 implemented registry entries");
+    check(variation_registry().size() == 45, "Expected 45 implemented registry entries");
     for (auto id : additions) {
         const std::string name(variation_name(id));
         check(find_variation(name) == id, "Registry lookup mismatch");
@@ -183,7 +183,7 @@ void studies(const char *filename) {
         check(image.invalid == 0 && image.plotted > options.samples / 5 && *high > *low + 20,
               "Study did not produce a well-framed nonuniform image: " + flame.name);
     }
-    std::cout << "All 43 variation studies rendered and passed picture-content checks\n";
+    std::cout << "All 45 variation studies rendered and passed picture-content checks\n";
 }
 } // namespace
 

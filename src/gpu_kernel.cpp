@@ -60,6 +60,8 @@ std::optional<Constants> variation_constants(Variation id, const VariationParame
         return Constants{2 * pi / p.ngon_sides, p.ngon_power / 2, p.ngon_corners, p.ngon_circle};
     case Variation::curl:
         return Constants{p.curl_c1, p.curl_c2};
+    case Variation::splits:
+        return Constants{p.splits_x, p.splits_y};
     case Variation::rectangles:
         return Constants{p.rectangles_x, p.rectangles_y};
     default:

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(apophysis_reborn VERSION 0.16.0 LANGUAGES CXX)
+project(apophysis_reborn VERSION 0.17.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -54,7 +54,7 @@ if(APO_BUILD_EDITOR)
         src/editor/flame_favorites.cpp src/editor/variation_explorer.cpp src/editor/render_proof_dialog.cpp
         src/editor/local_ai_connection.cpp src/editor/render_queue.cpp src/editor/script_dialog.cpp src/editor/plugin_dialog.cpp src/editor/main_window_extensions.cpp
         src/editor/color_curve_dialog.cpp src/editor/color_curve_dialog.hpp
-        src/editor/animation_dialog.cpp src/editor/animation_dialog.hpp src/editor/main_window_animation.cpp
+        src/editor/sequence_composition.cpp src/editor/animation_dialog.cpp src/editor/animation_dialog.hpp src/editor/main_window_animation.cpp
         src/editor/support_dialogs.cpp src/editor/support_resources.qrc)
     set_target_properties(flame-editor PROPERTIES AUTOMOC ON AUTORCC ON)
     target_include_directories(flame-editor PUBLIC src)

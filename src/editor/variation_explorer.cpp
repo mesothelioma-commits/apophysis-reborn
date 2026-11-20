@@ -74,6 +74,8 @@ constexpr CatalogEntry catalog[] = {
     {curl, "Waves and folds", "Bends the plane with a two-coefficient complex mapping."},
     {rectangles, "Waves and folds", "Reflects points within rectangular cells."},
     {foci, "Geometry", "Maps points around focal regions using exponential and periodic terms."},
+    {splits, "Geometry", "Offsets each quadrant independently along X and Y."},
+    {elliptic, "Geometry", "Maps points to elliptic coordinates around two foci."},
     {pre_blur, "Scatter", "Scatters the shared input before the other variations run."}
 };
 

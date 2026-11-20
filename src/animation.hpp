@@ -2,6 +2,7 @@
 
 #include "legacy_document.hpp"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -46,9 +47,25 @@ struct AnimationKeyframe {
   bool operator==(const AnimationKeyframe &) const = default;
 };
 
+struct PropertyKey {
+  std::uint32_t frame;
+  double value;
+  AnimationEasing easing;
+  bool operator==(const PropertyKey &) const = default;
+};
+
+struct AnimatedProperty {
+  std::string_view name;
+  double Flame::*member;
+};
+inline constexpr std::array animated_properties{
+    AnimatedProperty{"zoom", &Flame::zoom}, AnimatedProperty{"rotation", &Flame::rotate},
+    AnimatedProperty{"brightness", &Flame::brightness}, AnimatedProperty{"gamma", &Flame::gamma},
+    AnimatedProperty{"vibrancy", &Flame::vibrancy}};
+
 struct AnimationClip {
-  static constexpr unsigned current_version = 1;
-  unsigned version = current_version;
+  static constexpr unsigned current_version = 2;
+  unsigned version = 1; // Keep snapshot-only projects readable by earlier releases.
   std::string name = "Animation";
   AnimationRate rate;
   std::uint32_t frame_count = 121; // Exportable frames are 0 through count-1.
@@ -60,6 +77,7 @@ struct AnimationClip {
   AnimationSeedMode seed_mode = AnimationSeedMode::fixed;
   std::uint64_t seed = 123456;
   std::vector<AnimationKeyframe> keyframes;
+  std::array<std::vector<PropertyKey>, animated_properties.size()> tracks;
   bool operator==(const AnimationClip &) const = default;
 };
 

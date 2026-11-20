@@ -309,6 +309,16 @@ vec2 variation(uint kind, vec2 p, uint base, uint flags, uint constants, uint in
         return vec2(dx == 0.0 ? x : (2.0 * floor(x/dx) + 1.0) * dx - x,
                     dy == 0.0 ? y : (2.0 * floor(y/dy) + 1.0) * dy - y);
     }
+    case 65534u: {
+        float dx = value(constants), dy = value(constants + 1u);
+        return p + vec2(x >= 0.0 ? dx : -dx, y >= 0.0 ? dy : -dy);
+    }
+    case 62u: {
+        float major = 0.5 * length(vec2(x + 1.0, y)) + 0.5 * length(vec2(x - 1.0, y));
+        float latitude = asin(clamp(x / major, -1.0, 1.0));
+        float height = log(major + sqrt(max(0.0, major - 1.0)));
+        return (2.0 / PI) * vec2(latitude, y > 0.0 ? height : -height);
+    }
     case 64u: {
         float e = 0.5 * exp(x), inverse = 0.25 / e;
         float d = e + inverse - cos(y);

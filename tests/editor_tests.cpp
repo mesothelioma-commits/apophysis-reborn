@@ -607,7 +607,7 @@ class EditorTests : public QObject {
         auto tabs = widget<QTabWidget>(window, "transformTabs");
         tabs->setCurrentIndex(1);
         auto table = widget<QTableWidget>(window, "variationWeights");
-        QCOMPARE(table->rowCount(), 43);
+        QCOMPARE(table->rowCount(), int(variation_registry().size()));
         auto rows = table->findItems("perspective", Qt::MatchExactly);
         QCOMPARE(rows.size(), 1);
         table->setCurrentCell(rows.front()->row(), 1);

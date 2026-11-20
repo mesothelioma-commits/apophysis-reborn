@@ -37,7 +37,7 @@ HASHES = {
 
 EXPECTED_RENDERED = {
     "Apophysis7X.temp": {1, 2, 3, 4, 5},
-    "ApophysisAV.temp": {1, 2, 3, 6, 10, 11},
+    "ApophysisAV.temp": {1, 2, 3, 6, 8, 10, 11},
     "starfield.flame": {1},
     "samj-demo.flame": {1},
     "fox-3d-hack.flame": {1},

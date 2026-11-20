@@ -198,6 +198,7 @@ void formula_probes(const RenderOptions &options) {
                 p.pie_slices = 5; p.pie_rotation = -.45; p.pie_thickness = .28;
                 p.ngon_sides = 5; p.ngon_power = .85; p.ngon_circle = .64; p.ngon_corners = .34;
                 p.curl_c1 = -.32; p.curl_c2 = .16;
+                p.splits_x = -.63; p.splits_y = .28;
                 p.rectangles_x = matrix ? 0 : .39; p.rectangles_y = matrix ? -.55 : 0;
                 const double weight = matrix ? -.375 : .625;
                 t.variations = {{variation.id, weight}};
