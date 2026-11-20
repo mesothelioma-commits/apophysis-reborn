@@ -1,8 +1,8 @@
 {
   "schema": "apophysis-reborn.requirements-status",
   "schema_version": 1,
-  "release": "0.13.0",
-  "baseline_commit": "7e1071aa25c7b4f67c61fa7d70725d5440a48b4a",
+  "release": "0.17.0",
+  "baseline_commit": "078d14343744c53c42b2ae4e79e83ec8e051c147",
   "source_brief": {
     "title": "PROJECT: APOPHYSIS REBORN — Complete Modernization of the Original Apophysis Fractal Flame Editor",
     "sha256": "ab3ddda6d1dc5d7c7de8349650b217484ba5dc02118837724d466058ce45fd61",
@@ -22,9 +22,11 @@
     "additional_implemented": [
       "noise",
       "foci",
-      "pre_blur"
+      "pre_blur",
+      "splits",
+      "elliptic"
     ],
-    "total_builtin_registry": 43
+    "total_builtin_registry": 45
   },
   "requirements": [
     {
@@ -911,7 +913,7 @@
         "All variations in the definitive original-source inventory"
       ],
       "status": "partial",
-      "scope_and_limit": "All 40 variations named in the brief are implemented. Noise, foci and pre_blur bring the registry to 43. Historical plugins and full producer-specific inventories extend beyond that list.",
+      "scope_and_limit": "All 40 variations named in the brief are implemented. Noise, foci, pre_blur, splits and elliptic bring the registry to 45. Historical plugins and full producer-specific inventories extend beyond that list.",
       "evidence": [
         "docs/VARIATIONS.md",
         "docs/RESEARCH.md"
@@ -1644,7 +1646,7 @@
         "Temporal motion blur"
       ],
       "status": "partial",
-      "scope_and_limit": "Legacy time import requires explicit units and Reborn morphs use explicit IDs/pairing. Full historical interpreter parity, automatic matching, per-property tracks and subframe motion sampling are not implemented.",
+      "scope_and_limit": "Legacy time import uses explicit units and morphs use explicit transform IDs. Independent property tracks cover zoom, rotation, brightness, gamma and vibrancy. Historical interpreter parity, automatic matching and temporal motion blur remain open.",
       "evidence": [
         "docs/ANIMATION_MODEL.md",
         "docs/MORPHING.md"
@@ -1656,8 +1658,8 @@
       "requirements": [
         "Optional video encoding"
       ],
-      "status": "missing",
-      "scope_and_limit": "No video encoder, audio track or FFmpeg integration is bundled. Frame sequences can be processed separately.",
+      "status": "delivered",
+      "scope_and_limit": "The desktop composer encodes a silent H.264 MP4 from animated projects or PNG sequences using FFmpeg with libx264 on PATH.",
       "evidence": [
         "docs/ANIMATION_EDITOR.md"
       ]

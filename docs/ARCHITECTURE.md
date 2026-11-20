@@ -9,7 +9,7 @@
 | Sampling and tone mapping | src/render.hpp, src/render.cpp | Select the CPU or Vulkan sampler, retain the CPU compatibility and compute-reference streams, then apply shared filtering and tone mapping |
 | Compute contract and packing | src/gpu.hpp, src/gpu_kernel.hpp, src/gpu_kernel.cpp | Report devices, check FP32/model limits, pack the immutable render model and define the portable compute stream |
 | Vulkan runtime | src/vulkan_runtime.hpp, src/vulkan_runtime.cpp | Load the system API dynamically, select a compute device, check budgets, submit bounded work and read back the histogram |
-| Compute shader | shaders/orbit.comp, src/generated/orbit_spv.hpp | Evaluate all 43 variations, select transforms, advance independent orbits, project and accumulate integer histogram channels |
+| Compute shader | shaders/orbit.comp, src/generated/orbit_spv.hpp | Evaluate all 45 built-in variations, select transforms, advance independent orbits, project and accumulate integer histogram channels |
 | File render planner and checkpoint engine | src/render_file.hpp, src/render_file.cpp, src/render_internal.hpp | Budget bounded hit sampling and strip reconstruction; persist flushed chunks and an atomic checksummed manifest; validate resume identity and preserve destinations |
 | Output and image encoding | src/output_file.cpp, src/image.cpp, src/image_stream.hpp, src/image_stream.cpp | Stream BMP8, PPM8/16, PNG8/16 and TIFF8/16 rows, including straight PNG/TIFF alpha; atomically publish completed output |
 | Native render queue | src/editor/render_queue.hpp, src/editor/render_queue.cpp | Own immutable job snapshots, a sequential worker, persisted progress/settings, pause/resume and lifecycle |

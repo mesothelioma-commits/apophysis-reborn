@@ -3,9 +3,7 @@
 Milestone 9 adds native animation clips, explicit transform correspondence,
 camera/palette presets, timed flame-library import, evaluated frame export and
 resumable image sequences. `flame-cpu animation --help` lists the commands.
-The images are usable without a video encoder. Encoding them into a movie is a
-separate optional workflow; this milestone does not invoke FFmpeg or another
-hidden dependency.
+The CLI exports image sequences. To encode them as MP4, open **Tools → Compose image sequences…** in the desktop editor and select the first numbered PNG. [Composer guide](RELEASE_0.17.0.md#compose-and-export)
 
 An animation belongs to a native `.apoproject`. The original flame collection,
 its source encoding, the selected entry and unknown project-envelope fields

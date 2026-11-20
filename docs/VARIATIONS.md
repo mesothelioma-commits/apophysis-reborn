@@ -1,6 +1,6 @@
-# Variation coverage — 0.11.0
+# Variation coverage — 0.17.0
 
-The CPU registry contains **43 implemented variations**. Every entry appears in the editor's variation-weight table, accepts signed finite weights, imports and exports by its historical name, and has a study in `examples/variation-studies.flame`. A zero-weight entry contributes nothing and consumes no random numbers. This is an explicit supported subset; the complete historical plugin and variation inventory remains open.
+The CPU registry contains **45 implemented variations**. Every entry appears in the editor's variation-weight table, accepts signed finite weights, imports and exports by its historical name, and has a study in `examples/variation-studies.flame`. A zero-weight entry contributes nothing and consumes no random numbers. This is an explicit supported subset; the complete historical plugin and variation inventory remains open.
 
 ## Milestone 11 additions
 
@@ -21,7 +21,7 @@ Each of the following built-ins supports a signed weight in ordinary transforms 
 | `curl` | Warps the plane through a quadratic complex denominator | `c1`, `c2` |
 | `rectangles` | Reflects points in a rectangular grid. A zero cell size passes that axis through. | `x`, `y` |
 
-The final twelve entries in `examples/variation-studies.flame` use explicit parameter values. The third transform in each study contains its named variation. In radial blur the signed weight enters the spin calculation, so changing its sign can change the visible shape.
+The twelve Milestone 11 entries in `examples/variation-studies.flame` use explicit parameter values. The third transform in each study contains its named variation. In radial blur the signed weight enters the spin calculation, so changing its sign can change the visible shape.
 
 The normal test suite reads 432 expected point and RNG results from `tests/starting-variation-vectors.tsv`. They cover six input points, two signed weights and three seeds for each operation. The optional generator compiles the separate upstream FLAM3 functions and precomputations. It feeds them the same uniform random stream used for the comparison. These checks establish formula and draw-order agreement for the tested cases. They do not compare FLAM3’s native ISAAC seed sequence to Reborn’s generator.
 
@@ -90,9 +90,10 @@ The Milestone 5 source-level numerical comparison covers FLAM3 and original 2.09
 | Original IDs 0–14 | `linear`, `sinusoidal`, `spherical`, `swirl`, `horseshoe`, `polar`, `handkerchief`, `heart`, `disc`, `spiral`, `hyperbolic`, `diamond`, `ex`, `julia`, `bent` |
 | Added classic formulas | `waves`, `fisheye`, `popcorn`, `exponential`, `power`, `cosine`, `rings`, `fan`, `eyefish`, `cylinder` |
 | Earlier compatibility additions | `bubble`, `noise`, `julian`, `blur`, `foci`, `pre_blur` |
+| 0.17.0 AV compatibility | `splits` (offsets `splits_x` and `splits_y`), `elliptic` (FLAM3 ID 62) |
 | Milestone 11 formulas | `blob`, `pdj`, `fan2`, `rings2`, `perspective`, `juliascope`, `gaussian_blur`, `radial_blur`, `pie`, `ngon`, `curl`, `rectangles` |
 
-JuliaN exposes an integer `julian_power` and finite `julian_dist`. The Milestone 11 table above lists the additional named parameters. The built-in registry now covers all 40 variations named in the initial brief plus `noise`, `foci` and `pre_blur`.
+JuliaN exposes an integer `julian_power` and finite `julian_dist`. The Milestone 11 table above lists the additional named parameters. The built-in registry now covers all 40 variations named in the initial brief plus `noise`, `foci`, `pre_blur`, `splits` and `elliptic`.
 
 ## Independent numerical evidence
 

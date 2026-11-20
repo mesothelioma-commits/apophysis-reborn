@@ -27,11 +27,24 @@ Every shown attribute is required, even when it takes a default value. Element o
 
 An unknown animation version or schema must remain in `ProjectFile.animation_data` until the user explicitly replaces it. Failure to evaluate it is not permission to remove it. Saving other project settings preserves the original opaque payload. Known payloads can be edited and serialized canonically; their envelope whitespace and attribute spelling are not archival data. Their embedded legacy source bytes are archival data and remain exact.
 
+## Version 2 property keys
+
+Adding the first property key upgrades a version 1 animation payload to version 2. A snapshot-only version 1 clip can still be opened, evaluated and saved. Older readers can preserve an unfamiliar payload in the outer project.
+
+A version 2 timeline uses the same snapshots and accepts additional root children such as the following.
+
+```xml
+<property-key property="rotation" frame="0" value="0" easing="linear"/>
+<property-key property="rotation" frame="120" value="720" easing="hold"/>
+```
+
+Each of the five tracks (zoom, rotation, brightness, gamma and vibrancy) can contain up to 256 strictly increasing, unique frame positions within the clip. The outgoing easing names are `hold`, `linear`, `smoothstep` and `smootherstep`. After snapshot evaluation, each active track overrides its own property, including on exact snapshot frames. Values hold before the first and after the last property key. Rotations interpolate in unwrapped degrees.
+
 ## Exact snapshots and endpoint models
 
 `AnimationKeyframe.library_bytes` contains the complete original collection, not a canonical re-export of the selected flame. `selected_index` identifies its zero-based direct child entry. Base64 retains UTF-8, UTF-16LE/BE, Windows-1252 or other already supported legacy encodings, BOMs, comments, unknown sibling data, quote styles and whitespace. A keyframe retains an unknown sibling even if that sibling cannot render. Unsupported fields in the selected flame still prevent evaluation with a specific diagnostic.
 
-At an exact keyframe frame number, evaluation copies the parsed source model exactly. It does not rebuild affine coefficients, normalize angles, reorder transforms, expand Xaos rows, change palettes or apply interpolation to that endpoint. After the final keyframe, the last model holds until the last exportable frame. A hold segment also returns the unmodified left model until the next keyframe.
+Before applying property tracks, evaluation at an exact snapshot frame copies the parsed source model exactly. It does not rebuild affine coefficients, normalize angles, reorder transforms, expand Xaos rows, change palettes or apply interpolation to that endpoint. After the final keyframe, the last model holds until the last exportable frame. A hold segment also returns the unmodified left model until the next keyframe.
 
 The immutable prepared model owns any native variation modules needed by those snapshots. Disabling a plug-in after preparation prevents new evaluation contexts from acquiring it but does not invalidate an already prepared preview or sequence. The snapshot's `plugin_identity` records the sorted variation name, module ID, module version and actual binary SHA-256 for every used native variation. Preparation requires an exact match with the explicitly enabled module. A changed module or a build for another platform requires deliberate re-capture; a same-name or same-version replacement is insufficient.
 

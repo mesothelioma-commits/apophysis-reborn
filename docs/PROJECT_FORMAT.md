@@ -67,9 +67,9 @@ project never loads, installs or enables native code. The plugin manager retains
 its separate explicit enablement boundary. A project reference alone is not a
 trust decision.
 
-The project envelope preserves animation bytes independently of their meaning. M9
-adds a strict `apophysis-animation` version-1 schema, interpreted only by the
-animation module; see [ANIMATION_MODEL.md](ANIMATION_MODEL.md). Unknown payloads
+The project envelope preserves animation bytes independently of their meaning. The animation module
+reads snapshot timelines in version 1 and independent property keys in version 2 of
+the embedded `apophysis-animation` schema; see [ANIMATION_MODEL.md](ANIMATION_MODEL.md). Unknown payloads
 and future versions remain opaque and survive project saves. The timeline editor
 refuses implicit replacement, while the CLI requires `--replace-animation` for
 intentional replacement. There is no compressed archive or decompression step.

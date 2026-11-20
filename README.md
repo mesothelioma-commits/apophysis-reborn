@@ -52,7 +52,7 @@ Press **F1** in the editor for offline documentation. [User manual](docs/USER_MA
 
 ## Editing and rendering
 
-- Edit eight starter flames with affine transforms, palettes, tone curves, variations, mutation, and a seeded random generator. The renderer implements 43 built-in variations.
+- Edit eight starter flames with affine transforms, palettes, tone curves, variations, mutation, and a seeded random generator. The renderer implements 45 built-in variations.
 - Use multithreaded CPU rendering or Vulkan sampling. Render in strips, queue images, and resume compatible checkpoints. The image size limit is 16,384 pixels per side.
 - Save editable native projects, preserve supported parts of legacy flame libraries, and export PNG, TIFF, PPM, or BMP images. Use the timeline for numbered frame sequences or the command-line renderer for batch work.
 

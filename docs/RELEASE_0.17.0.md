@@ -19,3 +19,7 @@ Use the same canvas dimensions and frame numbers for all layers. Up to 1,000 fra
 The Variation explorer includes 2D splits with independent X and Y offsets and elliptic (FLAM3 variation 62). The Apophysis AV Phoenix Edition archive contains both in the Splits Elliptic base form. At its original 1920 × 1200 size, CPU and Mesa llvmpipe each completed 4 million samples with zero invalid orbit steps. With seed 123456, the mean absolute CPU-to-Vulkan difference was 30.33 RGB levels out of 255. The comparison measures agreement between renderers. Producer pixel fidelity and physical GPU output remain open.
 
 [Historical corpus and attribution](LEGACY_CORPUS.md) · [FLAM3 reference implementation](https://github.com/scottdraves/flam3/blob/1cdfc77275821182ad3c057e629c75a240dd52d3/variations.c) · [Splits formula comparison](https://github.com/thargor6/JWildfire/blob/master/src/org/jwildfire/create/tina/variation/SplitsFunc.java)
+
+## Verification and distribution
+
+Native Windows x64 and Linux CI passed on implementation commit `078d143`, including the local AI editor integration check. In the development workspace, 54 of 55 tests passed. The local AI test could not open its current-user socket. The Linux composition test exported a five-frame H.264 stream and verified its frame count and 24000/1001 playback rate with ffprobe. The Windows installer, portable ZIP, interactive upgrade and physical GPU checks are pending. [Native CI run](https://github.com/mesothelioma-commits/apophysis-reborn/actions/runs/44696133354)

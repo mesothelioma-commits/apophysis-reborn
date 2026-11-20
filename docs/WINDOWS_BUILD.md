@@ -178,3 +178,7 @@ Add `-DAPO_ENABLE_VULKAN=OFF` to the app configure command for a CPU-only runtim
 | lua-5.5.1.tar.gz | `1c4b4068d67061f2a2231ad2b5422e77acea1487ea9890f6320af614f4373dce` |
 
 [LLVM-MinGW release](https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104) · [Expat source](https://github.com/libexpat/libexpat/tree/R_2_10_0)
+
+## Checking MP4 export in 0.17.0
+
+FFmpeg is a runtime dependency for MP4 export. To check the encoder from Windows Git Bash, run `ffmpeg -hide_banner -encoders | grep libx264`. Start the editor with the same PATH. In **Tools → Compose image sequences…**, add a saved animation project and export to a new MP4 filename. Install ffprobe alongside FFmpeg to enable the optional codec, frame-count and frame-rate assertions in the animation editor test. [Composition walkthrough](RELEASE_0.17.0.md#compose-and-export)
