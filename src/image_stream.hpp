@@ -34,9 +34,11 @@ std::uint64_t image_export_upper_bound(int width, int height, const ImageExport 
 // Finite channels are clamped to [0,1] and quantized directly at the selected
 // depth. No intermediate RGB8 conversion or additional gamma transform occurs.
 // This writer does not own/replace a destination file. Wrap it in write_atomic.
+struct EditablePng;
 class ImageStreamWriter {
   public:
-    ImageStreamWriter(std::ostream &output, int width, int height, const ImageExport &options);
+    ImageStreamWriter(std::ostream &output, int width, int height, const ImageExport &options,
+                      const EditablePng* editable = nullptr);
     ~ImageStreamWriter();
     ImageStreamWriter(const ImageStreamWriter &) = delete;
     ImageStreamWriter &operator=(const ImageStreamWriter &) = delete;

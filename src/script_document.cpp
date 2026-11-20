@@ -15,8 +15,10 @@ void LegacyDocument::apply_model(
   // Canonical attributes are used only as values. The source itself is patched,
   // retaining its encoding, comments, quotes, metadata and other library
   // entries.
-  const auto before = parse(serialize_flame(original));
-  const auto after = parse(serialize_flame(model));
+  const auto mode = entries_.at(index).attributes.contains("reborn_render_values")
+                        ? FlameXmlMode::render_snapshot : FlameXmlMode::canonical;
+  const auto before = parse(serialize_flame(original, mode));
+  const auto after = parse(serialize_flame(model, mode));
   auto working = *this;
   std::vector<Patch> patches;
   auto difference = [](const auto &old, const auto &next) {

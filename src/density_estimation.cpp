@@ -80,10 +80,14 @@ DensityKernels::DensityKernels(const DensityPlan& p, std::stop_token stop) {
 
 std::vector<LightBin> density_strip(const Flame& f, const RenderGeometry& geometry,
         std::span<const Bin> bins, unsigned first, unsigned out_first, unsigned out_rows,
-        std::uint64_t samples, std::stop_token stop) {
+        std::uint64_t samples, std::stop_token stop, unsigned input_width) {
     check_stop(stop);
     const auto& p = geometry.density;
-    const std::int64_t stride = geometry.gpu.width, height = geometry.gpu.height;
+    // A horizontal crop retains enough columns on both sides for the density
+    // scatter, neighbor count and skipped producer border. Its interior can
+    // therefore use the exact same rolling sums and scatter order as a strip.
+    const std::int64_t stride = input_width ? input_width : geometry.gpu.width;
+    const std::int64_t height = geometry.gpu.height;
     const std::int64_t out_end = std::int64_t(out_first) + out_rows;
     const std::int64_t os = f.oversample;
     if (!f.density_estimator || !stride || !samples || !out_rows || out_end > height || bins.size() % stride)
@@ -104,7 +108,7 @@ std::vector<LightBin> density_strip(const Flame& f, const RenderGeometry& geomet
     const double even_scale = (os & 1) ? 1.0 : std::pow(double(os) / (os + 1.0), 2);
     // Larger oversampling windows share all but one row/column with their
     // neighbors. A rolling integer sum avoids rescanning each square per hit.
-    std::vector<std::uint64_t> columns(p.column_bytes(geometry.gpu.width) / sizeof(std::uint64_t));
+    std::vector<std::uint64_t> columns(p.column_bytes(unsigned(stride)) / sizeof(std::uint64_t));
     if (!columns.empty() && y0 < y1) {
         for (auto row = y0 - p.count_radius; row <= y0 + p.count_radius; ++row) {
             check_stop(stop);

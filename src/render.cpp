@@ -19,7 +19,7 @@ namespace apo {
 namespace {
 constexpr std::uint64_t quantum = (1u << 24) - 1;
 constexpr std::uint64_t max_samples = UINT64_MAX / quantum;
-constexpr std::uint64_t legacy_batch_size = 8192;
+constexpr auto legacy_batch_size = detail::cpu_batch_size;
 constexpr int burn_in = 32;
 using Bin = std::array<std::uint64_t, 4>; // R, G, B, opacity
 using Hit = detail::SampleHit;
@@ -473,39 +473,35 @@ CpuHits sample_cpu_hits(const Flame& f, const RenderOptions& opt, const RenderGe
     return result;
 }
 
-void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const Bin> bins,
-                 std::uint32_t first_row, int y, std::uint64_t samples,
-                 std::span<std::array<double, 4>> rgba, bool sixteen_bit, bool transparent,
-                 std::stop_token stop, std::span<const LightBin> density_light) {
+void filter_row(const Flame& f, const RenderGeometry& geometry, std::span<const Bin> bins,
+                unsigned first_row, int y, std::uint64_t samples, std::span<LightBin> rgba,
+                std::stop_token stop, std::span<const LightBin> density_light, RowWindow window) {
     check_cancelled(stop);
     const auto& kernel = geometry.kernel;
     const auto os = static_cast<std::size_t>(f.oversample);
-    const auto stride = std::size_t(geometry.gpu.width);
+    const auto stride = window.stride ? std::size_t(window.stride) : geometry.gpu.width;
     const auto footprint_bins = density_light.empty() ? bins.size() : density_light.size();
-    if (y < 0 || y >= f.height || rgba.size() != std::size_t(f.width) ||
-        std::size_t(y) * os + kernel.inset < first_row ||
-        (std::size_t(y) * os + kernel.inset + kernel.taps - first_row) * stride > footprint_bins)
+    if (y < 0 || y >= f.height || window.output_x < 0 || window.output_x >= f.width ||
+        rgba.empty() || rgba.size() > std::size_t(f.width - window.output_x))
+        throw std::invalid_argument("Invalid reconstruction row");
+    const auto global_x = std::size_t(window.output_x) * os + kernel.inset;
+    const auto global_y = std::size_t(y) * os + kernel.inset;
+    if (global_x < window.first_column || global_y < first_row ||
+        global_x - window.first_column + (rgba.size() - 1) * os + kernel.taps > stride ||
+        global_y - first_row + kernel.taps > footprint_bins / stride)
         throw std::invalid_argument("Reconstruction strip does not contain the complete filter footprint");
     const auto filter = f.filter_radius ? gaussian_weights(kernel) : std::vector<double>{};
     const double box_weight = 1.0 / double(os * os);
     const bool historical = geometry.historical;
     const double log_gain = 2 * (std::log(double(os)) + std::log(geometry.gpu.ppu)) - std::log(double(samples));
     const double exposure = (268.0 / 256) * (historical ? 2.3 / std::log(10.0) : 1.0);
-    const double gamma = 1 / f.gamma;
-    const double vibrancy = historical ? std::nearbyint(f.vibrancy * 256) / 256 : f.vibrancy;
     const double mass_unit = historical ? apophysis_white : quantum;
-    const std::array bg{f.background.r, f.background.g, f.background.b};
-    std::array<double, 4> empty_pixel{0, 0, 0, transparent ? 0.0 : 1.0};
-    if (!transparent)
-        for (unsigned c = 0; c < 3; ++c)
-            empty_pixel[c] = historical && !sixteen_bit ? std::floor(bg[c] * 255) / 255
-                                                       : std::clamp(bg[c], 0.0, 1.0);
     for (std::size_t x = 0; x < rgba.size(); ++x) {
         if ((x & 255u) == 0) check_cancelled(stop);
         std::array<double, 4> sum{};
         for (std::size_t dy = 0; dy < kernel.taps; ++dy) {
             if ((dy & 31u) == 0) check_cancelled(stop);
-            const auto row = (std::size_t(y) * os + kernel.inset + dy - first_row) * stride + x * os + kernel.inset;
+            const auto row = (global_y - first_row + dy) * stride + (global_x - window.first_column) + x * os;
             for (std::size_t dx = 0; dx < kernel.taps; ++dx) {
                 const double weight = filter.empty() ? box_weight : filter[dy] * filter[dx];
                 if (!density_light.empty()) {
@@ -521,6 +517,24 @@ void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const
                 for (unsigned c = 0; c < 3; ++c) sum[c] += light * (double(bin[c]) / double(bin[3]));
             }
         }
+        rgba[x] = sum;
+    }
+}
+
+void tone_row(const Flame& f, const RenderGeometry& geometry, std::span<LightBin> rgba,
+              bool sixteen_bit, bool transparent, std::stop_token stop) {
+    const bool historical = geometry.historical;
+    const double gamma = 1 / f.gamma;
+    const double vibrancy = historical ? std::nearbyint(f.vibrancy * 256) / 256 : f.vibrancy;
+    const std::array bg{f.background.r, f.background.g, f.background.b};
+    std::array<double, 4> empty_pixel{0, 0, 0, transparent ? 0.0 : 1.0};
+    if (!transparent)
+        for (unsigned c = 0; c < 3; ++c)
+            empty_pixel[c] = historical && !sixteen_bit ? std::floor(bg[c] * 255) / 255
+                                                       : std::clamp(bg[c], 0.0, 1.0);
+    for (std::size_t x = 0; x < rgba.size(); ++x) {
+        if ((x & 255u) == 0) check_cancelled(stop);
+        const auto sum = rgba[x];
         const double light = sum[3] * f.brightness;
         if (light == 0) {
             rgba[x] = empty_pixel;
@@ -547,6 +561,15 @@ void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const
             }
         }
     }
+}
+
+void develop_row(const Flame& f, const RenderGeometry& geometry, std::span<const Bin> bins,
+                 std::uint32_t first_row, int y, std::uint64_t samples,
+                 std::span<std::array<double, 4>> rgba, bool sixteen_bit, bool transparent,
+                 std::stop_token stop, std::span<const LightBin> density_light) {
+    if (rgba.size() != std::size_t(f.width)) throw std::invalid_argument("Expected a full-width output row");
+    filter_row(f, geometry, bins, first_row, y, samples, rgba, stop, density_light, {});
+    tone_row(f, geometry, rgba, sixteen_bit, transparent, stop);
 }
 } // namespace detail
 }

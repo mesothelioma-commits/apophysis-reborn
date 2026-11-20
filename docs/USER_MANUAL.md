@@ -1,4 +1,4 @@
-# Apophysis Reborn 0.15.0 — User manual
+# Apophysis Reborn 0.16.0 — User manual
 
 Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
@@ -12,6 +12,7 @@ Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sa
 - [Transform editing](#transform-editing)
 - [Gradients, adjustments and creative tools](#gradients-adjustments-and-creative-tools)
 - [Rendering an image](#rendering-an-image)
+- [Proof a crop and reopen an editable PNG](#proof-and-editable-png)
 - [CPU and Vulkan](#cpu-and-vulkan)
 - [Queue and checkpoint recovery](#queue-and-checkpoint-recovery)
 - [Animation and morphing](#animation-and-morphing)
@@ -163,9 +164,23 @@ The estimate reports geometry, sample count, buffer/storage allowances and recon
 | PPM | RGB, 8 or 16 bits per channel. |
 | BMP | RGB, 8 bits per channel. |
 
-Sixteen-bit output is quantized directly from reconstructed values, not expanded RGB8. Alpha is straight/unassociated; transparent pixels have zero RGB. The output is tone-mapped integer color, with no invented ICC/HDR profile. JPEG, WebP, OpenEXR, floating-point HDR, configurable compression and embedded-flame metadata are not implemented. Save an `.apoproject` or flame file separately to retain editable parameters. [IMAGE_FORMATS.md](IMAGE_FORMATS.md) gives the exact encoder contract.
+Sixteen-bit output is quantized directly from reconstructed values, not expanded RGB8. Alpha is straight/unassociated; transparent pixels have zero RGB. The output is tone-mapped integer color, with no invented ICC/HDR profile. PNG exports can optionally carry an editable flame. Save an `.apoproject` or flame file separately to retain the full project or library. [IMAGE_FORMATS.md](IMAGE_FORMATS.md) gives the exact encoder contract.
 
 **Add to queue** leaves a stopped queue stopped. **Add and start queue** starts work in queue order. A completed output replaces its destination only after encoding succeeds; cancellation or failure retains the previous destination. Ordinary image exports, scripts and animation frames have their documented conflict rules, so review the destination before starting.
+
+<a name="proof-and-editable-png"></a>
+
+## Proof a crop and reopen an editable PNG
+
+Start with **Ember spiral**. Open **Render image…**, choose the final dimensions, seed, sample count and output format, then follow these steps.
+
+1. Click **Proof a crop…**. Set the crop width and height, then use **Center crop** or enter X and Y measured from the top-left corner. Click **Render crop**. Each proof pixel uses the final render’s camera, density settings, filters and sample budget. Scroll to examine larger crops at actual pixel size.
+2. Adjust **Brightness**, **Gamma** or **Vibrancy**. These changes reuse the finished crop’s samples. Use the transparency checkbox to inspect edges against a checkerboard. Changing the crop requires a new sampling pass. A small crop can still take time when the full output has a high sample count.
+3. Click **Use tone for render** to apply those three values to the pending output. Closing the proof discards its tone changes. Set **Transparent background** in the outer Render image window to export alpha. The checkerboard only appears in the proof.
+4. Choose **PNG** (8 or 16 bit), enable **Include editable flame in PNG**, select a destination and choose **Add and start queue**. Embedding is optional for each job. Use an ordinary PNG for a picture without editable parameters.
+5. Open the exported PNG with **File → Open** or drop it on the editor. The result is a new, unsaved project containing one flame. Choose **Save As** to keep developing it. Reborn restores the rendered flame, seed and sample count. Keep your original project for its other flames, timeline and scripts.
+
+Image editors and sharing websites can strip PNG text chunks. Share the original exported file when the recipient needs to edit it. A flame that uses a third-party variation requires the corresponding trusted plug-in on the recipient’s computer.
 
 ## CPU and Vulkan
 

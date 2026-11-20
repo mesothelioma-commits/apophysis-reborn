@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Apophysis Reborn 0.15.0 — User manual</title>
+<title>Apophysis Reborn 0.16.0 — User manual</title>
 <style>
 body { font-family: sans-serif; line-height: 1.45; margin: 20px; }
 h1 { font-size: 24pt; margin-top: 8px; margin-bottom: 16px; }
@@ -19,7 +19,7 @@ a { text-decoration: underline; }
 </head>
 <body>
 <!-- Derived from USER_MANUAL.md. Text/background colors inherit the viewer palette. -->
-<a name="apophysis-reborn-0-15-0-user-manual"></a><h1>Apophysis Reborn 0.15.0 — User manual</h1>
+<a name="apophysis-reborn-0-16-0-user-manual"></a><h1>Apophysis Reborn 0.16.0 — User manual</h1>
 <p>Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The release compatibility report (<code>RELEASE_COMPATIBILITY.md</code>) lists the implemented subset and the remaining requirements.</p>
 <a name="contents"></a><h2>Contents</h2>
 <ul>
@@ -31,6 +31,7 @@ a { text-decoration: underline; }
 <li><a href="#transform-editing">Transform editing</a></li>
 <li><a href="#gradients-adjustments-and-creative-tools">Gradients, adjustments and creative tools</a></li>
 <li><a href="#rendering-an-image">Rendering an image</a></li>
+<li><a href="#proof-and-editable-png">Proof a crop and reopen an editable PNG</a></li>
 <li><a href="#cpu-and-vulkan">CPU and Vulkan</a></li>
 <li><a href="#queue-and-checkpoint-recovery">Queue and checkpoint recovery</a></li>
 <li><a href="#animation-and-morphing">Animation and morphing</a></li>
@@ -140,8 +141,18 @@ a { text-decoration: underline; }
 <tr><td>PPM</td><td>RGB, 8 or 16 bits per channel.</td></tr>
 <tr><td>BMP</td><td>RGB, 8 bits per channel.</td></tr>
 </table>
-<p>Sixteen-bit output is quantized directly from reconstructed values, not expanded RGB8. Alpha is straight/unassociated; transparent pixels have zero RGB. The output is tone-mapped integer color, with no invented ICC/HDR profile. JPEG, WebP, OpenEXR, floating-point HDR, configurable compression and embedded-flame metadata are not implemented. Save an <code>.apoproject</code> or flame file separately to retain editable parameters. IMAGE_FORMATS.md gives the exact encoder contract.</p>
+<p>Sixteen-bit output is quantized directly from reconstructed values, not expanded RGB8. Alpha is straight/unassociated; transparent pixels have zero RGB. The output is tone-mapped integer color, with no invented ICC/HDR profile. PNG exports can optionally carry an editable flame. Save an <code>.apoproject</code> or flame file separately to retain the full project or library. IMAGE_FORMATS.md gives the exact encoder contract.</p>
 <p><strong>Add to queue</strong> leaves a stopped queue stopped. <strong>Add and start queue</strong> starts work in queue order. A completed output replaces its destination only after encoding succeeds; cancellation or failure retains the previous destination. Ordinary image exports, scripts and animation frames have their documented conflict rules, so review the destination before starting.</p>
+<a name="proof-and-editable-png"></a><h2>Proof a crop and reopen an editable PNG</h2>
+<p>Start with <strong>Ember spiral</strong>. Open <strong>Render image…</strong>, choose the final dimensions, seed, sample count and output format, then follow these steps.</p>
+<ol>
+<li>Click <strong>Proof a crop…</strong>. Set the crop width and height, then use <strong>Center crop</strong> or enter X and Y measured from the top-left corner. Click <strong>Render crop</strong>. Each proof pixel uses the final render’s camera, density settings, filters and sample budget. Scroll to examine larger crops at actual pixel size.</li>
+<li>Adjust <strong>Brightness</strong>, <strong>Gamma</strong> or <strong>Vibrancy</strong>. These changes reuse the finished crop’s samples. Use the transparency checkbox to inspect edges against a checkerboard. Changing the crop requires a new sampling pass. A small crop can still take time when the full output has a high sample count.</li>
+<li>Click <strong>Use tone for render</strong> to apply those three values to the pending output. Closing the proof discards its tone changes. Set <strong>Transparent background</strong> in the outer Render image window to export alpha. The checkerboard only appears in the proof.</li>
+<li>Choose <strong>PNG</strong> (8 or 16 bit), enable <strong>Include editable flame in PNG</strong>, select a destination and choose <strong>Add and start queue</strong>. Embedding is optional for each job. Use an ordinary PNG for a picture without editable parameters.</li>
+<li>Open the exported PNG with <strong>File → Open</strong> or drop it on the editor. The result is a new, unsaved project containing one flame. Choose <strong>Save As</strong> to keep developing it. Reborn restores the rendered flame, seed and sample count. Keep your original project for its other flames, timeline and scripts.</li>
+</ol>
+<p>Image editors and sharing websites can strip PNG text chunks. Share the original exported file when the recipient needs to edit it. A flame that uses a third-party variation requires the corresponding trusted plug-in on the recipient’s computer.</p>
 <a name="cpu-and-vulkan"></a><h2>CPU and Vulkan</h2>
 <p><strong>Edit → Preferences</strong> sets preview workers, final sample limit, seed, host budget, requested renderer, device, GPU budget and fallback policy. Render dialogs retain separate export choices. Creative previews inherit the renderer settings with smaller preview budgets.</p>
 <p>CPU-only controls do not load Vulkan for device discovery. Automatic and Vulkan modes check devices in the background; you can continue using or close the dialog while discovery runs. The result is cached. Use <strong>Refresh devices</strong> to request a new inventory.</p>

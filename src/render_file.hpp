@@ -22,6 +22,7 @@ struct FileRenderOptions {
     // Host-side publication guard, called after reconstruction immediately
     // before the atomic image replacement. Not part of rendering identity.
     std::function<void()> before_publish;
+    bool embed_flame = false; // Include an editable single-flame recipe in PNG output.
 };
 struct RenderFilePlan {
     int width = 0, height = 0;
