@@ -1,4 +1,4 @@
-# Animation timeline — 0.9.0
+# Animation timeline
 
 Open **Tools → Animation timeline** (`Ctrl+T`) or **Timeline** on the creative toolbar. The dialog owns a private copy. **Apply timeline** stores it as one undoable document change; **Cancel** discards the dialog's edits. Local Undo/Redo keeps up to 16 versions within a 32 MiB history budget (at least the current and preceding version). Project Undo does not remove jobs already admitted to the render queue.
 
@@ -55,4 +55,4 @@ Unknown animation payloads and future schema versions remain byte-preserved in t
 
 ## Current scope
 
-Image sequences are delivered; video-container/audio encoding and FFmpeg integration are not included. There are no animated motion-blur subframe samples, separate per-property tracks, automatic transform matching or a complete historical animation interpreter. Active 3D camera behavior, density estimation, additional historical variations and direct-color variations remain bounded by the compatibility report. Windows execution and physical GPU testing are separate acceptance work.
+Use the Property keys tab for independent zoom, rotation and tone controls. Open the sequence composer from Tools to stack animated projects or PNG layers and export transparent frames or a silent H.264 MP4. [Animation and composition walkthrough](RELEASE_0.17.0.md)

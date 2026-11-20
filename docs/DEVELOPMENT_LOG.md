@@ -189,3 +189,7 @@ Both vertical dock dividers have a wider grab area and a visible hover state. Th
 ## 0.13.0 — Starter flame library, recovery build
 
 Startup opens eight editable examples with matching thumbnails. A narrow dock displays the names below the thumbnails. File → Open starter library opens a fresh collection, and opening an existing project shows its own flames. The source and artwork were reconstructed after the original 0.13.0 packages became unavailable.
+
+## 0.17.0 — Animation, classic flames and composition
+
+The timeline supports five independent property tracks. The renderer adds 2D splits and elliptic. The desktop composer accepts saved animated projects and PNG sequences, writes transparent composite frames, and can encode H.264 MP4 with FFmpeg. [Walkthrough and verification](RELEASE_0.17.0.md) · [Roadmap](ROADMAP.md)

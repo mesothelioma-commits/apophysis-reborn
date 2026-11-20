@@ -1,4 +1,6 @@
-# Release compatibility report — 0.13.0
+# Release compatibility report — 0.17.0
+
+0.17.0 adds independent property tracks, two 2D variations, layer composition and MP4 export. [Guide and verification](RELEASE_0.17.0.md)
 
 **0.16.0 adds editable PNG export/import and a final-resolution render proof with reusable tone samples.** [Walkthrough](USER_MANUAL.md#proof-and-editable-png)
 
@@ -25,7 +27,7 @@ This report reconciles the original 25-section project brief with the actual sup
 
 **Opening, preserving, rendering and exporting are separate operations.** A preservation-only entry can retain unknown parameters and still be saved without being renderable. A canonical selected-flame export writes the supported model and can omit source comments/history; it is not the same operation as source-preserving Save. A `.apoproject` adds native settings/timeline data and is not an old Apophysis file format. Modern curve markers and exact native-plugin hashes have their own portability boundaries.
 
-**The registry contains 43 built-ins.** It covers all 40 names in the brief plus `noise`, `foci` and `pre_blur`. The [variation guide](VARIATIONS.md) lists the new parameter names and reference checks.
+**The registry contains 45 built-ins.** It covers all 40 names in the brief plus `noise`, `foci`, `pre_blur`, `splits` and `elliptic`. The [variation guide](VARIATIONS.md) lists the new parameter names and reference checks.
 
 **Windows and physical GPU acceptance are separate from compilation.** Current available-host results, exact executable identities and benchmark settings are in the release verification records. The Vulkan evidence from the existing host uses software Vulkan. A successful Linux test, PE import audit or Wine observation is not a Windows 11 UI/driver test or a physical-GPU benchmark.
 
@@ -108,7 +110,7 @@ Evidence links are repository-relative. Test source demonstrates what is checked
 | R04-38 — ngon | Delivered | Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks. | [VARIATIONS.md](../docs/VARIATIONS.md) · [flame.cpp](../src/flame.cpp) · [orbit.comp](../shaders/orbit.comp) · [starting-variation-vectors.tsv](../tests/starting-variation-vectors.tsv) · [variation-studies.flame](../examples/variation-studies.flame) |
 | R04-39 — curl | Delivered | Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks. | [VARIATIONS.md](../docs/VARIATIONS.md) · [flame.cpp](../src/flame.cpp) · [orbit.comp](../shaders/orbit.comp) · [starting-variation-vectors.tsv](../tests/starting-variation-vectors.tsv) · [variation-studies.flame](../examples/variation-studies.flame) |
 | R04-40 — rectangles | Delivered | Built-in CPU and Vulkan implementations with named parameter import, editor weight controls, a renderable study and independent FLAM3 geometry and random-stream checks. | [VARIATIONS.md](../docs/VARIATIONS.md) · [flame.cpp](../src/flame.cpp) · [orbit.comp](../shaders/orbit.comp) · [starting-variation-vectors.tsv](../tests/starting-variation-vectors.tsv) · [variation-studies.flame](../examples/variation-studies.flame) |
-| R04-41 — All variations in the definitive original-source inventory | Partial | All 40 variations named in the brief are implemented. Noise, foci and pre_blur bring the registry to 43. Historical plugins and full producer-specific inventories extend beyond that list. | [VARIATIONS.md](../docs/VARIATIONS.md) · [RESEARCH.md](../docs/RESEARCH.md) |
+| R04-41 — All variations in the definitive original-source inventory | Partial | All 40 variations named in the brief are implemented. Noise, foci, pre_blur, splits and elliptic bring the registry to 45. Historical plugins and full producer-specific inventories extend beyond that list. | [VARIATIONS.md](../docs/VARIATIONS.md) · [RESEARCH.md](../docs/RESEARCH.md) |
 | R04-42 — Multiple weighted variations; Variation order; Historical names; Variables/defaults/validation; Variation samples and tests | Delivered | Implemented names accept signed finite weights; pre_blur has a defined pre-stage and supported explicit order is retained. Registered built-in parameters are editable; native modules register their own parameters. The claim applies only to implemented names. | [VARIATIONS.md](VARIATIONS.md) · [PLUGINS.md](PLUGINS.md) · [extended_variation_tests.cpp](../tests/extended_variation_tests.cpp) · [gpu_kernel_tests.cpp](../tests/gpu_kernel_tests.cpp) |
 
 ### Brief section 5: Plugins
@@ -213,8 +215,8 @@ Evidence links are repository-relative. Test source demonstrates what is checked
 | ID / requested capability | Status | Implemented scope and remaining limit | Evidence |
 | --- | --- | --- | --- |
 | R16-01 — Keyframes; Transform/camera/color/gradient/variation-parameter animation; Morphing; Preview/timeline; Presets; Frame rate/duration; Interpolation; Frame-by-frame/image-sequence export; High-resolution frames | Delivered | Version-1 Reborn clips use exact source snapshots, rational timing, stable correspondence, explicit interpolation/topology policies and bounded selected-frame export. Discrete values hold; unsupported continuous combinations are diagnosed. | [ANIMATION_MODEL.md](ANIMATION_MODEL.md) · [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md) · [ANIMATION_CLI.md](ANIMATION_CLI.md) · [MORPHING.md](MORPHING.md) · [animation_tests.cpp](../tests/animation_tests.cpp) · [animation_export_tests.cpp](../tests/animation_export_tests.cpp) |
-| R16-02 — Original AV/7X animation behavior; Automatic attractive correspondence; Separate per-property tracks; Temporal motion blur | Partial | Legacy time import requires explicit units and Reborn morphs use explicit IDs/pairing. Full historical interpreter parity, automatic matching, per-property tracks and subframe motion sampling are not implemented. | [ANIMATION_MODEL.md](ANIMATION_MODEL.md) · [MORPHING.md](MORPHING.md) |
-| R16-03 — Optional video encoding | Missing | No video encoder, audio track or FFmpeg integration is bundled. Frame sequences can be processed separately. | [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md) |
+| R16-02 — Original AV/7X animation behavior; Automatic attractive correspondence; Separate per-property tracks; Temporal motion blur | Partial | Legacy time import uses explicit units and morphs use explicit transform IDs. Independent property tracks cover zoom, rotation, brightness, gamma and vibrancy. Historical interpreter parity, automatic matching and temporal motion blur remain open. | [ANIMATION_MODEL.md](ANIMATION_MODEL.md) · [MORPHING.md](MORPHING.md) |
+| R16-03 — Optional video encoding | Delivered | The desktop composer encodes a silent H.264 MP4 from animated projects or PNG sequences using FFmpeg with libx264 on PATH. | [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md) |
 
 ### Brief section 17: Desktop interface
 

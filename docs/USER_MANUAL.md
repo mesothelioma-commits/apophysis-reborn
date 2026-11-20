@@ -1,4 +1,4 @@
-# Apophysis Reborn 0.16.0 — User manual
+# Apophysis Reborn 0.17.0 — User manual
 
 Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sampling, source-preserving flame libraries, creative tools, persistent render queues and a keyframe timeline. It works offline. This release is a development and maintenance checkpoint: the implemented controls are usable, while complete original Apophysis 2.x, 7X and AV feature parity remains unfinished. The [release compatibility report](RELEASE_COMPATIBILITY.md) lists the implemented subset and the remaining requirements.
 
@@ -16,6 +16,7 @@ Apophysis Reborn is a native fractal-flame editor with a CPU renderer, Vulkan sa
 - [CPU and Vulkan](#cpu-and-vulkan)
 - [Queue and checkpoint recovery](#queue-and-checkpoint-recovery)
 - [Animation and morphing](#animation-and-morphing)
+- [Property keys and layered export](#property-keys-and-layered-export)
 - [Local AI connection](#local-ai-connection)
 - [Scripts and native plugins](#scripts-and-native-plugins)
 - [Command-line workflows](#command-line-workflows)
@@ -32,11 +33,11 @@ The primary target is Windows 11 x64. Choose one of these distributions:
 | Windows setup EXE | Run the supplied setup EXE. | Install for the current Windows user with versioned shortcuts and an uninstall entry. |
 | Complete source/history ZIP | Use the included Git bundle to restore a checkout, or build the extracted source. | Development, complete verification tools, source history and release evidence. |
 
-The installer is `apophysis-reborn-0.15.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.15.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.15.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
+For the published 0.15.0 release, the installer is `apophysis-reborn-0.15.0-windows-x64-setup.exe`. It defaults to `%LOCALAPPDATA%\Programs\Apophysis Reborn\0.15.0`. It does not require administrator elevation or take over file associations. The desktop shortcut is optional. Setup installs 0.15.0 in an empty folder, then removes the most recent older release registered to your Windows account. If the older editor is running, close it and finish removal in Windows Settings under Apps. Portable copies and additional older releases stay in place. The uninstaller removes the recorded, unchanged installed payload and retains modified or extra files. User settings, recovery data and project files outside that directory are retained. An interrupted install can leave a partial program folder: choose a different empty destination or inspect the partial payload before removing it. Setup does not automatically repair or replace a nonempty installation.
 
 Portable operation describes the executable distribution, not a separate settings profile: normal sessions still use the application's per-user settings and data locations. Different installed versions can share those locations. Keep your artwork in a working folder outside the program directory. To continue an existing render checkpoint, retain the original renderer build and exact native plugins; an upgrade is not a promise of checkpoint compatibility.
 
-No separate Lua installation, video encoder or Vulkan SDK is needed to run the application. Vulkan requires a suitable installed system loader/driver; the CPU path works without it. The actual Windows runtime, installer lifecycle and physical GPU acceptance status are recorded in [TEST_PLAN.md](TEST_PLAN.md), separately from cross-compilation and dependency audits.
+The editor runs offline. MP4 export requires FFmpeg with the libx264 encoder on PATH. Vulkan requires a suitable installed system loader/driver; the CPU path works without it. The actual Windows runtime, installer lifecycle and physical GPU acceptance status are recorded in [TEST_PLAN.md](TEST_PLAN.md), separately from cross-compilation and dependency audits.
 
 ## Your first image
 
@@ -111,7 +112,7 @@ The **Pre-affine / Post-affine** selector controls both the triangle and numeric
 
 Use **Transform** to add, duplicate, delete, reorder, copy/paste or add a final transform. Structural changes preserve valid Xaos destination mapping. At least one ordinary transform remains. The final transform applies to the plotting copy and has no ordinary selection weight or Xaos row.
 
-**Variations** supports the 43 implemented built-ins. Search by name and edit signed weights; zero disables that contribution. Selecting a parameterized variation exposes its own controls, including JuliaN and JuliaScope power and distance. **Plugin variations…** supplies fields declared by an explicitly enabled module. Unknown variations remain blockers rather than being replaced with linear or another formula.
+**Variations** supports 45 built-ins, including splits and elliptic. Search by name and edit signed weights; zero disables that contribution. Selecting a parameterized variation exposes its own controls, including JuliaN and JuliaScope power and distance. **Plugin variations…** supplies fields declared by an explicitly enabled module. Unknown variations remain blockers rather than being replaced with linear or another formula.
 
 **Color** changes palette coordinate, color speed and opacity. **Xaos** edits transition multipliers from the selected transform to its destinations. A positive-weight branch needs a positive reachable destination. Producer-specific field interpretation remains attached to the flame. Copying a transform between producer families can change how its values are interpreted.
 
@@ -237,7 +238,15 @@ Continuous camera, affine, real-parameter, palette and curve values interpolate 
 
 On **Image sequence**, choose an existing output folder, prefix, inclusive first/last frames, step, fixed canvas, format, samples and budgets. **Apply & queue frames** validates the whole selected batch. A stopped queue waits for Start; an already running queue continues into new jobs. Filenames retain original global frame numbers. A batch and the queue are bounded to 1,000 selected/jobs respectively; use explicit subranges for longer clips.
 
-Frame destinations that appear or change after admission are refused immediately before publication. Queue batches budget retained checkpoints for all jobs. The separate CLI sequence workflow removes completed frame checkpoints and keeps its own manifest; do not use a CLI manifest as a Qt queue file. Image sequences are supported; video/audio encoding, temporal motion blur, per-property tracks and automatic transform matching are not included. [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md), [ANIMATION_CLI.md](ANIMATION_CLI.md) and [MORPHING.md](MORPHING.md) give the exact contracts.
+Frame destinations that appear or change after admission are refused immediately before publication. Queue batches budget retained checkpoints for all jobs. The separate CLI sequence workflow removes completed frame checkpoints and keeps its own manifest; do not use a CLI manifest as a Qt queue file. The desktop composer can combine these image sequences or saved animated projects. [ANIMATION_EDITOR.md](ANIMATION_EDITOR.md), [ANIMATION_CLI.md](ANIMATION_CLI.md) and [MORPHING.md](MORPHING.md) give the exact contracts.
+
+## Property keys and layered export
+
+In Tools → Animation timeline… → Property keys, move the playhead, choose zoom, rotation, brightness, gamma or vibrancy, enter a value and choose Set key at playhead. Repeat at another frame. Choose Hold, Linear, Smooth or Smoother for the transition leaving each key. The track holds its endpoint values outside the keyed range. Rotation uses unwrapped degrees, so 0 to 720 makes two turns. Apply the timeline and save the project.
+
+In Tools → Compose image sequences…, add saved animated projects or select the first numbered PNG of each layer, such as frame_000000.png. Drag the bottom layer to the top of the list and place overlays below it in drawing order. Layers need matching frame numbers and canvas dimensions. Use transparency where the lower layers should show through. Each project keeps its own palette, transforms and timeline.
+
+Choose Export PNG frames… for transparent composite frames, or Export MP4… for H.264 video. MP4 export uses FFmpeg from PATH with the libx264 encoder. For 23.976 fps, enter 24000 and 1001 in the playback rate fields. Choose a new destination. MP4 fills transparent regions with black and pads odd dimensions to even values. The composer accepts up to 1,000 frames and uses temporary disk space for rendered layers and output.
 
 ## Local AI connection
 

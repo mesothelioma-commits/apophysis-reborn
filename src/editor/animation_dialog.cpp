@@ -82,6 +82,10 @@ void TimelineRuler::setTimeline(const AnimationClip &clip, std::uint32_t frame) 
   frame_ = frame;
   keys_.clear();
   for (const auto &key : clip.keyframes) keys_.push_back(key.frame);
+  for (const auto &track : clip.tracks)
+    for (const auto &key : track) keys_.push_back(key.frame);
+  std::sort(keys_.begin(), keys_.end());
+  keys_.erase(std::unique(keys_.begin(), keys_.end()), keys_.end());
   update();
 }
 void TimelineRuler::paintEvent(QPaintEvent *) {
@@ -346,6 +350,65 @@ AnimationDialog::AnimationDialog(const LegacyDocument &source, std::size_t selec
   outputNote->setWordWrap(true);
   output->addRow(outputNote);
   tabs->addTab(scrollPanel(outputPanel), "Image sequence");
+  auto tracks = new QWidget;
+  auto trackLayout = new QVBoxLayout(tracks);
+  auto trackForm = new QFormLayout;
+  property_ = new QComboBox;
+  property_->setObjectName("timelineProperty");
+  for (const auto &property : animated_properties) property_->addItem(text(property.name));
+  propertyValue_ = new QLineEdit;
+  propertyValue_->setObjectName("timelinePropertyValue");
+  propertyEasing_ = combo({"Hold", "Linear", "Smooth", "Smoother"}, "timelinePropertyEasing");
+  propertyEasing_->setCurrentIndex(int(AnimationEasing::linear));
+  trackForm->addRow("Property", property_);
+  trackForm->addRow("Value", propertyValue_);
+  trackForm->addRow("Outgoing transition", propertyEasing_);
+  trackLayout->addLayout(trackForm);
+  propertyKeys_ = new QTableWidget(0, 3);
+  propertyKeys_->setHorizontalHeaderLabels({"Frame", "Value", "Transition"});
+  propertyKeys_->setSelectionBehavior(QAbstractItemView::SelectRows);
+  propertyKeys_->setSelectionMode(QAbstractItemView::SingleSelection);
+  trackLayout->addWidget(propertyKeys_);
+  auto setPropertyKey = new QPushButton("Set key at playhead");
+  setPropertyKey->setObjectName("timelineSetPropertyKey");
+  auto removePropertyKey = new QPushButton("Remove selected key");
+  trackLayout->addWidget(setPropertyKey);
+  trackLayout->addWidget(removePropertyKey);
+  tabs->addTab(tracks, "Property keys");
+  connect(property_, &QComboBox::currentIndexChanged, this, [this] { refreshPropertyKeys(); });
+  connect(propertyKeys_, &QTableWidget::cellClicked, this, [this](int row, int) {
+    const auto &key = clip_.tracks.at(property_->currentIndex()).at(row);
+    setFrame(int(key.frame));
+    propertyValue_->setText(QString::number(key.value, 'g', 17));
+    propertyEasing_->setCurrentIndex(int(key.easing));
+  });
+  connect(setPropertyKey, &QPushButton::clicked, this, [this] {
+    run([&] {
+      const auto i = property_->currentIndex();
+      bool valid = false;
+      const auto value = propertyValue_->text().toDouble(&valid);
+      if (!valid) throw std::invalid_argument("Enter a numeric property value");
+      auto candidate = clip_;
+      candidate.version = AnimationClip::current_version;
+      auto &track = candidate.tracks.at(i);
+      auto pos = std::lower_bound(track.begin(), track.end(), frame_,
+          [](const PropertyKey &key, std::uint32_t f) { return key.frame < f; });
+      PropertyKey key{frame_, value, AnimationEasing(propertyEasing_->currentIndex())};
+      if (pos != track.end() && pos->frame == frame_) *pos = key;
+      else track.insert(pos, key);
+      commit(std::move(candidate));
+    });
+  });
+  connect(removePropertyKey, &QPushButton::clicked, this, [this] {
+    const int row = propertyKeys_->currentRow();
+    if (row < 0) return;
+    run([&] {
+      auto candidate = clip_;
+      auto &track = candidate.tracks.at(property_->currentIndex());
+      track.erase(track.begin() + row);
+      commit(std::move(candidate));
+    });
+  });
   split->setSizes({540, 640});
   status_ = new QLabel;
   status_->setWordWrap(true);
@@ -487,6 +550,19 @@ void AnimationDialog::commit(AnimationClip candidate) {
   sync();
 }
 void AnimationDialog::setClip(AnimationClip clip) { commit(std::move(clip)); }
+void AnimationDialog::refreshPropertyKeys() {
+  const auto index = property_->currentIndex();
+  const auto &track = clip_.tracks.at(index);
+  propertyKeys_->setRowCount(int(track.size()));
+  for (int row = 0; row < int(track.size()); ++row) {
+    const auto &key = track[row];
+    propertyKeys_->setItem(row, 0, readOnly(QString::number(key.frame)));
+    propertyKeys_->setItem(row, 1, readOnly(QString::number(key.value, 'g', 17)));
+    propertyKeys_->setItem(row, 2, readOnly(text(animation_name(key.easing))));
+  }
+  propertyValue_->clear();
+  if (current_) propertyValue_->setPlaceholderText(QString::number((*current_).*animated_properties[index].member));
+}
 void AnimationDialog::sync() {
   syncing_ = true;
   frame_ = std::min(frame_, clip_.frame_count - 1);
@@ -538,6 +614,7 @@ void AnimationDialog::sync() {
   play_->setEnabled(prepared_.has_value() && clip_.frame_count > 1);
   syncing_ = false;
   setFrame(int(frame_));
+  refreshPropertyKeys();
 }
 void AnimationDialog::setFrame(int frame) {
   if (syncing_) return;

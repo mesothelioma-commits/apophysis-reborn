@@ -4,6 +4,10 @@
 
 ![Eight starter flames in Apophysis Reborn 0.13.0](preview/starter-library-0.13.0.png)
 
+## 0.17.0 development build
+
+The animation timeline supports individual camera and tone keys. Compose independent flame projects or PNG sequences from the Tools menu and export frames or an MP4. Classic 2D support now includes splits and elliptic. [Development build guide](docs/RELEASE_0.17.0.md)
+
 ## 0.16.0 testing build
 
 Choose **Render image… → Proof a crop…** to inspect a region at final resolution and adjust its tone using the same samples. Select **Include editable flame in PNG** to make an image that opens as an editable project. [Walkthrough](docs/USER_MANUAL.md#proof-and-editable-png) · [0.16.0 release notes](docs/RELEASE_0.16.0.md)
@@ -48,7 +52,7 @@ Press **F1** in the editor for offline documentation. [User manual](docs/USER_MA
 
 ## Editing and rendering
 
-- Edit eight starter flames with affine transforms, palettes, tone curves, variations, mutation, and a seeded random generator. The renderer implements 43 built-in variations.
+- Edit eight starter flames with affine transforms, palettes, tone curves, variations, mutation, and a seeded random generator. The renderer implements 45 built-in variations.
 - Use multithreaded CPU rendering or Vulkan sampling. Render in strips, queue images, and resume compatible checkpoints. The image size limit is 16,384 pixels per side.
 - Save editable native projects, preserve supported parts of legacy flame libraries, and export PNG, TIFF, PPM, or BMP images. Use the timeline for numbered frame sequences or the command-line renderer for batch work.
 

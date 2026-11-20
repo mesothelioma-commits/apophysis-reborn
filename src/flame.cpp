@@ -13,7 +13,7 @@
 namespace apo {
 namespace {
 
-constexpr std::array<VariationInfo, 43> variations{{
+constexpr std::array<VariationInfo, 45> variations{{
     {Variation::linear, "linear"}, {Variation::sinusoidal, "sinusoidal"},
     {Variation::spherical, "spherical"}, {Variation::swirl, "swirl"},
     {Variation::horseshoe, "horseshoe"}, {Variation::polar, "polar"},
@@ -33,7 +33,7 @@ constexpr std::array<VariationInfo, 43> variations{{
     {Variation::gaussian_blur, "gaussian_blur"}, {Variation::radial_blur, "radial_blur"},
     {Variation::pie, "pie"}, {Variation::ngon, "ngon"}, {Variation::curl, "curl"},
     {Variation::rectangles, "rectangles"}, {Variation::foci, "foci"},
-    {Variation::pre_blur, "pre_blur"}
+    {Variation::pre_blur, "pre_blur"}, {Variation::elliptic, "elliptic"}, {Variation::splits, "splits"}
 }};
 
 constexpr VariationParameterInfo builtin_parameters[]{
@@ -63,6 +63,8 @@ constexpr VariationParameterInfo builtin_parameters[]{
     {Variation::ngon, "ngon_corners", &VariationParameters::ngon_corners},
     {Variation::curl, "curl_c1", &VariationParameters::curl_c1},
     {Variation::curl, "curl_c2", &VariationParameters::curl_c2},
+    {Variation::splits, "splits_x", &VariationParameters::splits_x},
+    {Variation::splits, "splits_y", &VariationParameters::splits_y},
     {Variation::rectangles, "rectangles_x", &VariationParameters::rectangles_x},
     {Variation::rectangles, "rectangles_y", &VariationParameters::rectangles_y},
 };
@@ -576,6 +578,15 @@ Point apply_variation(Variation id, Point p, Rng& rng, const VariationParameters
             return spacing == 0 ? v : (2 * std::floor(v / spacing) + 1) * spacing - v;
         };
         return {reflected(x, parameters.rectangles_x), reflected(y, parameters.rectangles_y)};
+    }
+    case Variation::splits:
+        return {x + (x >= 0 ? parameters.splits_x : -parameters.splits_x),
+                y + (y >= 0 ? parameters.splits_y : -parameters.splits_y)};
+    case Variation::elliptic: {
+        const double major = 0.5 * std::hypot(x + 1, y) + 0.5 * std::hypot(x - 1, y);
+        const double latitude = std::asin(std::clamp(x / major, -1.0, 1.0));
+        const double height = std::log(major + std::sqrt(std::max(0.0, major - 1)));
+        return {2 / pi * latitude, (y > 0 ? 2 : -2) / pi * height};
     }
     case Variation::foci: {
         const double e = .5 * std::exp(x);

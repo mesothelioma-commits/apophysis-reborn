@@ -22,7 +22,7 @@ Tagged 7X/AV files commonly write density estimator parameters alongside `enable
 
 ## Mathematical coverage
 
-The current registry contains 43 variations. All 15 original registry entries from Milestone 2 remain available. The following six were added in 0.3.0; the ten additions in 0.5.0 are described below and in [VARIATIONS.md](VARIATIONS.md). Use `--list-variations` to inspect the complete current registry.
+The current registry contains 45 variations, including 2D splits and elliptic. All 15 original registry entries from Milestone 2 remain available. The following six were added in 0.3.0; the ten additions in 0.5.0 are described below and in [VARIATIONS.md](VARIATIONS.md). Use `--list-variations` to inspect the complete current registry.
 
 | FLAM3 ID | XML name | Computation / historical controls |
 | ---: | --- | --- |

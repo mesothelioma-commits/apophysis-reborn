@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include "sequence_composition.hpp"
 #include "background_jobs.hpp"
 #include "local_ai_connection.hpp"
 #include "flame_favorites.hpp"
@@ -872,6 +873,7 @@ void MainWindow::makeActions() {
   animation_ = tools->addAction("Animation timeline…", this,
                                &MainWindow::showAnimationTimeline);
   animation_->setObjectName("actionAnimation");
+  tools->addAction("Compose image sequences…", this, [this] { showSequenceComposer(this); });
   animation_->setShortcut(QKeySequence("Ctrl+T"));
   auto script =
       tools->addAction("Script editor…", this, &MainWindow::showScriptEditor);

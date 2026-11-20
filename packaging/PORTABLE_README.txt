@@ -11,7 +11,8 @@ Open docs/USER_MANUAL.html or use Help > User manual in the application.
 Example flames and native animation projects are in examples/.
 The render controls include editable PNG export and a final-resolution proof
 for inspecting a region of a larger image. See docs/RELEASE_0.16.0.md for
-the Windows walkthrough and docs/ROADMAP.md for upcoming builds.
+the render walkthrough. For property keys, layered animation and MP4 export,
+see docs/RELEASE_0.17.0.md. MP4 export requires FFmpeg with libx264 on PATH.
 Save your projects in a personal folder. Favorites are kept for the current
 Windows user and can be opened after you replace or move the program folder.
 Preferences, recovery data and queue state also use per-user storage.

@@ -257,7 +257,7 @@ Variation legacy_variation_id(int id, Text version) {
     }
     if (id >= 0 && (!is_apophysis_2(version) || id <= 22))
         for (const auto& entry : variation_registry())
-            if (static_cast<unsigned>(entry.id) == static_cast<unsigned>(id)) return entry.id;
+            if (entry.id != Variation::splits && static_cast<unsigned>(entry.id) == static_cast<unsigned>(id)) return entry.id;
     fail("Unsupported variation ID " + std::to_string(id));
 }
 
@@ -354,6 +354,9 @@ Transform read_transform(const Attributes& attributes, bool final, std::size_t i
             (void)number<double>(value,key);
         } else if (key == "var_order") {
             // Apply the recorded order after all named weights are available.
+        }
+        else if ((key == "splits_z" || key == "splits_use3D") && producer == Producer::av) {
+            if (number<double>(value,key) != 0) fail("3D splits is unsupported");
         }
         else if (key == "sinusoidal_use3D" && apo && attributes.contains("sinusoidal")) {
             if (number<int>(value,key) != 0) fail("3D sinusoidal is unsupported");

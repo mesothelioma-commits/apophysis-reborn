@@ -1,5 +1,9 @@
 # Verification record
 
+## 0.17.0 animation, classic variations and composition
+
+Windows x64 and Linux passed the native CI suite on implementation commit `078d143`. Both jobs ran the local AI editor integration check. The broader workspace suite passed 54 of 55 tests, including software Vulkan. Its current-user local socket check failed. The Linux video test used FFmpeg and ffprobe to verify a five-frame H.264 stream at 24000/1001 fps. Windows packaging, interactive upgrade and physical GPU testing remain open. [Native test jobs](https://github.com/mesothelioma-commits/apophysis-reborn/actions/runs/44696133354) · [Classic flame comparison](RELEASE_0.17.0.md#classic-flame-compatibility)
+
 ## 0.13.0 starter library
 
 The editor tests exercise startup with eight flames, opening and filtering the starter collection, switching flames, editing and saving a copy, and discarding or retaining unsaved work. They also cover thumbnail updates and selection as the Flame library dock changes width. To check the packaged Windows application manually, launch without a file, select each thumbnail, narrow and widen the dock, and reopen a saved edit.

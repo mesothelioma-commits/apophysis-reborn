@@ -265,7 +265,7 @@ std::string_view animation_name(AnimationPreset value) {
 }
 
 void validate_animation_structure(const AnimationClip &clip) {
-  if (clip.version != AnimationClip::current_version) fail("unsupported animation version " + std::to_string(clip.version));
+  if (clip.version != 1 && clip.version != AnimationClip::current_version) fail("unsupported animation version " + std::to_string(clip.version));
   rate_and_count(clip);
   xml_text(clip.name,1024,"animation name");
   (void)animation_name(clip.loop); (void)animation_name(clip.affine);
@@ -273,6 +273,22 @@ void validate_animation_structure(const AnimationClip &clip) {
   (void)animation_name(clip.topology); (void)animation_name(clip.seed_mode);
   if (clip.keyframes.empty() || clip.keyframes.size()>animation_keyframe_limit) fail("animation needs 1 to 256 keyframes");
   if (clip.keyframes.front().frame!=0) fail("the first keyframe must be at frame zero");
+  for (std::size_t i = 0; i < clip.tracks.size(); ++i) {
+    const auto &track = clip.tracks[i];
+    if (!track.empty() && clip.version < 2) fail("property keys require animation version 2");
+    if (track.size() > animation_keyframe_limit) fail("too many keys on one property");
+    const auto member = animated_properties[i].member;
+    for (std::size_t j = 0; j < track.size(); ++j) {
+      const auto &key = track[j];
+      if (key.frame >= clip.frame_count || (j && key.frame <= track[j-1].frame))
+        fail("property keys must be ordered, unique and inside the clip");
+      if (!std::isfinite(key.value) || (member == &Flame::gamma && key.value <= 0) ||
+          (member == &Flame::brightness && key.value < 0) ||
+          (member == &Flame::vibrancy && (key.value < 0 || key.value > 1)))
+        fail("invalid value for " + std::string(animated_properties[i].name));
+      (void)animation_name(key.easing);
+    }
+  }
   std::size_t bytes=0;
   for (std::size_t i=0;i<clip.keyframes.size();++i) {
     const auto &key=clip.keyframes[i];
@@ -459,8 +475,29 @@ AnimationFrame PreparedAnimation::evaluate(std::int64_t requested) const {
       [](std::uint32_t value,const AnimationKeyframe &key){return value<key.frame;});
   const auto left=after==clip.keyframes.begin()?0:static_cast<std::size_t>(after-clip.keyframes.begin()-1);
   output.left_keyframe=left;output.right_keyframe=left;
+  auto apply_tracks = [&] {
+    for (std::size_t i = 0; i < clip.tracks.size(); ++i) {
+      const auto &track = clip.tracks[i];
+      if (track.empty()) continue;
+      auto next = std::upper_bound(track.begin(), track.end(), frame,
+          [](std::uint32_t f, const PropertyKey &key) { return f < key.frame; });
+      double value = track.front().value;
+      if (next != track.begin()) {
+        const auto &key = *std::prev(next);
+        value = key.value;
+        if (next != track.end() && frame != key.frame) {
+          const auto t = double(frame - key.frame) / (next->frame - key.frame);
+          value = std::lerp(key.value, next->value, animation_ease(key.easing, t));
+        }
+      }
+      output.flame.*animated_properties[i].member = value;
+    }
+  };
   if(after==clip.keyframes.end()||clip.keyframes[left].frame==frame||clip.keyframes[left].easing==AnimationEasing::hold) {
-    output.flame=data_->models[left];return output;
+    output.flame=data_->models[left];
+    apply_tracks();
+    validate(output.flame);
+    return output;
   }
   const auto right=left+1;
   output.right_keyframe=right;
@@ -510,6 +547,7 @@ AnimationFrame PreparedAnimation::evaluate(std::int64_t requested) const {
   if(a.final_transform&&b.final_transform)result.final_transform=transform(*a.final_transform,*b.final_transform,t,clip.affine);
   else if(a.final_transform)result.final_transform=transform(*a.final_transform,identity_final(*a.final_transform),t,clip.affine);
   else if(b.final_transform)result.final_transform=transform(identity_final(*b.final_transform),*b.final_transform,t,clip.affine);
+  apply_tracks();
   try {validate(result);}
   catch(const std::exception &error) {fail("frame "+std::to_string(frame)+" is invalid: "+error.what());}
   return output;

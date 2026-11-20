@@ -83,7 +83,10 @@ private:
   QComboBox *loop_, *affine_, *palette_, *angle_, *topology_, *seedMode_;
   QComboBox *library_, *presets_;
   QComboBox *ratePreset_;
-  QTableWidget *keys_;
+  QTableWidget *keys_, *propertyKeys_;
+  QComboBox *property_, *propertyEasing_;
+  QLineEdit *propertyValue_;
+  void refreshPropertyKeys();
   QLabel *status_, *time_, *diagnostics_;
   QPushButton *play_, *undo_, *redo_, *apply_, *use_, *queue_;
   QLineEdit *directory_, *prefix_, *samples_, *device_;

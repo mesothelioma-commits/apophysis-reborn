@@ -58,7 +58,7 @@ The **Geometry** tab exposes all six affine coefficients in their `.flame` order
 
 ### Variations, color, and Xaos
 
-The **Variations** tab lists the 43 built-in variations. Search by name and edit its weight in the table. Signed weights are supported. Setting a weight to zero disables its contribution. Select a variation to edit its built-in parameters. For example, JuliaScope has power and distance controls, while pie has slice count, rotation and thickness. The [variation guide](VARIATIONS.md) lists the fields.
+The **Variations** tab lists the 45 built-in variations. Search by name and edit its weight in the table. Signed weights are supported. Setting a weight to zero disables its contribution. Select a variation to edit its built-in parameters. For example, JuliaScope has power and distance controls, while pie has slice count, rotation and thickness. The [variation guide](VARIATIONS.md) lists the fields.
 
 **Plugin variations…** opens weights and named parameters for enabled native variations. Each parameter uses the module's declared type, default and valid range. The dialog retains existing variation order and full stored numeric precision when unchanged values are applied. Enable a trusted module through **Tools → Plugins…** before adding its variation. Native variations use the CPU renderer; an unavailable variation remains a render blocker and is never replaced with a built-in formula.
 
