@@ -1,0 +1,60 @@
+name: Publish tested Windows x64 installer (0.17.0)
+on:
+  push:
+    branches: ["publish/0.17.0"]
+permissions:
+  actions: read
+  contents: write
+concurrency: publish-windows-v0.17.0
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      TARGET: d60277234493ac96a2c10bb82e89a800a7cf7a3b
+      RUN: '44700905606'
+      TAG: v0.17.0
+      FILE: apophysis-reborn-0.17.0-windows-x64-setup.exe
+      SHA: b8eafde2ab081cd467af83b557d5aa716f4faaae396f5ce9c9cd63e93b89c0d9
+    steps:
+      - name: Retrieve the installer that passed the Windows upgrade test
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/$RUN" | jq -e --arg target "$TARGET" '.head_sha == $target and .conclusion == "success"'
+          gh run download "$RUN" --repo "$GH_REPO" --name windows-x64-setup --dir dist
+          cd dist
+          printf '%s  %s\n' "$SHA" "$FILE" > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - name: Publish installer and checksum
+        shell: bash
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ref=$(git ls-remote "https://github.com/$GH_REPO.git" "refs/tags/$TAG" "refs/tags/$TAG^{}" | tail -n 1 | cut -f1)
+          if [[ -n "$ref" && "$ref" != "$TARGET" ]]; then
+            echo "Existing tag points to a different source revision." >&2
+            exit 1
+          fi
+          if ! gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            cat > ../notes.md <<'NOTES'
+          **[Download the 0.17.0 Windows x64 installer](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.17.0/apophysis-reborn-0.17.0-windows-x64-setup.exe)**
+
+          Close the editor, renderer and local AI companion, then run Setup. It installs for the current Windows account and removes older registered installations. The installer is unsigned. The [automated Windows upgrade test](https://github.com/mesothelioma-commits/apophysis-reborn/actions/runs/44700905606) upgraded 0.14.0 and 0.15.0 together and verified that personal projects were preserved.
+
+          This version adds animation keys for individual camera and tone properties, the classic 2D splits and elliptic variations, and composition of independent flame projects or numbered PNG layers. MP4 export requires FFmpeg with libx264 on PATH.
+
+          [Release guide](https://github.com/mesothelioma-commits/apophysis-reborn/blob/v0.17.0/docs/RELEASE_0.17.0.md) · [SHA-256 checksum](https://github.com/mesothelioma-commits/apophysis-reborn/releases/download/v0.17.0/SHA256SUMS.txt)
+          NOTES
+            gh release create "$TAG" --repo "$GH_REPO" --target "$TARGET" --draft --title "Apophysis Reborn 0.17.0" --notes-file ../notes.md
+          fi
+          for asset in "$FILE" SHA256SUMS.txt; do
+            if ! gh release view "$TAG" --repo "$GH_REPO" --json assets | jq -e --arg name "$asset" 'any(.assets[]; .name == $name)' >/dev/null; then
+              gh release upload "$TAG" "$asset" --repo "$GH_REPO"
+            fi
+            gh release download "$TAG" --repo "$GH_REPO" --pattern "$asset" --dir ../verified
+            cmp "$asset" "../verified/$asset"
+          done
+          gh release edit "$TAG" --repo "$GH_REPO" --draft=false --latest
