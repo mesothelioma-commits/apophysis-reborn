@@ -33,7 +33,7 @@ Var DesktopChoice
 Var InstallLog
 
 !define MUI_ABORTWARNING
-!define MUI_WELCOMEPAGE_TEXT "Install the editor, command-line renderer, examples and offline documentation for your Windows account.$\r$\n$\r$\nWhen upgrading, setup installs the new release first, then removes the previous installed version. Your projects, preferences and recovery files stay in place.$\r$\n$\r$\nChoose an empty destination folder."
+!define MUI_WELCOMEPAGE_TEXT "Install the editor, command-line renderer, examples and offline documentation for your Windows account.$\r$\n$\r$\nWhen upgrading, setup installs the new release first, then removes all older versions registered for your Windows account. Your projects, preferences and recovery files stay in place.$\r$\n$\r$\nChoose an empty destination folder."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_COMPONENTS
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryLeave
@@ -135,9 +135,9 @@ Function PerformInstall
   DetailPrint "$GuardOutput"
   DetailPrint "Installation log: $InstallLog"
   ${If} $GuardResult == 20
-    DetailPrint "New version installed. Previous version cleanup needs attention."
+    DetailPrint "New version installed. Older version cleanup needs attention."
     IfSilent +2
-    MessageBox MB_OK|MB_ICONEXCLAMATION "The new version is installed. Setup could not finish removing the previous version.$\r$\n$\r$\nClose the editor and any render processes. Use Windows Installed apps to uninstall the previous version. The installation log identifies the affected version and files.$\r$\n$\r$\nDetails: $InstallLog"
+    MessageBox MB_OK|MB_ICONEXCLAMATION "The new version is installed. Setup could not finish removing one or more older versions.$\r$\n$\r$\nClose the editor and any render processes. Use Windows Installed apps to uninstall any remaining older versions. The installation log identifies the affected versions and files.$\r$\n$\r$\nDetails: $InstallLog"
     SetErrorLevel 20
     Return
   ${ElseIf} $GuardResult != 0

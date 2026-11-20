@@ -31,15 +31,21 @@ inline std::optional<Version> parse_version(std::wstring_view text) {
 }
 class UpgradeSelection {
     Version current_;
-    std::optional<Version> previous_;
+    std::vector<Version> previous_;
     bool blocked_ = false;
 public:
     explicit UpgradeSelection(Version current) : current_(current) {}
     void consider(Version candidate) {
         if (candidate >= current_) blocked_ = true;
-        else if (!previous_ || candidate > *previous_) previous_ = candidate;
+        else previous_.push_back(candidate);
     }
-    std::optional<Version> previous() const { return blocked_ ? std::nullopt : previous_; }
+    std::vector<Version> previous() const {
+        if (blocked_) return {};
+        auto result = previous_;
+        std::sort(result.rbegin(), result.rend());
+        result.erase(std::unique(result.begin(), result.end()), result.end());
+        return result;
+    }
 };
 
 inline bool is_digest(std::string_view s) {

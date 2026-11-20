@@ -143,7 +143,7 @@ def main():
               "generated_input_sha256": {name: package.digest(work / name) for name in
                   ["payload_manifest.hpp", "payload.nsh", "installer.nsi"]},
               "windows_executed": False, "signed": False,
-              "policy": "Per-user; remove the most recent previous version after successful installation; no file associations; empty destination; compiled inventory and hash-checked nonrecursive uninstall"}
+              "policy": "Per-user; remove all older registered versions during an upgrade after successful installation; no file associations; empty destination; compiled inventory and hash-checked nonrecursive uninstall"}
     (work / "installer-build.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"installer": str(output), "work": str(work), **record}, indent=2))
 

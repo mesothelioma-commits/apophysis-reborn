@@ -20,18 +20,18 @@ void versions() {
     for (auto text : {L"", L"0.11", L"0.11.0-beta", L"ApophysisReborn", L"-1.1.0", L"0.65536.0", L"0.011.0"})
         check(!parse_version(text), "non-release version accepted");
     UpgradeSelection up(current);
-    check(!up.previous(), "first install selected a predecessor");
+    check(up.previous().empty(), "first install selected a predecessor");
     up.consider(older);
     up.consider(previous);
     up.consider(Version{0, 10, 21});
-    check(up.previous() == previous, "incorrect previous version across numeric components");
+    check(up.previous() == std::vector<Version>{previous, {0, 10, 21}, older}, "did not select all previous releases in descending version order");
     up.consider(current);
-    check(!up.previous(), "same-version run selected a predecessor");
+    check(up.previous().empty(), "same-version run selected a predecessor");
     for (bool reverse : {false, true}) {
         UpgradeSelection down(current);
         down.consider(reverse ? Version{1, 0, 0} : previous);
         down.consider(reverse ? previous : Version{1, 0, 0});
-        check(!down.previous(), "downgrade selected an older installation");
+        check(down.previous().empty(), "downgrade selected an older installation");
     }
 }
 
